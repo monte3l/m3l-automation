@@ -387,9 +387,37 @@ export function formatWorktreeSegment(payload) {
  * this hot-path script to repo tooling for one regex. */
 const LANDING_PLAN_HEADING_RE = /^##\s+Landing plan\s*$/m;
 
-/** Status-cell values (case-insensitive, trimmed) that mark a landing-plan
- * row as landed rather than in-flight. */
-const TERMINAL_LANDING_PLAN_STATUSES = new Set(["landed", "shipped", "✅"]);
+/** Status-cell leading words (case-insensitive) that mark a landing-plan
+ * row as landed rather than in-flight. Matched against the cell's leading
+ * word, not the whole cell — see {@link isTerminalLandingPlanStatus} — so a
+ * trailing PR citation like `Landed (PR #580)` still counts as terminal.
+ * `✅` is handled by its own `startsWith` check below, not through this
+ * Set — `/^([A-Za-z]+)/` can never capture an emoji, so a `"✅"` entry here
+ * would be unreachable dead vocabulary. */
+const TERMINAL_LANDING_PLAN_STATUSES = new Set(["landed", "shipped"]);
+
+/**
+ * True when a landing-plan Status cell reads as terminal (landed/shipped),
+ * matched by leading word rather than the whole cell — `Landed (PR #580)`
+ * and `Shipped — #941` both count, `Landing` and `To Do` don't (the former
+ * fails the exact-word check even though it shares a prefix character-wise;
+ * this is a whole-word match on the first token, not `startsWith`). Leading
+ * markdown emphasis markers (`**Landed**`, `_Shipped_`) are stripped first —
+ * a bold status cell is an established convention elsewhere in this repo's
+ * status tracking (e.g. `docs/ROADMAP.md`'s Status column), so it must not
+ * silently read as still in flight.
+ *
+ * @param {string} cell
+ * @returns {boolean}
+ */
+function isTerminalLandingPlanStatus(cell) {
+  const trimmed = (cell ?? "").trim().replace(/^[*_]+/, "");
+  if (trimmed.startsWith("✅")) return true;
+  const match = /^([A-Za-z]+)/.exec(trimmed);
+  return (
+    match !== null && TERMINAL_LANDING_PLAN_STATUSES.has(match[1].toLowerCase())
+  );
+}
 
 /**
  * @param {string} line a markdown table row, e.g. `| a | b |`.
@@ -413,6 +441,37 @@ function deriveSliceLabel(cell) {
   return match ? match[1] : null;
 }
 
+/** A conservative ref-name shape — enough to keep an obviously-unsafe cell
+ * (prose, whitespace, a shell metacharacter) out of a value `finishing-work`
+ * hands to `pnpm worktree:new`/`git switch`, without trying to be a full
+ * `git check-ref-format`. */
+const BRANCH_CELL_RE = /^[A-Za-z0-9][A-Za-z0-9._/-]*$/;
+
+/** Placeholder cell values (case-insensitive) that mean "no branch recorded
+ * yet" rather than an actual name. */
+const BRANCH_CELL_PLACEHOLDERS = new Set(["", "-", "—", "n/a", "tbd"]);
+
+/**
+ * @param {string} cell a `Branch` column value for one landing-plan row.
+ * @returns {string | null} the branch name, or null for an empty/placeholder
+ *   cell or one that doesn't look like a safe ref name (prose, whitespace,
+ *   `..`, a trailing `/` or `.lock`, or any other shell-unsafe content) —
+ *   callers must treat null as "not recorded", never guess at it.
+ */
+function normalizeBranchCell(cell) {
+  const trimmed = (cell ?? "").trim().replace(/^`|`$/g, "");
+  if (BRANCH_CELL_PLACEHOLDERS.has(trimmed.toLowerCase())) return null;
+  if (!BRANCH_CELL_RE.test(trimmed)) return null;
+  if (
+    trimmed.includes("..") ||
+    trimmed.endsWith("/") ||
+    trimmed.endsWith(".lock")
+  ) {
+    return null;
+  }
+  return trimmed;
+}
+
 /**
  * Parses the first markdown table following a `## Landing plan` heading
  * (ADR-0072) into a slice-progress count. Returns null — not an error — for
@@ -424,8 +483,22 @@ function deriveSliceLabel(cell) {
  * row in an in-flight table (not yet `Landed`) also makes `current === total`
  * numerically, but must not be treated as fully landed for styling purposes.
  *
+ * An optional `Branch` column, if present, is read for the current row and
+ * returned as `branch` — a non-submodule wave's plan doc carries one so
+ * `finishing-work` can hand off to the exact next branch instead of deriving
+ * a slug from a row name; a submodule's reference page has no such column
+ * and `branch` is always `null` there. A cell that isn't a safe ref-name
+ * shape (prose, whitespace, a placeholder like `—`/`TBD`) also normalizes to
+ * `null` via {@link normalizeBranchCell} — this value can end up interpolated
+ * into a shell command (`pnpm worktree:new`), so a caller must treat `null`
+ * as "not recorded", never fall back to guessing from the cell text itself.
+ * `branch` is also `null` whenever `allLanded` is true — once every row is
+ * landed, `currentRow` is the *last* row, and its branch already shipped;
+ * there is no next slice to hand off to, so the field never points a caller
+ * back at spent work.
+ *
  * @param {string} pageText
- * @returns {{ current: number, total: number, label: string | null, allLanded: boolean } | null}
+ * @returns {{ current: number, total: number, label: string | null, branch: string | null, allLanded: boolean } | null}
  */
 export function parseLandingPlanProgress(pageText) {
   const headingMatch = LANDING_PLAN_HEADING_RE.exec(pageText);
@@ -463,6 +536,9 @@ export function parseLandingPlanProgress(pageText) {
   const sliceIndex = headerCells.findIndex(
     (cell) => cell.toLowerCase() === "slice",
   );
+  const branchIndex = headerCells.findIndex(
+    (cell) => cell.toLowerCase() === "branch",
+  );
 
   const dataRows = [];
   for (let i = headerIndex + 2; i < lines.length && isTableRow(lines[i]); i++) {
@@ -472,19 +548,23 @@ export function parseLandingPlanProgress(pageText) {
 
   const total = dataRows.length;
   const firstOpenIndex = dataRows.findIndex(
-    (row) =>
-      !TERMINAL_LANDING_PLAN_STATUSES.has(
-        (row[statusIndex] ?? "").toLowerCase(),
-      ),
+    (row) => !isTerminalLandingPlanStatus(row[statusIndex] ?? ""),
   );
   const allLanded = firstOpenIndex === -1;
   const current = allLanded ? total : firstOpenIndex + 1;
+  const currentRow = dataRows[current - 1];
   const label =
-    sliceIndex === -1
+    sliceIndex === -1 ? null : deriveSliceLabel(currentRow[sliceIndex]);
+  // No next branch once every row is landed — currentRow is the LAST row
+  // here (current === total), so its branch is one that already shipped,
+  // not a hand-off target. A caller reading branch without also checking
+  // allLanded would otherwise be pointed back at spent work.
+  const branch =
+    branchIndex === -1 || allLanded
       ? null
-      : deriveSliceLabel(dataRows[current - 1][sliceIndex]);
+      : normalizeBranchCell(currentRow[branchIndex]);
 
-  return { current, total, label, allLanded };
+  return { current, total, label, branch, allLanded };
 }
 
 /**
@@ -512,7 +592,7 @@ export function parseLandingPlanProgress(pageText) {
  *   from (`payload.workspace.current_dir`, per-worktree) — see
  *   {@link resolveWorkspaceRoot}.
  * @param {string | null} branch the already-resolved current branch.
- * @returns {{ current: number, total: number, label: string | null, allLanded: boolean } | null}
+ * @returns {{ current: number, total: number, label: string | null, branch: string | null, allLanded: boolean } | null}
  */
 export function resolveSliceProgress(readFile, startDir, branch) {
   if (typeof branch !== "string" || branch.length === 0) return null;
@@ -550,6 +630,8 @@ export function resolveSliceProgress(readFile, startDir, branch) {
           : typeof entry.wave === "string" && entry.wave.length > 0
             ? entry.wave
             : null,
+      // Literal mode has no table to read a Branch column from.
+      branch: null,
       // Literal mode carries no per-row status data (unlike derived mode's
       // table), so `current >= total` is the best available signal here.
       allLanded: entry.current >= entry.total,
@@ -560,9 +642,11 @@ export function resolveSliceProgress(readFile, startDir, branch) {
 }
 
 /**
- * @param {{ current: number, total: number, label: string | null, allLanded: boolean } | null} slice
+ * @param {{ current: number, total: number, label: string | null, branch: string | null, allLanded: boolean } | null} slice
  *   the pre-resolved value from {@link resolveSliceProgress} — this formatter
  *   does no I/O, matching `formatBranchSegment(env?.branch ?? null)`'s shape.
+ *   `branch` is unused here (display carries only label/count); it exists
+ *   for `finishing-work`'s hand-off, not this segment.
  * @returns {{ id: string, priority: number, text: string, minWidth: number } | null}
  *   the `<label> N/M` segment (dim once `allLanded`, cyan otherwise — not
  *   merely once `current` numerically reaches `total`, since a table's last

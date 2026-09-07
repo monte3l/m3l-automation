@@ -314,6 +314,7 @@ describe("formatSliceSegment", () => {
       current: 2,
       total: 4,
       label: "V6",
+      branch: null,
       allLanded: false,
     });
 
@@ -330,6 +331,7 @@ describe("formatSliceSegment", () => {
       current: 4,
       total: 4,
       label: "V6",
+      branch: null,
       allLanded: true,
     });
 
@@ -350,6 +352,7 @@ describe("formatSliceSegment", () => {
       current: 4,
       total: 4,
       label: "V6",
+      branch: null,
       allLanded: false,
     });
 
@@ -366,6 +369,7 @@ describe("formatSliceSegment", () => {
       current: 2,
       total: 4,
       label: null,
+      branch: null,
       allLanded: false,
     });
 
@@ -1254,10 +1258,12 @@ describe("parseLandingPlanProgress", () => {
 
     // Row 2 is "In progress", so current === total numerically but
     // allLanded must be false (the bug: this used to look "landed").
+    // No Branch column in this table -> branch is null.
     expect(parseLandingPlanProgress(pageText)).toEqual({
       current: 2,
       total: 2,
       label: "V6",
+      branch: null,
       allLanded: false,
     });
   });
@@ -1277,10 +1283,102 @@ describe("parseLandingPlanProgress", () => {
         current: 1,
         total: 1,
         label: "V6",
+        branch: null,
         allLanded: true,
       });
     },
   );
+
+  // Leading-word match, not exact match: a trailing PR citation still counts
+  // as terminal (previously exact-match missed these -- confirmed live
+  // against docs/reference/core/procedure.md, which has five
+  // "Landed (PR #NNN)" cells that used to parse as "in flight").
+  test.each(["Landed (PR #580)", "Shipped — #941"])(
+    "treats status %s as terminal via leading-word match, not exact match",
+    (status) => {
+      const pageText = [
+        "## Landing plan",
+        "",
+        "| Slice | Scope | Status |",
+        "| ----- | ----- | ------ |",
+        `| V6 slice 1 | first slice | ${status} |`,
+      ].join("\n");
+
+      expect(parseLandingPlanProgress(pageText)).toEqual({
+        current: 1,
+        total: 1,
+        label: "V6",
+        branch: null,
+        allLanded: true,
+      });
+    },
+  );
+
+  // Whole-leading-word match, not startsWith: "Landing" shares a prefix with
+  // "Landed" character-wise but is a different word and must not match.
+  test("does not treat 'Landing soon' as terminal (whole-word match, not startsWith)", () => {
+    const pageText = [
+      "## Landing plan",
+      "",
+      "| Slice | Scope | Status |",
+      "| ----- | ----- | ------ |",
+      "| V6 slice 1 | first slice | Landing soon |",
+    ].join("\n");
+
+    expect(parseLandingPlanProgress(pageText)).toEqual({
+      current: 1,
+      total: 1,
+      label: "V6",
+      branch: null,
+      allLanded: false,
+    });
+  });
+
+  // Leading markdown emphasis markers (**bold**, _italic_) are stripped
+  // before the leading-word match, matching docs/ROADMAP.md's Status column
+  // convention -- a bold "Landed"/"Shipped" cell must not silently read as
+  // still in flight.
+  test.each(["**Landed**", "_Shipped_ (PR #941)"])(
+    "treats emphasized status %s as terminal (leading */_ markers stripped)",
+    (status) => {
+      const pageText = [
+        "## Landing plan",
+        "",
+        "| Slice | Scope | Status |",
+        "| ----- | ----- | ------ |",
+        `| V6 slice 1 | first slice | ${status} |`,
+      ].join("\n");
+
+      expect(parseLandingPlanProgress(pageText)).toEqual({
+        current: 1,
+        total: 1,
+        label: "V6",
+        branch: null,
+        allLanded: true,
+      });
+    },
+  );
+
+  // Confirms the emphasis-stripping doesn't accidentally widen the match to
+  // every bold cell -- a non-terminal word under the same markers must still
+  // read as in flight.
+  test("does not treat a bold non-terminal status as terminal (emphasis-stripping isn't a catch-all)", () => {
+    const pageText = [
+      "## Landing plan",
+      "",
+      "| Slice | Scope | Status |",
+      "| ----- | ----- | ------ |",
+      "| V6 slice 1 | first slice | **In progress** |",
+    ].join("\n");
+
+    expect(parseLandingPlanProgress(pageText)).toEqual({
+      current: 1,
+      total: 1,
+      label: "V6",
+      branch: null,
+      allLanded: false,
+    });
+  });
 
   // Real fixture: docs/reference/core/agent.md's own Landing plan table,
   // where every row is Landed -- current === total (fully landed), proven
@@ -1306,6 +1404,7 @@ describe("parseLandingPlanProgress", () => {
       current: 4,
       total: 4,
       label: "V7",
+      branch: null,
       allLanded: true,
     });
   });
@@ -1326,6 +1425,213 @@ describe("parseLandingPlanProgress", () => {
       current: 2,
       total: 2,
       label: null,
+      branch: null,
+      allLanded: false,
+    });
+  });
+
+  // The table's current row is row 3, not row 1 -- proving the Branch value
+  // is read from the *current* row, not always the first data row.
+  test("reads the current row's Branch column value, not the first row's", () => {
+    const pageText = [
+      "## Landing plan",
+      "",
+      "| Slice | Scope | Status | Branch |",
+      "| ----- | ----- | ------ | ------ |",
+      "| V6 slice 1 | first slice | Landed | feat/v6-1 |",
+      "| V6 slice 2 | second slice | Landed | feat/v6-2 |",
+      "| V6 slice 3 | third slice | In progress | feat/v6-3 |",
+    ].join("\n");
+
+    expect(parseLandingPlanProgress(pageText)).toEqual({
+      current: 3,
+      total: 3,
+      label: "V6",
+      branch: "feat/v6-3",
+      allLanded: false,
+    });
+  });
+
+  // normalizeBranchCell strips surrounding backticks before returning the
+  // ref name verbatim.
+  test("strips surrounding backticks from a backticked Branch cell", () => {
+    const pageText = [
+      "## Landing plan",
+      "",
+      "| Slice | Scope | Status | Branch |",
+      "| ----- | ----- | ------ | ------ |",
+      "| V6 slice 1 | first slice | In progress | `feat/x` |",
+    ].join("\n");
+
+    expect(parseLandingPlanProgress(pageText)).toEqual({
+      current: 1,
+      total: 1,
+      label: "V6",
+      branch: "feat/x",
+      allLanded: false,
+    });
+  });
+
+  test.each(["—", "-", "n/a", "N/A", "tbd", "TBD", ""])(
+    "normalizes placeholder Branch cell %j to branch: null",
+    (cell) => {
+      const pageText = [
+        "## Landing plan",
+        "",
+        "| Slice | Scope | Status | Branch |",
+        "| ----- | ----- | ------ | ------ |",
+        `| V6 slice 1 | first slice | In progress | ${cell} |`,
+      ].join("\n");
+
+      expect(parseLandingPlanProgress(pageText)).toEqual({
+        current: 1,
+        total: 1,
+        label: "V6",
+        branch: null,
+        allLanded: false,
+      });
+    },
+  );
+
+  // A prose cell (not a ref name at all) degrades to null rather than being
+  // handed to a caller that interpolates it into a shell command.
+  test("normalizes a prose Branch cell to branch: null", () => {
+    const pageText = [
+      "## Landing plan",
+      "",
+      "| Slice | Scope | Status | Branch |",
+      "| ----- | ----- | ------ | ------ |",
+      "| V6 slice 1 | first slice | In progress | same as slice 2 |",
+    ].join("\n");
+
+    expect(parseLandingPlanProgress(pageText)).toEqual({
+      current: 1,
+      total: 1,
+      label: "V6",
+      branch: null,
+      allLanded: false,
+    });
+  });
+
+  // A cell containing a shell metacharacter (or whitespace, which the
+  // conservative ref-name regex also rejects) degrades to null -- this value
+  // can end up interpolated into `pnpm worktree:new`/`git switch`.
+  test("normalizes a Branch cell containing a shell metacharacter to branch: null", () => {
+    const pageText = [
+      "## Landing plan",
+      "",
+      "| Slice | Scope | Status | Branch |",
+      "| ----- | ----- | ------ | ------ |",
+      "| V6 slice 1 | first slice | In progress | feat/x; rm -rf / |",
+    ].join("\n");
+
+    expect(parseLandingPlanProgress(pageText)).toEqual({
+      current: 1,
+      total: 1,
+      label: "V6",
+      branch: null,
+      allLanded: false,
+    });
+  });
+
+  // These three cells all pass BRANCH_CELL_RE on their own (it permits `.`
+  // and `/` anywhere in the body) -- rejection depends entirely on the
+  // explicit `..`/trailing-`/`/trailing-`.lock` checks normalizeBranchCell
+  // runs after the regex.
+  test.each(["feat/x..", "feat/x/", "refs/heads/x.lock"])(
+    "normalizes Branch cell %j to branch: null (rejected after the regex, not by it)",
+    (cell) => {
+      const pageText = [
+        "## Landing plan",
+        "",
+        "| Slice | Branch | Scope | Status |",
+        "| ----- | ------ | ----- | ------ |",
+        `| V6 slice 1 | ${cell} | first slice | In progress |`,
+      ].join("\n");
+
+      expect(parseLandingPlanProgress(pageText)).toEqual({
+        current: 1,
+        total: 1,
+        label: "V6",
+        branch: null,
+        allLanded: false,
+      });
+    },
+  );
+
+  // Real fixture (docs/reference/core/procedure.md's Landing plan table):
+  // every row's Status cell is "Landed (PR #NNN)" (a trailing PR citation),
+  // which the exact-match parser used to treat as non-terminal despite the
+  // whole table being fully shipped. This is the regression the leading-word
+  // match fixes -- allLanded must now come back true. The Slice column here
+  // is digit-leading ("1 — contract + conditions"), so label stays null
+  // (deriveSliceLabel requires a leading letter), matching the real page.
+  test("real fixture (docs/reference/core/procedure.md): PR-citation statuses still resolve allLanded true", () => {
+    const pageText = [
+      "## Landing plan",
+      "",
+      "| Slice | Contents | Status |",
+      "| ----- | -------- | ------ |",
+      "| 1 — contract + conditions | ... | Landed (PR #580) |",
+      "| 2a — builder + validation | ... | Landed (PR #582) |",
+      "| 2b — build-time hardening | ... | Landed (PR #583) |",
+      "| 3a — the core run loop | ... | Landed (PR #585) |",
+      "| 3b — opt-in tracing | ... | Landed (PR #586) |",
+      "| 3c — opt-in no-progress guard | ... | Landed (PR #587) |",
+      "| 4 — infra touch-ups | ... | Landed (folded into 1/2a/3a/3b/3c, each as first needed) |",
+    ].join("\n");
+
+    expect(parseLandingPlanProgress(pageText)).toEqual({
+      current: 7,
+      total: 7,
+      label: null,
+      branch: null,
+      allLanded: true,
+    });
+  });
+
+  // The actual regression this fixes: a table WITH a Branch column where
+  // every row is Landed. The last row's Branch cell holds a real,
+  // non-placeholder value (feat/b), proving branch: null here comes from
+  // the allLanded suppression, not from the cell being empty/placeholder --
+  // that already shipped branch has no next slice to hand off to.
+  test("suppresses branch to null on a fully-landed table even when the Branch column has a real value", () => {
+    const pageText = [
+      "## Landing plan",
+      "",
+      "| Slice | Scope | Status | Branch |",
+      "| ----- | ----- | ------ | ------ |",
+      "| V6 slice 1 | first slice | Landed | feat/a |",
+      "| V6 slice 2 | second slice | Landed | feat/b |",
+    ].join("\n");
+
+    expect(parseLandingPlanProgress(pageText)).toEqual({
+      current: 2,
+      total: 2,
+      label: "V6",
+      branch: null,
+      allLanded: true,
+    });
+  });
+
+  // Regression guard: a table WITH a Branch column that is NOT fully landed
+  // must still return the current (first open) row's branch -- the
+  // allLanded fix must not suppress the in-flight case too.
+  test("still returns the current row's branch when a Branch-column table is not fully landed", () => {
+    const pageText = [
+      "## Landing plan",
+      "",
+      "| Slice | Scope | Status | Branch |",
+      "| ----- | ----- | ------ | ------ |",
+      "| V6 slice 1 | first slice | Landed | feat/a |",
+      "| V6 slice 2 | second slice | In progress | feat/b |",
+    ].join("\n");
+
+    expect(parseLandingPlanProgress(pageText)).toEqual({
+      current: 2,
+      total: 2,
+      label: "V6",
+      branch: "feat/b",
       allLanded: false,
     });
   });
@@ -1389,11 +1695,13 @@ describe("resolveSliceProgress", () => {
         : null;
 
     // Literal mode carries no per-row status data, so allLanded is derived
-    // from current >= total here: 2 >= 4 is false.
+    // from current >= total here: 2 >= 4 is false. Literal mode has no
+    // table to read a Branch column from, so branch is always null.
     expect(resolveSliceProgress(readFile, startDir, "feat/x")).toEqual({
       current: 2,
       total: 4,
       label: "V9",
+      branch: null,
       allLanded: false,
     });
   });
@@ -1418,11 +1726,42 @@ describe("resolveSliceProgress", () => {
       return null;
     };
 
-    // Row 2 is "In progress" -> allLanded must be false.
+    // Row 2 is "In progress" -> allLanded must be false. This table has no
+    // Branch column, so branch is null.
     expect(resolveSliceProgress(readFile, startDir, "feat/x")).toEqual({
       current: 2,
       total: 2,
       label: "V6",
+      branch: null,
+      allLanded: false,
+    });
+  });
+
+  test("resolves a matching derived-mode entry's Branch column value through the referenced page", () => {
+    const pageText = [
+      "## Landing plan",
+      "",
+      "| Slice | Scope | Status | Branch |",
+      "| ----- | ----- | ------ | ------ |",
+      "| V6 slice 1 | first slice | Landed | feat/v6-1 |",
+      "| V6 slice 2 | second slice | In progress | feat/v6-2 |",
+    ].join("\n");
+    const readFile = (path: string): string | null => {
+      if (path === join(startDir, "tmp/slice-progress.json")) {
+        return JSON.stringify({
+          page: "docs/reference/core/x.md",
+          branch: "feat/x",
+        });
+      }
+      if (path === join(startDir, "docs/reference/core/x.md")) return pageText;
+      return null;
+    };
+
+    expect(resolveSliceProgress(readFile, startDir, "feat/x")).toEqual({
+      current: 2,
+      total: 2,
+      label: "V6",
+      branch: "feat/v6-2",
       allLanded: false,
     });
   });
@@ -1482,6 +1821,7 @@ describe("resolveSliceProgress", () => {
       current: 2,
       total: 4,
       label: "V9",
+      branch: null,
       allLanded: false,
     });
   });
@@ -1526,6 +1866,7 @@ describe("resolveSliceProgress", () => {
       current: 2,
       total: 2,
       label: "V6",
+      branch: null,
       allLanded: false,
     });
   });
@@ -1545,6 +1886,7 @@ describe("resolveSliceProgress", () => {
       current: 2,
       total: 4,
       label: "V9",
+      branch: null,
       allLanded: false,
     });
   });
