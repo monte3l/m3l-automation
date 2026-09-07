@@ -1334,6 +1334,52 @@ describe("parseLandingPlanProgress", () => {
     });
   });
 
+  // Leading markdown emphasis markers (**bold**, _italic_) are stripped
+  // before the leading-word match, matching docs/ROADMAP.md's Status column
+  // convention -- a bold "Landed"/"Shipped" cell must not silently read as
+  // still in flight.
+  test.each(["**Landed**", "_Shipped_ (PR #941)"])(
+    "treats emphasized status %s as terminal (leading */_ markers stripped)",
+    (status) => {
+      const pageText = [
+        "## Landing plan",
+        "",
+        "| Slice | Scope | Status |",
+        "| ----- | ----- | ------ |",
+        `| V6 slice 1 | first slice | ${status} |`,
+      ].join("\n");
+
+      expect(parseLandingPlanProgress(pageText)).toEqual({
+        current: 1,
+        total: 1,
+        label: "V6",
+        branch: null,
+        allLanded: true,
+      });
+    },
+  );
+
+  // Confirms the emphasis-stripping doesn't accidentally widen the match to
+  // every bold cell -- a non-terminal word under the same markers must still
+  // read as in flight.
+  test("does not treat a bold non-terminal status as terminal (emphasis-stripping isn't a catch-all)", () => {
+    const pageText = [
+      "## Landing plan",
+      "",
+      "| Slice | Scope | Status |",
+      "| ----- | ----- | ------ |",
+      "| V6 slice 1 | first slice | **In progress** |",
+    ].join("\n");
+
+    expect(parseLandingPlanProgress(pageText)).toEqual({
+      current: 1,
+      total: 1,
+      label: "V6",
+      branch: null,
+      allLanded: false,
+    });
+  });
+
   // Real fixture: docs/reference/core/agent.md's own Landing plan table,
   // where every row is Landed -- current === total (fully landed), proven
   // against the actual committed table rather than a simplified stand-in.
@@ -1487,6 +1533,31 @@ describe("parseLandingPlanProgress", () => {
       allLanded: false,
     });
   });
+
+  // These three cells all pass BRANCH_CELL_RE on their own (it permits `.`
+  // and `/` anywhere in the body) -- rejection depends entirely on the
+  // explicit `..`/trailing-`/`/trailing-`.lock` checks normalizeBranchCell
+  // runs after the regex.
+  test.each(["feat/x..", "feat/x/", "refs/heads/x.lock"])(
+    "normalizes Branch cell %j to branch: null (rejected after the regex, not by it)",
+    (cell) => {
+      const pageText = [
+        "## Landing plan",
+        "",
+        "| Slice | Branch | Scope | Status |",
+        "| ----- | ------ | ----- | ------ |",
+        `| V6 slice 1 | ${cell} | first slice | In progress |`,
+      ].join("\n");
+
+      expect(parseLandingPlanProgress(pageText)).toEqual({
+        current: 1,
+        total: 1,
+        label: "V6",
+        branch: null,
+        allLanded: false,
+      });
+    },
+  );
 
   // Real fixture (docs/reference/core/procedure.md's Landing plan table):
   // every row's Status cell is "Landed (PR #NNN)" (a trailing PR citation),

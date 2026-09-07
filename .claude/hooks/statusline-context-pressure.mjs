@@ -390,21 +390,28 @@ const LANDING_PLAN_HEADING_RE = /^##\s+Landing plan\s*$/m;
 /** Status-cell leading words (case-insensitive) that mark a landing-plan
  * row as landed rather than in-flight. Matched against the cell's leading
  * word, not the whole cell — see {@link isTerminalLandingPlanStatus} — so a
- * trailing PR citation like `Landed (PR #580)` still counts as terminal. */
-const TERMINAL_LANDING_PLAN_STATUSES = new Set(["landed", "shipped", "✅"]);
+ * trailing PR citation like `Landed (PR #580)` still counts as terminal.
+ * `✅` is handled by its own `startsWith` check below, not through this
+ * Set — `/^([A-Za-z]+)/` can never capture an emoji, so a `"✅"` entry here
+ * would be unreachable dead vocabulary. */
+const TERMINAL_LANDING_PLAN_STATUSES = new Set(["landed", "shipped"]);
 
 /**
  * True when a landing-plan Status cell reads as terminal (landed/shipped),
  * matched by leading word rather than the whole cell — `Landed (PR #580)`
  * and `Shipped — #941` both count, `Landing` and `To Do` don't (the former
  * fails the exact-word check even though it shares a prefix character-wise;
- * this is a whole-word match on the first token, not `startsWith`).
+ * this is a whole-word match on the first token, not `startsWith`). Leading
+ * markdown emphasis markers (`**Landed**`, `_Shipped_`) are stripped first —
+ * a bold status cell is an established convention elsewhere in this repo's
+ * status tracking (e.g. `docs/ROADMAP.md`'s Status column), so it must not
+ * silently read as still in flight.
  *
  * @param {string} cell
  * @returns {boolean}
  */
 function isTerminalLandingPlanStatus(cell) {
-  const trimmed = (cell ?? "").trim();
+  const trimmed = (cell ?? "").trim().replace(/^[*_]+/, "");
   if (trimmed.startsWith("✅")) return true;
   const match = /^([A-Za-z]+)/.exec(trimmed);
   return (
