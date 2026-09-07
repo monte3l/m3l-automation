@@ -589,7 +589,14 @@ export function evaluateSkillFired(skillName, invokedSkills, evalCase) {
  */
 export function resolveMinPassRate({ filterSkill, envValue }) {
   if (filterSkill !== undefined) return 1;
-  return envValue ? Number(envValue) : MIN_PASS_RATE;
+  // Trim before the truthiness test, so a set-but-blank value reads as unset
+  // rather than as an override. `" "` is truthy and `Number(" ")` is 0, which
+  // the range check would accept as a VALID threshold of zero — silently
+  // switching the collapse detector off, the one failure mode this gate must
+  // not have. Blank now keeps the default floor; genuine garbage ("abc")
+  // still becomes NaN and fails closed as `invalid-threshold`.
+  const raw = envValue?.trim();
+  return raw ? Number(raw) : MIN_PASS_RATE;
 }
 
 /**
@@ -718,7 +725,13 @@ export function gateFailureMessage(outcome) {
     case "empty-suite":
       return "no eval case ran at all — the corpus or its discovery path is broken.";
     case "invalid-threshold":
-      return `M3L_EVAL_MIN_PASS_RATE must be a fraction in [0, 1]; got "${process.env.M3L_EVAL_MIN_PASS_RATE}".`;
+      // Derived from the outcome, not from process.env: every other branch
+      // is, and reading the env here made an exported pure function print
+      // `got "undefined"` for any caller that passed the bad value directly.
+      return (
+        `the pass-rate threshold must be a fraction in [0, 1]; got ` +
+        `${String(minPassRate)} (set via M3L_EVAL_MIN_PASS_RATE).`
+      );
     case "errored":
       return (
         `${errored} of ${totalCases} case(s) produced no verdict at all ` +
@@ -1051,7 +1064,12 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
           unmet: result.unmet_expectations,
           reasoning: result.reasoning,
         });
-        reporter.error(
+        // warn, not error: the floor now TOLERATES some verdict failures, so
+        // a passing run must not publish ~30 ::error:: annotations or leave
+        // `ok: false` sitting next to `met: true` in the --json payload.
+        // reporter.error stays for the error-class arm above and for the gate
+        // message itself, which are the things that actually fail a run.
+        reporter.warn(
           `${skillName}#${evalCase.id}: FAIL — ${result.unmet_expectations.join("; ") || result.reasoning}`,
         );
       }

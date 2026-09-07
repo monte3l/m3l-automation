@@ -1248,6 +1248,45 @@ describe("gateFailureMessage", () => {
     ).toBe("3 of 5 case(s) failed; every case must pass.");
   });
 
+  test("names the offending threshold from the outcome, not from the env", () => {
+    // Regression guard: this branch used to read
+    // process.env.M3L_EVAL_MIN_PASS_RATE, so a caller passing the bad value
+    // directly got `got "undefined"` while the outcome held the real one.
+    // Set to a sentinel rather than deleted: if the branch still read the
+    // env, the message would name 0.42 instead of the outcome's own value.
+    const previous = process.env["M3L_EVAL_MIN_PASS_RATE"];
+    process.env["M3L_EVAL_MIN_PASS_RATE"] = "0.42";
+    try {
+      expect(
+        gateFailureMessage(
+          evaluateSuiteOutcome({
+            totalCases: 92,
+            passed: 92,
+            minPassRate: 1.5,
+          }),
+        ),
+      ).toBe(
+        "the pass-rate threshold must be a fraction in [0, 1]; got 1.5 " +
+          "(set via M3L_EVAL_MIN_PASS_RATE).",
+      );
+      expect(
+        gateFailureMessage(
+          evaluateSuiteOutcome({
+            totalCases: 92,
+            passed: 92,
+            minPassRate: Number("abc"),
+          }),
+        ),
+      ).toBe(
+        "the pass-rate threshold must be a fraction in [0, 1]; got NaN " +
+          "(set via M3L_EVAL_MIN_PASS_RATE).",
+      );
+    } finally {
+      if (previous === undefined) delete process.env["M3L_EVAL_MIN_PASS_RATE"];
+      else process.env["M3L_EVAL_MIN_PASS_RATE"] = previous;
+    }
+  });
+
   test("returns the empty string for a met outcome", () => {
     expect(
       gateFailureMessage(evaluateSuiteOutcome({ totalCases: 92, passed: 62 })),
@@ -1294,5 +1333,41 @@ describe("resolveMinPassRate", () => {
         minPassRate: resolved,
       }).reason,
     ).toBe("invalid-threshold");
+  });
+});
+
+describe("resolveMinPassRate blank-value handling", () => {
+  test.each([
+    { label: "a single space", envValue: " " },
+    { label: "a tab", envValue: "\t" },
+    { label: "several spaces", envValue: "   " },
+    { label: "a newline", envValue: "\n" },
+    { label: "an empty string", envValue: "" },
+  ])(
+    "never disables the floor for $label — the one thing a gate must not do",
+    ({ envValue }) => {
+      // " " is truthy and Number(" ") === 0, which the range check accepts as
+      // a VALID threshold of zero. Before trimming, that silently switched
+      // the collapse detector off.
+      const resolved = resolveMinPassRate({ envValue });
+      expect(resolved).toBe(MIN_PASS_RATE);
+      expect(resolved).not.toBe(0);
+      expect(
+        evaluateSuiteOutcome({
+          totalCases: 92,
+          passed: 0,
+          minPassRate: resolved,
+        }).met,
+      ).toBe(false);
+    },
+  );
+
+  test("still honours a padded but real threshold", () => {
+    expect(resolveMinPassRate({ envValue: " 0.8 " })).toBe(0.8);
+  });
+
+  test("still fails closed on genuine garbage", () => {
+    expect(Number.isNaN(resolveMinPassRate({ envValue: "abc" }))).toBe(true);
+    expect(Number.isNaN(resolveMinPassRate({ envValue: " abc " }))).toBe(true);
   });
 });

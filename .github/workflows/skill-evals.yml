@@ -7,9 +7,11 @@
 # stale unnoticed.
 #
 # GATING since 2026-09-07 — but as a COLLAPSE DETECTOR, not a corpus gate. The
-# job fails only when the suite-wide pass rate falls below MIN_PASS_RATE (0.60)
-# in bin/run-skill-evals.mjs, when a case produces no verdict at all, or when
-# no case runs. Calibrated from all 15 CI runs on the current 23-skill /
+# job fails when the suite-wide pass rate falls below MIN_PASS_RATE (0.60) in
+# bin/run-skill-evals.mjs, when a case produces no verdict at all, when no case
+# runs, or when M3L_EVAL_MIN_PASS_RATE is set to something outside [0, 1] (it
+# fails closed rather than guessing). With continue-on-error gone, a step
+# failure of any other kind now fails the job too. Calibrated from all 15 CI runs on the current 23-skill /
 # 92-case / 432-criterion corpus (2026-09-05 to 2026-09-07): min 58/92 = 63.0%
 # (run 34064682457), max 69/92 = 75.0% (run 34028636084), mean ~68.6%. At 0.60
 # a 92-case run needs 56 passes, two below that minimum — thin headroom on a
