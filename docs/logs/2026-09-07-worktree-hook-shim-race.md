@@ -30,7 +30,7 @@ share `.git/hooks`, racing on concurrent `lefthook install`.
   the fail-open symptom on sight.
 - `docs/ROADMAP.md`: H9 flipped to `Done` with the corrected premise recorded
   in the Notes cell; new H14 row added, `To Do`.
-- Shipped as PR #NNNN (`fix/worktree-hook-shim-race`).
+- Shipped as PR #1090 (`fix/worktree-hook-shim-race`).
 
 Skills used: `starting-work` (decision gate: linked worktree,
 `fix/worktree-hook-shim-race`, PR required).
