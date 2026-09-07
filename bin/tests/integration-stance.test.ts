@@ -364,6 +364,17 @@ describe("deriveIntegrationStanceIssues — live m3l-stance skill files (ADR-009
         "utf8",
       ),
     }));
+    // Guard against the gate going vacuous: deriveIntegrationStanceIssues
+    // skips a skill entirely (`continue`, no issue pushed either way) when
+    // its body has no usage match for a descriptor's mechanism. Without this,
+    // the assertions below would stay green even if `mcp__m3l__` usage were
+    // later removed from one of these three bodies — proving nothing about
+    // the stance-note gate actually having fired for it. Confirm each body
+    // still exercises the m3l descriptor's usagePattern before trusting the
+    // "no issues" result that follows.
+    for (const skill of skills) {
+      expect(skill.content).toMatch(/mcp__m3l__/);
+    }
     const result = deriveIntegrationStanceIssues(skills);
     expect(result.missingStanceNote).toEqual([]);
     expect(result.mechanismMismatches).toEqual([]);
