@@ -13,7 +13,7 @@ since the file's budget was first enforced (ADR-0078), but that note sits
 inside an HTML comment stripped before injection, so neither Claude nor a
 contributor browsing `docs/` could ever read it. This page is that note,
 completed to six tiers and made visible.
-([Decision note 0003](../decision-notes/0003-instruction-tier-placement.md)
+([Decision note 0005](../decision-notes/0005-instruction-tier-placement.md)
 records why a note rather than an ADR.)
 
 ## The six tiers
@@ -111,5 +111,5 @@ instead of restating its own copy of the tier list.
   split that agent prompts encode
 - [Hooks reference](./hooks-reference.md) — the full wired-hook inventory
 - [Skills catalog](./skills-catalog.md) — naming convention and usage tiers
-- [Decision note 0003](../decision-notes/0003-instruction-tier-placement.md) —
+- [Decision note 0005](../decision-notes/0005-instruction-tier-placement.md) —
   the record of this policy as a decision
