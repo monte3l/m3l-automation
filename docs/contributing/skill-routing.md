@@ -13,6 +13,12 @@ the terminal — run `/harness-guide <what you're trying to do>`. It reads this
 page and answers directly. See [Ask instead of look
 up](#ask-instead-of-look-up) below.
 
+This page's authoring counterpart is
+[`instruction-authoring.md`](./instruction-authoring.md): where _this_ page
+answers "which skill handles X," that one answers "where does a _new_
+instruction go" — CLAUDE.md, a rule, an agent, a skill, a hook, or a
+contributing doc.
+
 ## Slash command or plain English — does it matter?
 
 Both work, but they are not the same mechanism underneath, and the
