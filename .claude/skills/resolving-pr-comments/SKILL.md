@@ -36,6 +36,14 @@ zero time on mechanical review-driven edits.
   (no spoke holds an `mcp__*` grant) and unavailable in headless CI, but this
   skill is invoked directly by the hub, never delegated (see ADR-0030's
   2026-07-27 amendment).
+- This is the **post-push** counterpart to `creating-prs`' pre-push review step, not a
+  competing one. That step already fanned out `code-reviewer`,
+  `spec-conformance-reviewer`, and any conditional spokes over this same branch before
+  the PR existed; this one runs after the push, on `claude-pr-review.yml`'s verdict
+  against the diff GitHub can actually see. A finding here is new information — a
+  different reviewer reading a different artifact — not a re-litigation of what that
+  step already settled, so judge it on its own merits rather than dismissing it as
+  already-reviewed.
 
 ---
 
