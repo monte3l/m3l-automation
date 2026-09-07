@@ -86,10 +86,13 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   for (const filename of planFiles) {
     const relPath = `${PLAN_DIR}/${filename}`;
     let text;
+    /** @type {string | null} */
+    let readError = null;
     try {
       text = readFileSync(join(planDir, filename), "utf8");
-    } catch {
+    } catch (cause) {
       text = null;
+      readError = cause instanceof Error ? cause.message : String(cause);
     }
 
     const result = checkLandingPlanDoc(text);
@@ -112,7 +115,10 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     if (result.verdict === "missing-page") {
       problems.push({
         kind: "missing-page",
-        message: `${relPath} could not be read.`,
+        message:
+          readError === null
+            ? `${relPath} could not be read.`
+            : `${relPath} could not be read: ${readError}`,
       });
     } else if (result.verdict === "missing-heading") {
       problems.push({
