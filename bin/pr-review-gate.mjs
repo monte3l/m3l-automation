@@ -15,6 +15,7 @@
 //   node bin/pr-review-gate.mjs parse-should-fix        # stdin (comment body) -> stdout: raw Should-fix section, or empty
 //   node bin/pr-review-gate.mjs count-should-fix        # stdin (comment body) -> stdout: finding count (0 if none)
 //   node bin/pr-review-gate.mjs has-should-fix-ack      # stdin (commit log) -> stdout: true|false
+//   node bin/pr-review-gate.mjs select-should-fix-comment # stdin (JSON array of comment bodies) -> stdout: selected body, or empty
 //   node bin/pr-review-gate.mjs count-review-comments   # stdin (JSON array of comment bodies) -> stdout: count
 //   node bin/pr-review-gate.mjs workflow-gate-status    # stdin (newline-separated reviewable files) -> stdout: 2 lines
 //   node bin/pr-review-gate.mjs build-delta-patch       # stdin (compare-API JSON) -> stdout: synthetic unified diff, exit 1 if untrustworthy
@@ -38,6 +39,7 @@ import {
   parseShouldFixSection,
   parseVerdict,
   resolveVerdict,
+  selectShouldFixComment,
 } from "./lib/pr-review-gate.mjs";
 
 /**
@@ -91,6 +93,26 @@ async function main(argv) {
   if (mode === "has-should-fix-ack") {
     const acknowledged = hasShouldFixAcknowledgment(await readStdin());
     process.stdout.write(`${acknowledged}\n`);
+    return 0;
+  }
+
+  if (mode === "select-should-fix-comment") {
+    let bodies;
+    try {
+      bodies = JSON.parse(await readStdin());
+    } catch (error) {
+      process.stderr.write(
+        `pr-review-gate: invalid JSON on stdin: ${String(error)}\n`,
+      );
+      return 1;
+    }
+    if (!Array.isArray(bodies)) {
+      process.stderr.write(
+        "pr-review-gate: select-should-fix-comment expects a JSON array of strings on stdin\n",
+      );
+      return 1;
+    }
+    process.stdout.write(`${selectShouldFixComment(bodies) ?? ""}`);
     return 0;
   }
 
@@ -181,8 +203,9 @@ async function main(argv) {
   process.stderr.write(
     `pr-review-gate: unknown mode ${mode ?? "(none)"} — expected ` +
       "parse-verdict, parse-sha, parse-must-fix, parse-should-fix, " +
-      "count-should-fix, has-should-fix-ack, count-review-comments, " +
-      "workflow-gate-status, build-delta-patch, or resolve-verdict\n",
+      "count-should-fix, has-should-fix-ack, select-should-fix-comment, " +
+      "count-review-comments, workflow-gate-status, build-delta-patch, " +
+      "or resolve-verdict\n",
   );
   return 1;
 }
