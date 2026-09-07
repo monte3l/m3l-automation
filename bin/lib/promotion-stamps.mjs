@@ -100,6 +100,32 @@ export function resolveScanGlobs(globs, fs) {
 }
 
 /**
+ * A wildcard-free {@link SCAN_GLOBS} entry (e.g. `CLAUDE.md`) that doesn't
+ * exist. {@link resolveScanGlobs} silently drops any path that fails
+ * `exists()`, which is correct for a wildcard glob matching zero files (an
+ * empty directory is not an error) but wrong for a bare literal: if that
+ * file is ever renamed, the reverse arm would silently stop scanning it —
+ * the gate would still exit 0 despite losing coverage of exactly the
+ * rename-induced rot it exists to catch. A glob containing `*` is never
+ * flagged here; only a fully literal entry is.
+ *
+ * @param {string[]} globs one of {@link SCAN_GLOBS}'s two shapes per entry
+ * @param {(path: string) => boolean} exists
+ * @returns {{ message: string, file: string }[]}
+ */
+export function checkMissingLiteralGlobs(globs, exists) {
+  return globs
+    .filter((glob) => !glob.includes("*") && !exists(glob))
+    .map((glob) => ({
+      message:
+        `SCAN_GLOBS lists "${glob}" as a reverse-arm scan root, but it does ` +
+        `not exist — the reverse arm has silently stopped scanning it. If it ` +
+        `was renamed, update the entry in bin/lib/promotion-stamps.mjs.`,
+      file: "bin/lib/promotion-stamps.mjs",
+    }));
+}
+
+/**
  * Historical `promoted →` targets that no longer exist because the file was
  * renamed after the stamp landed, mapped to where the content lives now.
  * Landed work logs are immutable (docs/logs/README.md), so a rename is
@@ -207,7 +233,7 @@ export function collectStamps(logs) {
  *
  * @param {{ log: string, target: string, line: number }[]} stamps
  * @param {(path: string) => boolean} exists
- * @returns {{ message: string, file: string }[]}
+ * @returns {{ message: string, file: string, line: number }[]}
  */
 export function checkDeadTargets(stamps, exists) {
   return stamps
@@ -221,6 +247,7 @@ export function checkDeadTargets(stamps, exists) {
         `was renamed, add it to RENAMED_TARGETS in bin/lib/promotion-stamps.mjs ` +
         `rather than editing the log (docs/logs/ is immutable history).`,
       file: `${LOGS_DIR}/${stamp.log}`,
+      line: stamp.line,
     }));
 }
 
@@ -289,7 +316,7 @@ export function collectCitations(scannedFiles) {
  *
  * @param {{ path: string, logFile: string, line: number }[]} citations
  * @param {Set<string>} existingLogFiles filenames present in docs/logs/
- * @returns {{ message: string, file: string }[]}
+ * @returns {{ message: string, file: string, line: number }[]}
  */
 export function checkDanglingCitations(citations, existingLogFiles) {
   return citations
@@ -299,29 +326,33 @@ export function checkDanglingCitations(citations, existingLogFiles) {
         `${citation.path}:${citation.line} cites ${LOGS_DIR}/${citation.logFile}, ` +
         `which does not exist in ${LOGS_DIR}/.`,
       file: citation.path,
+      line: citation.line,
     }));
 }
 
 /**
- * All three checks composed, over already-parsed stamps and citations.
+ * All four checks composed, over already-parsed stamps and citations.
  *
  * @param {{
  *   stamps: { log: string, target: string, line: number }[],
  *   citations: { path: string, logFile: string, line: number }[],
  *   exists: (path: string) => boolean,
  *   existingLogFiles: Set<string>,
- * }} input
- * @returns {{ message: string, file: string }[]}
+ *   scanGlobs?: string[],
+ * }} input `scanGlobs` defaults to {@link SCAN_GLOBS} — override only in tests
+ * @returns {{ message: string, file: string, line?: number }[]}
  */
 export function checkPromotionStamps({
   stamps,
   citations,
   exists,
   existingLogFiles,
+  scanGlobs = SCAN_GLOBS,
 }) {
   return [
     ...checkDeadTargets(stamps, exists),
     ...checkStaleAliases(exists),
     ...checkDanglingCitations(citations, existingLogFiles),
+    ...checkMissingLiteralGlobs(scanGlobs, exists),
   ];
 }

@@ -83,7 +83,7 @@ const findings = checkPromotionStamps({
 });
 
 for (const finding of findings) {
-  reporter.error(finding.message, { file: finding.file });
+  reporter.error(finding.message, { file: finding.file, line: finding.line });
 }
 
 if (findings.length > 0) {

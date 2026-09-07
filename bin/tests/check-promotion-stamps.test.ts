@@ -17,6 +17,7 @@ import {
   SCAN_GLOBS,
   checkDanglingCitations,
   checkDeadTargets,
+  checkMissingLiteralGlobs,
   checkPromotionStamps,
   checkStaleAliases,
   collectCitations,
@@ -39,6 +40,19 @@ interface Stamp {
 interface Finding {
   message: string;
   file: string;
+  line?: number;
+}
+
+/**
+ * checkDeadTargets and checkDanglingCitations always attach a `line` —
+ * stricter than the shared `Finding` shape, which has to accommodate
+ * checkPromotionStamps's composed result where `line` is only present for
+ * some of the underlying checks.
+ */
+interface FindingWithLine {
+  message: string;
+  file: string;
+  line: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -195,6 +209,46 @@ describe("resolveScanGlobs", () => {
 });
 
 // ---------------------------------------------------------------------------
+// checkMissingLiteralGlobs
+// ---------------------------------------------------------------------------
+
+describe("checkMissingLiteralGlobs", () => {
+  test("never flags a glob containing `*`, even when exists returns false for it", () => {
+    expect(
+      checkMissingLiteralGlobs([".claude/rules/*.md"], () => false),
+    ).toEqual([]);
+  });
+
+  test("no finding for a wildcard-free glob that exists", () => {
+    expect(checkMissingLiteralGlobs(["CLAUDE.md"], () => true)).toEqual([]);
+  });
+
+  test("reports a wildcard-free glob that does not exist, pointing at bin/lib/promotion-stamps.mjs rather than RENAMED_TARGETS", () => {
+    const findings = checkMissingLiteralGlobs(
+      ["CLAUDE.md"],
+      () => false,
+    ) as Finding[];
+    expect(findings).toHaveLength(1);
+    const finding = findings[0];
+    expect(finding).toBeDefined();
+    expect(finding?.message).toContain("CLAUDE.md");
+    expect(finding?.message).toContain(
+      "update the entry in bin/lib/promotion-stamps.mjs",
+    );
+    // This is checkMissingLiteralGlobs's own remediation, not
+    // checkDeadTargets's RENAMED_TARGETS ledger.
+    expect(finding?.message).not.toContain("RENAMED_TARGETS");
+    expect(finding?.file).toBe("bin/lib/promotion-stamps.mjs");
+  });
+
+  test("return type is { message: string; file: string }[] (no `line` field)", () => {
+    expectTypeOf(checkMissingLiteralGlobs([], () => true)).toEqualTypeOf<
+      { message: string; file: string }[]
+    >();
+  });
+});
+
+// ---------------------------------------------------------------------------
 // parseLogStamps
 // ---------------------------------------------------------------------------
 
@@ -332,6 +386,15 @@ describe("collectStamps", () => {
       { log: "2026-01-02-b.md", target: ".gitignore", line: 1 },
     ]);
   });
+
+  test("returns [] for an empty logs array", () => {
+    expect(collectStamps([])).toEqual([]);
+  });
+
+  test("contributes nothing for a log whose text has no stamps", () => {
+    const logs = [{ file: "2026-01-03-c.md", text: "no stamps in here" }];
+    expect(collectStamps(logs)).toEqual([]);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -365,10 +428,13 @@ describe("checkDeadTargets", () => {
     expect(finding?.message).toContain("2026-01-01-a.md:7");
     expect(finding?.message).toContain("nope.md");
     expect(finding?.file).toBe(`${LOGS_DIR}/2026-01-01-a.md`);
+    expect(finding?.line).toBe(7);
   });
 
-  test("return type is Finding[]", () => {
-    expectTypeOf(checkDeadTargets([], () => true)).toEqualTypeOf<Finding[]>();
+  test("return type is FindingWithLine[]", () => {
+    expectTypeOf(checkDeadTargets([], () => true)).toEqualTypeOf<
+      FindingWithLine[]
+    >();
   });
 });
 
@@ -432,6 +498,17 @@ describe("collectCitations", () => {
       { path: ".claude/rules/tests.md", logFile: "2026-01-01-a.md", line: 1 },
     ]);
   });
+
+  test("returns [] for an empty scannedFiles array", () => {
+    expect(collectCitations([])).toEqual([]);
+  });
+
+  test("contributes nothing for a scanned file with no citations", () => {
+    const scannedFiles = [
+      { path: ".claude/rules/tests.md", text: "no citations in here" },
+    ];
+    expect(collectCitations(scannedFiles)).toEqual([]);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -463,11 +540,12 @@ describe("checkDanglingCitations", () => {
     expect(finding?.message).toContain(".claude/rules/tests.md:4");
     expect(finding?.message).toContain("2020-01-01-nope.md");
     expect(finding?.file).toBe(".claude/rules/tests.md");
+    expect(finding?.line).toBe(4);
   });
 
-  test("return type is Finding[]", () => {
+  test("return type is FindingWithLine[]", () => {
     expectTypeOf(checkDanglingCitations([], new Set())).toEqualTypeOf<
-      Finding[]
+      FindingWithLine[]
     >();
   });
 });
@@ -502,8 +580,10 @@ describe("checkPromotionStamps", () => {
     });
 
     // Dead target (1) + stale aliases (RENAMED_TARGETS.size, since exists()
-    // is false for every path) + dangling citation (1).
-    expect(findings).toHaveLength(2 + RENAMED_TARGETS.size);
+    // is false for every path) + dangling citation (1) + missing literal
+    // glob (1, the default SCAN_GLOBS's sole literal entry "CLAUDE.md",
+    // also absent since exists() is false for every path).
+    expect(findings).toHaveLength(3 + RENAMED_TARGETS.size);
 
     const deadTarget = findings.find((f) => f.message.includes("gone.md"));
     expect(deadTarget).toBeDefined();
@@ -512,6 +592,24 @@ describe("checkPromotionStamps", () => {
       f.message.includes("2020-01-01-nope.md"),
     );
     expect(dangling).toBeDefined();
+
+    const missingGlob = findings.find((f) => f.message.includes("CLAUDE.md"));
+    expect(missingGlob).toBeDefined();
+  });
+
+  test("composes checkMissingLiteralGlobs, using an explicit scanGlobs override", () => {
+    const findings = checkPromotionStamps({
+      stamps: [],
+      citations: [],
+      exists: () => false,
+      existingLogFiles: new Set(),
+      scanGlobs: ["missing-literal.md"],
+    });
+
+    const missingGlob = findings.find((f) =>
+      f.message.includes("missing-literal.md"),
+    );
+    expect(missingGlob).toBeDefined();
   });
 
   test("return type is Finding[]", () => {
