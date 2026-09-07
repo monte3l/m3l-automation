@@ -217,6 +217,15 @@ Once an idea is actually ready to be worked on:
    thresholds bind a slice's tests to the files it ships, so a seam chosen
    before anyone has read the contract can be unbuildable — which is what made
    PR #523's after-the-fact split structurally impossible in the first place.
+   This tracker-row slicing (parent + `X10a`/`X10b` sub-rows) is a filing-time
+   mechanism — it says the item spans several PRs. The actual seam plan is a
+   separate, pickup-time record: a `## Landing plan` heading with a
+   `| Slice | [Branch |] Scope | Status |` table, on the submodule's reference
+   page or — for a non-submodule multi-PR wave — the wave's own live dated
+   `docs/plans/YYYY-MM-DD-<slug>.md` (ADR-0072's 2026-09-07 amendment, issue
+   #998, `pnpm check:landing-plans`). Author that table when you pick the
+   wave up, same as a submodule's seam plan — `starting-work`,
+   `creating-prs`, and `finishing-work` all read it back.
 
 4. **Run `pnpm sync:hub`** (dry-run first to preview, then `-- --apply`,
    maintainer-local — it needs your own `gh` auth; `GITHUB_TOKEN` cannot write
