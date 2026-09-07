@@ -4,6 +4,8 @@ import {
   extractFrontmatterField,
   parseSkillFrontmatter,
   deriveFrontmatterIssues,
+  deriveNameIssues,
+  GRANDFATHERED_NAMES,
   deriveMissingFromCatalog,
   tokenize,
   jaccardSimilarity,
@@ -144,6 +146,125 @@ describe("deriveFrontmatterIssues", () => {
     expect(deriveFrontmatterIssues(parsed)).toEqual({
       emptyDescription: [],
       nameMismatch: [],
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// deriveNameIssues
+// ---------------------------------------------------------------------------
+
+/** Builds a SkillFrontmatter fixture where only `dirName` matters. */
+const nameOnly = (dirName: string) => ({
+  dirName,
+  name: dirName,
+  description: "x",
+});
+
+describe("deriveNameIssues", () => {
+  test("a gerund name produces no issues at all", () => {
+    expect(deriveNameIssues([nameOnly("creating-prs")])).toEqual({
+      specViolations: [],
+      shapeViolations: [],
+      reservedWordWarnings: [],
+    });
+  });
+
+  test("a <topic>-<head-noun> name using a recognized head noun produces no issues at all", () => {
+    expect(deriveNameIssues([nameOnly("vitest-testing")])).toEqual({
+      specViolations: [],
+      shapeViolations: [],
+      reservedWordWarnings: [],
+    });
+  });
+
+  test("a two-segment name whose second segment is NOT a recognized head noun is a shape violation", () => {
+    const issues = deriveNameIssues([nameOnly("vitest-coverage")]);
+    expect(issues.shapeViolations).toHaveLength(1);
+    expect(issues.shapeViolations[0]).toContain("vitest-coverage");
+    expect(issues.specViolations).toEqual([]);
+    expect(issues.reservedWordWarnings).toEqual([]);
+  });
+
+  test("a four-token pile with no gerund and no valid two-segment shape is exactly one shape violation", () => {
+    const issues = deriveNameIssues([nameOnly("vitest-coverage-types-mocks")]);
+    expect(issues.shapeViolations).toHaveLength(1);
+    expect(issues.shapeViolations[0]).toContain("vitest-coverage-types-mocks");
+    expect(issues.specViolations).toEqual([]);
+    expect(issues.reservedWordWarnings).toEqual([]);
+  });
+
+  // Both entries are 2+-segment names whose last segment ("config", "guide")
+  // is NOT a recognized head noun, so this confirms they pass BECAUSE of the
+  // GRANDFATHERED_NAMES exemption, not because they'd clear the shape check
+  // on their own merits.
+  test.each(Array.from(GRANDFATHERED_NAMES))(
+    "grandfathered name %j produces no shapeViolations despite failing the shape check on its own",
+    (dirName) => {
+      expect(deriveNameIssues([nameOnly(dirName)])).toEqual({
+        specViolations: [],
+        shapeViolations: [],
+        reservedWordWarnings: [],
+      });
+    },
+  );
+
+  test("a name longer than 64 characters produces a specViolations entry", () => {
+    const longName = "a".repeat(65);
+    const issues = deriveNameIssues([nameOnly(longName)]);
+    expect(issues.specViolations).toHaveLength(1);
+    expect(issues.specViolations[0]).toContain("65");
+  });
+
+  test("a name containing an uppercase letter produces a specViolations entry (kebab-case)", () => {
+    const issues = deriveNameIssues([nameOnly("Creating-PRs")]);
+    expect(issues.specViolations).toHaveLength(1);
+    expect(issues.shapeViolations).toEqual([]);
+    expect(issues.reservedWordWarnings).toEqual([]);
+  });
+
+  test("a name with a doubled hyphen produces a specViolations entry (kebab-case)", () => {
+    const issues = deriveNameIssues([nameOnly("creating--prs")]);
+    expect(issues.specViolations).toHaveLength(1);
+    expect(issues.shapeViolations).toEqual([]);
+    expect(issues.reservedWordWarnings).toEqual([]);
+  });
+
+  // "refreshing-anthropic-guidance" is a real, live skill name whose first
+  // segment "refreshing" ends in "ing" — a valid gerund shape — so this also
+  // incidentally confirms the reserved-word check is independent of the
+  // shape check (warn-only, doesn't also fail shape/spec).
+  test('a name containing "anthropic" produces exactly one reservedWordWarnings entry and no other issues', () => {
+    expect(
+      deriveNameIssues([nameOnly("refreshing-anthropic-guidance")]),
+    ).toEqual({
+      specViolations: [],
+      shapeViolations: [],
+      reservedWordWarnings: [
+        expect.stringContaining("refreshing-anthropic-guidance"),
+      ],
+    });
+  });
+
+  test('a name containing "claude" produces a reservedWordWarnings entry too', () => {
+    const issues = deriveNameIssues([nameOnly("testing-claude-things")]);
+    expect(issues.reservedWordWarnings).toHaveLength(1);
+    expect(issues.reservedWordWarnings[0]).toContain("testing-claude-things");
+  });
+
+  // [GUARD TEETH] A fully clean batch mixing both accepted shape families
+  // must produce empty arrays across all three categories — confirms the
+  // function doesn't just coincidentally return empty arrays.
+  test("a fully clean multi-item batch produces no issues in any category", () => {
+    const parsed = [
+      nameOnly("typescript-configuration"),
+      nameOnly("vitest-testing"),
+      nameOnly("triaging-ci"),
+    ];
+    expect(deriveNameIssues(parsed)).toEqual({
+      specViolations: [],
+      shapeViolations: [],
+      reservedWordWarnings: [],
     });
   });
 });
