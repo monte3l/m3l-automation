@@ -12,7 +12,12 @@ import {
   DEFAULT_MAX_BUDGET_USD,
   describeSpawnFailure,
   evaluateSkillFired,
+  evaluateSuiteOutcome,
   EVAL_AVAILABLE_TOOLS,
+  formatSuiteSummary,
+  gateFailureMessage,
+  MIN_PASS_RATE,
+  resolveMinPassRate,
   extractInvokedSkills,
   extractResultEnvelope,
   parseStreamEvents,
@@ -943,5 +948,426 @@ describe("evaluateSkillFired", () => {
         expect_skill_fired: true,
       }),
     ).toEqual({ required: true, fired: true, met: true });
+  });
+});
+
+describe("MIN_PASS_RATE", () => {
+  test("pins the collapse floor calibrated from the 15-run 63.0-75.0% band", () => {
+    expect(MIN_PASS_RATE).toBe(0.6);
+  });
+
+  test("requires 56 of the corpus's 92 cases, two below the observed 58/92 minimum", () => {
+    // The TSDoc claims a case count, not just a fraction. 0.6 * 92 = 55.2, so
+    // 55 scores 59.8% and FAILS — pin the count so prose and arithmetic
+    // cannot drift apart.
+    expect(Math.ceil(MIN_PASS_RATE * 92)).toBe(56);
+    expect(evaluateSuiteOutcome({ totalCases: 92, passed: 55 }).met).toBe(
+      false,
+    );
+    expect(evaluateSuiteOutcome({ totalCases: 92, passed: 56 }).met).toBe(true);
+  });
+});
+
+describe("evaluateSuiteOutcome", () => {
+  test.each([
+    {
+      label: "a rate exactly equal to the floor meets it (3/5 at 0.60)",
+      counts: { totalCases: 5, passed: 3, minPassRate: 0.6 },
+      met: true,
+      reason: "met",
+    },
+    {
+      label: "the minimum passing count for the 92-case corpus (56/92)",
+      counts: { totalCases: 92, passed: 56, minPassRate: 0.6 },
+      met: true,
+      reason: "met",
+    },
+    {
+      label: "one case below the minimum passing count (55/92)",
+      counts: { totalCases: 92, passed: 55, minPassRate: 0.6 },
+      met: false,
+      reason: "below-floor",
+    },
+    {
+      label: "the observed CI minimum (58/92) clears the floor",
+      counts: { totalCases: 92, passed: 58, minPassRate: 0.6 },
+      met: true,
+      reason: "met",
+    },
+    {
+      label: "the observed CI maximum (69/92) clears the floor",
+      counts: { totalCases: 92, passed: 69, minPassRate: 0.6 },
+      met: true,
+      reason: "met",
+    },
+    {
+      label: "a total harness collapse (0/92) fails",
+      counts: { totalCases: 92, passed: 0, minPassRate: 0.6 },
+      met: false,
+      reason: "below-floor",
+    },
+    {
+      label: "an unfiltered empty suite fails rather than passing vacuously",
+      counts: { totalCases: 0, passed: 0, minPassRate: 0.6 },
+      met: false,
+      reason: "empty-suite",
+    },
+    {
+      label: "an empty suite fails even with the rate floor at 0",
+      counts: { totalCases: 0, passed: 0, minPassRate: 0 },
+      met: false,
+      reason: "empty-suite",
+    },
+    {
+      label: "an explicit floor of 0 never fails on rate alone (0/5)",
+      counts: { totalCases: 5, passed: 0, minPassRate: 0 },
+      met: true,
+      reason: "met",
+    },
+    {
+      label: "a floor of 1 requires every case (91/92 fails)",
+      counts: { totalCases: 92, passed: 91, minPassRate: 1 },
+      met: false,
+      reason: "below-floor",
+    },
+    {
+      label: "a floor of 1 is met by a clean sweep (92/92)",
+      counts: { totalCases: 92, passed: 92, minPassRate: 1 },
+      met: true,
+      reason: "met",
+    },
+    {
+      label: "a non-numeric threshold fails closed",
+      counts: { totalCases: 92, passed: 92, minPassRate: Number("abc") },
+      met: false,
+      reason: "invalid-threshold",
+    },
+    {
+      label: "a threshold above 1 fails closed",
+      counts: { totalCases: 92, passed: 92, minPassRate: 1.5 },
+      met: false,
+      reason: "invalid-threshold",
+    },
+    {
+      label: "a negative threshold fails closed",
+      counts: { totalCases: 92, passed: 92, minPassRate: -0.1 },
+      met: false,
+      reason: "invalid-threshold",
+    },
+    {
+      label: "an invalid threshold outranks an empty suite in the reason",
+      counts: { totalCases: 0, passed: 0, minPassRate: Number.NaN },
+      met: false,
+      reason: "invalid-threshold",
+    },
+  ])("$label", ({ counts, met, reason }) => {
+    const outcome = evaluateSuiteOutcome(counts);
+    expect(outcome.met).toBe(met);
+    expect(outcome.reason).toBe(reason);
+  });
+
+  test("refuses an error-class failure even at a rate well above the floor", () => {
+    // 62/92 = 67.4%, a typical healthy run — but 5 cases produced no verdict,
+    // which is a harness fault the rate must not launder.
+    const outcome = evaluateSuiteOutcome({
+      totalCases: 92,
+      passed: 62,
+      errored: 5,
+      minPassRate: 0.6,
+    });
+    expect(outcome.passRate).toBeGreaterThan(outcome.minPassRate);
+    expect(outcome.met).toBe(false);
+    expect(outcome.reason).toBe("errored");
+  });
+
+  test("refuses a single error-class failure in an otherwise clean sweep", () => {
+    const outcome = evaluateSuiteOutcome({
+      totalCases: 92,
+      passed: 91,
+      errored: 1,
+      minPassRate: 0.6,
+    });
+    expect(outcome.met).toBe(false);
+    expect(outcome.reason).toBe("errored");
+  });
+
+  test("refuses an error-class failure even with the rate floor at 0", () => {
+    const outcome = evaluateSuiteOutcome({
+      totalCases: 5,
+      passed: 4,
+      errored: 1,
+      minPassRate: 0,
+    });
+    expect(outcome.met).toBe(false);
+    expect(outcome.reason).toBe("errored");
+  });
+
+  test("meets the floor when no case errored", () => {
+    const outcome = evaluateSuiteOutcome({
+      totalCases: 92,
+      passed: 62,
+      errored: 0,
+      minPassRate: 0.6,
+    });
+    expect(outcome.met).toBe(true);
+    expect(outcome.reason).toBe("met");
+  });
+
+  test("defaults minPassRate to MIN_PASS_RATE when the caller omits it", () => {
+    // The only test binding the constant to the decision — every table row
+    // above hands the threshold in by hand.
+    expect(evaluateSuiteOutcome({ totalCases: 92, passed: 55 })).toMatchObject({
+      met: false,
+      minPassRate: MIN_PASS_RATE,
+    });
+    expect(evaluateSuiteOutcome({ totalCases: 92, passed: 56 })).toMatchObject({
+      met: true,
+      minPassRate: MIN_PASS_RATE,
+    });
+  });
+
+  test("derives failed from the case total so it cannot disagree with passed", () => {
+    expect(evaluateSuiteOutcome({ totalCases: 92, passed: 62 }).failed).toBe(
+      30,
+    );
+    expect(evaluateSuiteOutcome({ totalCases: 92, passed: 0 }).failed).toBe(92);
+  });
+
+  test("returns the pass rate as a fraction, not a percentage", () => {
+    expect(
+      evaluateSuiteOutcome({ totalCases: 92, passed: 62 }).passRate,
+    ).toBeCloseTo(0.6739, 4);
+  });
+
+  test("reports a zero pass rate for an empty suite rather than dividing by zero", () => {
+    expect(evaluateSuiteOutcome({ totalCases: 0, passed: 0 }).passRate).toBe(0);
+  });
+});
+
+describe("formatSuiteSummary", () => {
+  const summary = (
+    counts: Parameters<typeof evaluateSuiteOutcome>[0],
+    costUsd = 8.3453,
+    skillsRun = 23,
+  ) =>
+    formatSuiteSummary({
+      skillsRun,
+      costUsd,
+      outcome: evaluateSuiteOutcome(counts),
+    });
+
+  test("preserves the five pre-existing summary lines verbatim", () => {
+    const lines = summary({ totalCases: 92, passed: 62 });
+    expect(lines).toContain("\n── pnpm eval:skills summary ──");
+    expect(lines).toContain("Skills run:   23");
+    expect(lines).toContain("Cases run:    92");
+    expect(lines).toContain("Passed:       62");
+    expect(lines).toContain("Failed:       30");
+    expect(lines).toContain("Cost (USD):   ~$8.3453");
+  });
+
+  test("states the pass rate and that the floor was met", () => {
+    const lines = summary({ totalCases: 92, passed: 62 });
+    expect(lines).toContain("Pass rate:    67.4% (62/92)");
+    expect(lines).toContain("Floor:        60.0% — met");
+  });
+
+  test("says NOT met when the run is below the floor", () => {
+    const lines = summary({ totalCases: 92, passed: 55 });
+    expect(lines).toContain("Pass rate:    59.8% (55/92)");
+    expect(lines).toContain("Floor:        60.0% — NOT met");
+  });
+
+  test("reads an all-must-pass threshold as such, not as 100.0%", () => {
+    // The threshold a filtered probe run gets from resolveMinPassRate.
+    expect(summary({ totalCases: 5, passed: 3, minPassRate: 1 })).toContain(
+      "Floor:        every case must pass — NOT met",
+    );
+    expect(summary({ totalCases: 5, passed: 5, minPassRate: 1 })).toContain(
+      "Floor:        every case must pass — met",
+    );
+  });
+
+  test("renders n/a rather than 0.0% when no case ran", () => {
+    expect(summary({ totalCases: 0, passed: 0 })).toContain(
+      "Pass rate:    n/a (0 case(s) run)",
+    );
+  });
+
+  test("counts errored cases on their own line", () => {
+    expect(summary({ totalCases: 92, passed: 62, errored: 3 })).toContain(
+      "Errored:      3",
+    );
+    expect(summary({ totalCases: 92, passed: 62 })).toContain(
+      "Errored:      0",
+    );
+  });
+
+  test("keeps the header first and the cost line last", () => {
+    const lines = summary({ totalCases: 92, passed: 62 });
+    expect(lines[0]).toBe("\n── pnpm eval:skills summary ──");
+    expect(lines.at(-1)).toMatch(/^Cost \(USD\):/);
+  });
+});
+
+describe("gateFailureMessage", () => {
+  test("names the rate, the counts and the floor on a below-floor run", () => {
+    expect(
+      gateFailureMessage(
+        evaluateSuiteOutcome({ totalCases: 92, passed: 55, minPassRate: 0.6 }),
+      ),
+    ).toBe("pass rate 59.8% (55/92) is below the 60.0% MIN_PASS_RATE floor.");
+  });
+
+  test("names the broken corpus rather than a rate on an empty suite", () => {
+    expect(
+      gateFailureMessage(evaluateSuiteOutcome({ totalCases: 0, passed: 0 })),
+    ).toBe(
+      "no eval case ran at all — the corpus or its discovery path is broken.",
+    );
+  });
+
+  test("says an error-class failure is a harness fault the floor does not forgive", () => {
+    expect(
+      gateFailureMessage(
+        evaluateSuiteOutcome({ totalCases: 92, passed: 62, errored: 5 }),
+      ),
+    ).toBe(
+      "5 of 92 case(s) produced no verdict at all (harness fault, not a grade) — " +
+        "the pass-rate floor does not forgive these.",
+    );
+  });
+
+  test("names the failed count, not a floor, when every case must pass", () => {
+    // What a single-skill probe run prints; "below the 100.0% MIN_PASS_RATE
+    // floor" would name a threshold the constant does not hold.
+    expect(
+      gateFailureMessage(
+        evaluateSuiteOutcome({ totalCases: 5, passed: 2, minPassRate: 1 }),
+      ),
+    ).toBe("3 of 5 case(s) failed; every case must pass.");
+  });
+
+  test("names the offending threshold from the outcome, not from the env", () => {
+    // Regression guard: this branch used to read
+    // process.env.M3L_EVAL_MIN_PASS_RATE, so a caller passing the bad value
+    // directly got `got "undefined"` while the outcome held the real one.
+    // Set to a sentinel rather than deleted: if the branch still read the
+    // env, the message would name 0.42 instead of the outcome's own value.
+    const previous = process.env["M3L_EVAL_MIN_PASS_RATE"];
+    process.env["M3L_EVAL_MIN_PASS_RATE"] = "0.42";
+    try {
+      expect(
+        gateFailureMessage(
+          evaluateSuiteOutcome({
+            totalCases: 92,
+            passed: 92,
+            minPassRate: 1.5,
+          }),
+        ),
+      ).toBe(
+        "the pass-rate threshold must be a fraction in [0, 1]; got 1.5 " +
+          "(set via M3L_EVAL_MIN_PASS_RATE).",
+      );
+      expect(
+        gateFailureMessage(
+          evaluateSuiteOutcome({
+            totalCases: 92,
+            passed: 92,
+            minPassRate: Number("abc"),
+          }),
+        ),
+      ).toBe(
+        "the pass-rate threshold must be a fraction in [0, 1]; got NaN " +
+          "(set via M3L_EVAL_MIN_PASS_RATE).",
+      );
+    } finally {
+      if (previous === undefined) delete process.env["M3L_EVAL_MIN_PASS_RATE"];
+      else process.env["M3L_EVAL_MIN_PASS_RATE"] = previous;
+    }
+  });
+
+  test("returns the empty string for a met outcome", () => {
+    expect(
+      gateFailureMessage(evaluateSuiteOutcome({ totalCases: 92, passed: 62 })),
+    ).toBe("");
+  });
+});
+
+describe("resolveMinPassRate", () => {
+  test("judges the full suite against MIN_PASS_RATE", () => {
+    expect(resolveMinPassRate({})).toBe(MIN_PASS_RATE);
+    expect(resolveMinPassRate({ filterSkill: undefined })).toBe(MIN_PASS_RATE);
+  });
+
+  test("requires every case to pass on a filtered probe run", () => {
+    // Not 0.60: 5 cases cannot support a rate floor, so a single-skill run
+    // keeps the script's original exit-1-on-any-failure behaviour.
+    expect(resolveMinPassRate({ filterSkill: "writing-commits" })).toBe(1);
+  });
+
+  test("does not let the env override loosen a filtered probe run", () => {
+    expect(
+      resolveMinPassRate({ filterSkill: "writing-commits", envValue: "0.6" }),
+    ).toBe(1);
+    expect(
+      resolveMinPassRate({ filterSkill: "writing-commits", envValue: "0" }),
+    ).toBe(1);
+  });
+
+  test("honours the env override on a full-suite run", () => {
+    expect(resolveMinPassRate({ envValue: "0.8" })).toBe(0.8);
+    expect(resolveMinPassRate({ envValue: "1" })).toBe(1);
+    // "0" is a non-empty string, so it is honoured as an explicit 0 rather
+    // than falling through to the default — floor off, by request.
+    expect(resolveMinPassRate({ envValue: "0" })).toBe(0);
+  });
+
+  test("passes a non-numeric override through as NaN for the outcome to refuse", () => {
+    const resolved = resolveMinPassRate({ envValue: "abc" });
+    expect(Number.isNaN(resolved)).toBe(true);
+    expect(
+      evaluateSuiteOutcome({
+        totalCases: 92,
+        passed: 92,
+        minPassRate: resolved,
+      }).reason,
+    ).toBe("invalid-threshold");
+  });
+});
+
+describe("resolveMinPassRate blank-value handling", () => {
+  test.each([
+    { label: "a single space", envValue: " " },
+    { label: "a tab", envValue: "\t" },
+    { label: "several spaces", envValue: "   " },
+    { label: "a newline", envValue: "\n" },
+    { label: "an empty string", envValue: "" },
+  ])(
+    "never disables the floor for $label — the one thing a gate must not do",
+    ({ envValue }) => {
+      // " " is truthy and Number(" ") === 0, which the range check accepts as
+      // a VALID threshold of zero. Before trimming, that silently switched
+      // the collapse detector off.
+      const resolved = resolveMinPassRate({ envValue });
+      expect(resolved).toBe(MIN_PASS_RATE);
+      expect(resolved).not.toBe(0);
+      expect(
+        evaluateSuiteOutcome({
+          totalCases: 92,
+          passed: 0,
+          minPassRate: resolved,
+        }).met,
+      ).toBe(false);
+    },
+  );
+
+  test("still honours a padded but real threshold", () => {
+    expect(resolveMinPassRate({ envValue: " 0.8 " })).toBe(0.8);
+  });
+
+  test("still fails closed on genuine garbage", () => {
+    expect(Number.isNaN(resolveMinPassRate({ envValue: "abc" }))).toBe(true);
+    expect(Number.isNaN(resolveMinPassRate({ envValue: " abc " }))).toBe(true);
   });
 });

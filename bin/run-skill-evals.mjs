@@ -89,10 +89,18 @@
 // docs/contributing/model-selection.md's machine-checked MODEL-MATRIX (see
 // that doc's note on this script).
 //
+// A FULL run's exit code is RATE-gated rather than all-or-nothing: it fails
+// when the suite-wide pass rate falls below MIN_PASS_RATE (a collapse
+// detector — see that constant), when any case produced no verdict at all, or
+// when no case ran. A SINGLE-SKILL run is a probe, not the gate, and keeps the
+// original behaviour: every case must pass. Override the suite-wide floor with
+// M3L_EVAL_MIN_PASS_RATE (a fraction); it cannot loosen a single-skill run.
+//
 // Usage:
 //   node bin/run-skill-evals.mjs                # every skill with evals.json
 //   node bin/run-skill-evals.mjs <skill-name>    # one skill only
 //   node bin/run-skill-evals.mjs --json          # machine-readable summary
+//   M3L_EVAL_MIN_PASS_RATE=0.8 node bin/run-skill-evals.mjs   # custom floor
 import process from "node:process";
 import { execFileSync } from "node:child_process";
 import {
@@ -128,6 +136,47 @@ export const DEFAULT_EFFORT = "medium";
  * heavier model or effort.
  */
 export const DEFAULT_MAX_BUDGET_USD = 0.5;
+
+/**
+ * The suite-wide pass-rate floor below which `pnpm eval:skills` exits 1 —
+ * a HARNESS-COLLAPSE detector, not a corpus-quality gate.
+ *
+ * Calibrated against measurement, not guessed: across the 15 CI runs on the
+ * current 23-skill / 92-case / 432-criterion corpus (2026-09-05 through
+ * 2026-09-07, all `pull_request`) the suite scored 58/92 = 63.0% (run
+ * 34064682457) to 69/92 = 75.0% (run 34028636084), mean ~68.6%. At 0.60 a
+ * 92-case run needs 56 passes to clear the floor (`0.6 * 92 = 55.2`, so 55
+ * scores 59.8% and FAILS) — two cases below the observed minimum. That is
+ * deliberately thin headroom on a wide band: enough that the measured spread
+ * cannot trip it, close enough that a real collapse cannot hide under it.
+ *
+ * What it CATCHES is the harness measuring nothing: every case failing on one
+ * shared cause, as in the #808 `--restricted` regression (CI run 33390425486
+ * graded all 46 cases against a Claude that could not see the skill under
+ * test) and the expired-OAuth incident (46/46 `claude -p invocation failed`).
+ * Both scored 0%. A discovery break that finds no cases at all fails too,
+ * rather than reporting a vacuous 0/0 pass — see {@link evaluateSuiteOutcome}.
+ *
+ * What it does NOT catch is any single skill's regression. At N=92 one case is
+ * 1.1 points, so a skill going 5/5 to 0/5 stays inside the band; per-skill
+ * health is a review-time reading of the failure lines, not this gate. The
+ * floor sits far below the ~69% typical run on purpose: ~93% of every failure
+ * in the calibration window is the {@link evaluateSkillFired} routing
+ * assertion rather than a criterion verdict (criterion failures per run: 0-3),
+ * and 50 of the 92 cases flip between runs. Gating near the observed rate
+ * would make every unrelated `.claude/**` PR a coin flip.
+ *
+ * Re-measure after any corpus change — `check:skill-evals` requires >= 3
+ * cases per skill, so ONE new skill can move the rate ~3 points at N=92,
+ * which is more than the headroom above. Adding a skill and re-baselining
+ * this constant belong in the same PR.
+ *
+ * Override with `M3L_EVAL_MIN_PASS_RATE` (a fraction, not a percentage). This
+ * floor governs the FULL suite only — a single-skill run requires every case
+ * to pass instead, and the override cannot loosen that. See
+ * {@link resolveMinPassRate}.
+ */
+export const MIN_PASS_RATE = 0.6;
 
 /**
  * How much of a failing envelope's own `result` text to quote back in the
@@ -510,6 +559,198 @@ export function evaluateSkillFired(skillName, invokedSkills, evalCase) {
 }
 
 /**
+ * The pass-rate threshold a given run is judged against.
+ *
+ * Two modes, one rule each:
+ *
+ * - The FULL suite is the gate, judged against {@link MIN_PASS_RATE} (or an
+ *   explicit `M3L_EVAL_MIN_PASS_RATE`).
+ * - A FILTERED run is a developer probe, not the gate, and requires EVERY
+ *   case to pass — the script's original behaviour, unchanged. A rate floor
+ *   needs N: at the 3-5 cases `check:skill-evals` guarantees per skill the
+ *   quantum is 20-33 points, so 0.60 would fail `pnpm eval:skills
+ *   writing-commits` for behaving exactly as the full suite it belongs to
+ *   does, and a gate that fails on correct behaviour gets routed around.
+ *   The env override deliberately does NOT loosen this: it governs the
+ *   suite-wide floor only, so a probe can never be talked into reporting
+ *   green on a case it actually failed.
+ *
+ * Extracted rather than inlined at the call site so the mode rule is
+ * assertable; it used to be unreachable from a test.
+ *
+ * @param {{ filterSkill?: string | undefined, envValue?: string | undefined }}
+ *   options `filterSkill` is the positional skill-name argument and
+ *   `envValue` the raw `M3L_EVAL_MIN_PASS_RATE` string. Both are explicitly
+ *   `| undefined` rather than merely optional: under
+ *   `exactOptionalPropertyTypes` the main block's `argv[0]` /
+ *   `process.env.X` reads pass the key with an `undefined` value, which a
+ *   bare `?:` rejects.
+ * @returns {number} the threshold to hand {@link evaluateSuiteOutcome}
+ */
+export function resolveMinPassRate({ filterSkill, envValue }) {
+  if (filterSkill !== undefined) return 1;
+  // Trim before the truthiness test, so a set-but-blank value reads as unset
+  // rather than as an override. `" "` is truthy and `Number(" ")` is 0, which
+  // the range check would accept as a VALID threshold of zero — silently
+  // switching the collapse detector off, the one failure mode this gate must
+  // not have. Blank now keeps the default floor; genuine garbage ("abc")
+  // still becomes NaN and fails closed as `invalid-threshold`.
+  const raw = envValue?.trim();
+  return raw ? Number(raw) : MIN_PASS_RATE;
+}
+
+/**
+ * Whether a finished suite run clears the {@link MIN_PASS_RATE} floor, and
+ * why — the whole exit-code decision as a returned value.
+ *
+ * Extracted for the same reason {@link buildClaudeArgs} was: this logic used
+ * to be an inline `if (failed > 0)` inside the `import.meta.url` main block,
+ * where no test could reach it. A gate whose decision cannot be asserted is a
+ * gate nobody has checked.
+ *
+ * Three rules the arithmetic alone does not express:
+ *
+ * 1. An EMPTY suite fails. Before this function, an unfiltered run that
+ *    discovered no cases reached `reporter.succeed("0/0 ...")` and exited 0 —
+ *    a silently green harness that measured nothing, which is the purest form
+ *    of the collapse this gate exists to catch. (An unknown `filterSkill`
+ *    already exits 1 earlier, so this arm only fires on a genuinely vanished
+ *    corpus or a broken discovery path.)
+ * 2. ERROR-class failures are never forgiven by the floor. A case that never
+ *    produced a verdict at all — spawn failure, unparseable stream, no
+ *    terminal result envelope, an envelope carrying `is_error` — is a harness
+ *    fault, not a grade. Any of them fails the run whatever the rate, so a
+ *    partial auth incident that kills a third of the suite cannot sit under a
+ *    60% floor and report green. The rate governs VERDICT-class failures
+ *    only. Measured basis: zero error-class failures across the 15-run
+ *    calibration window, including both extremes, so this arm costs nothing
+ *    on a healthy run. (It is a class refusal, not a calibrated allowance,
+ *    precisely because there is no non-zero baseline to calibrate from.)
+ * 3. A threshold outside [0, 1] fails CLOSED and says so. `Number("abc")` is
+ *    `NaN` and every `>=` against `NaN` is false, so a typo'd
+ *    `M3L_EVAL_MIN_PASS_RATE` would otherwise fail the run with an
+ *    unexplainable "below floor" message naming a `NaN%` threshold.
+ *
+ * `failed` is derived here rather than accepted, so the printed count and the
+ * JSON payload cannot disagree about the same run.
+ *
+ * @param {{ totalCases: number, passed: number, errored?: number,
+ *   minPassRate?: number }} counts `minPassRate` defaults to
+ *   {@link MIN_PASS_RATE}; `1` requires every case (what a single-skill probe
+ *   run gets from {@link resolveMinPassRate}) and `0` never fails on rate
+ *   alone. `errored` is the subset of non-passing cases that produced no
+ *   verdict.
+ * @returns {{ totalCases: number, passed: number, failed: number,
+ *   errored: number, passRate: number, minPassRate: number, met: boolean,
+ *   reason: "met" | "below-floor" | "errored" | "empty-suite" | "invalid-threshold" }}
+ */
+export function evaluateSuiteOutcome({
+  totalCases,
+  passed,
+  errored = 0,
+  minPassRate = MIN_PASS_RATE,
+}) {
+  const passRate = totalCases > 0 ? passed / totalCases : 0;
+  const base = {
+    totalCases,
+    passed,
+    failed: totalCases - passed,
+    errored,
+    passRate,
+    minPassRate,
+  };
+
+  if (!Number.isFinite(minPassRate) || minPassRate < 0 || minPassRate > 1) {
+    return { ...base, met: false, reason: "invalid-threshold" };
+  }
+  if (totalCases === 0) return { ...base, met: false, reason: "empty-suite" };
+  if (errored > 0) return { ...base, met: false, reason: "errored" };
+  if (passRate >= minPassRate) return { ...base, met: true, reason: "met" };
+  return { ...base, met: false, reason: "below-floor" };
+}
+
+/**
+ * The `pnpm eval:skills` summary block, as one string per line.
+ *
+ * Extracted so the text is assertable: the five pre-existing lines are the
+ * human-facing contract read out of CI logs, and they keep their exact
+ * wording and column alignment here. `Pass rate:`, `Floor:` and `Errored:`
+ * are additions.
+ *
+ * `Errored` is a SUBSET of `Failed`, not a sibling of it — a case that
+ * produced no verdict counted as failed too. The two do not sum.
+ *
+ * @param {{ skillsRun: number, costUsd: number,
+ *   outcome: ReturnType<typeof evaluateSuiteOutcome> }} args
+ * @returns {string[]} one console line each, in order
+ */
+export function formatSuiteSummary({ skillsRun, costUsd, outcome }) {
+  const { totalCases, passed, failed, errored, passRate, minPassRate, met } =
+    outcome;
+  return [
+    "\n── pnpm eval:skills summary ──",
+    `Skills run:   ${skillsRun}`,
+    `Cases run:    ${totalCases}`,
+    `Passed:       ${passed}`,
+    `Failed:       ${failed}`,
+    `Errored:      ${errored}`,
+    totalCases === 0
+      ? "Pass rate:    n/a (0 case(s) run)"
+      : `Pass rate:    ${(passRate * 100).toFixed(1)}% (${passed}/${totalCases})`,
+    minPassRate >= 1
+      ? `Floor:        every case must pass — ${met ? "met" : "NOT met"}`
+      : `Floor:        ${(minPassRate * 100).toFixed(1)}% — ${met ? "met" : "NOT met"}`,
+    `Cost (USD):   ~$${costUsd.toFixed(4)}`,
+  ];
+}
+
+/**
+ * The one-line reason a suite run failed its gate, for the reporter's error
+ * channel (which is also what surfaces as a GitHub Actions annotation, so the
+ * reason appears in the PR checks view rather than only in the log tail).
+ *
+ * Exported for the same reason the outcome is: a diagnostic that cannot name
+ * its cause is a silent failure, and the only way to keep that honest is to
+ * assert the text.
+ *
+ * @param {ReturnType<typeof evaluateSuiteOutcome>} outcome a NOT-met outcome
+ * @returns {string} the failure reason; the empty string for a met outcome
+ */
+export function gateFailureMessage(outcome) {
+  const { passed, totalCases, errored, passRate, minPassRate, reason } =
+    outcome;
+  const pct = (n) => `${(n * 100).toFixed(1)}%`;
+
+  switch (reason) {
+    case "empty-suite":
+      return "no eval case ran at all — the corpus or its discovery path is broken.";
+    case "invalid-threshold":
+      // Derived from the outcome, not from process.env: every other branch
+      // is, and reading the env here made an exported pure function print
+      // `got "undefined"` for any caller that passed the bad value directly.
+      return (
+        `the pass-rate threshold must be a fraction in [0, 1]; got ` +
+        `${String(minPassRate)} (set via M3L_EVAL_MIN_PASS_RATE).`
+      );
+    case "errored":
+      return (
+        `${errored} of ${totalCases} case(s) produced no verdict at all ` +
+        `(harness fault, not a grade) — the pass-rate floor does not forgive these.`
+      );
+    case "below-floor":
+      // An all-must-pass threshold is not a "floor" a reader can act on, and
+      // naming MIN_PASS_RATE for it would be a lie — 1 is what a single-skill
+      // probe gets, not the constant's value.
+      return minPassRate >= 1
+        ? `${totalCases - passed} of ${totalCases} case(s) failed; every case must pass.`
+        : `pass rate ${pct(passRate)} (${passed}/${totalCases}) is below the ` +
+            `${pct(minPassRate)} MIN_PASS_RATE floor.`;
+    default:
+      return "";
+  }
+}
+
+/**
  * The exact argv handed to `claude -p` for one eval case.
  *
  * Extracted and exported deliberately: the previous argv carried
@@ -750,6 +991,10 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const maxBudgetUsd = process.env.M3L_EVAL_MAX_BUDGET_USD
     ? Number(process.env.M3L_EVAL_MAX_BUDGET_USD)
     : DEFAULT_MAX_BUDGET_USD;
+  const minPassRate = resolveMinPassRate({
+    filterSkill,
+    envValue: process.env.M3L_EVAL_MIN_PASS_RATE,
+  });
 
   const root = repoRoot(import.meta.url);
   const skillsDir = join(root, ".claude/skills");
@@ -767,13 +1012,19 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     reporter.error(
       `no skill named "${filterSkill}" with a .claude/skills/${filterSkill}/evals/evals.json file.`,
     );
-    reporter.finish({ totalCases: 0, passed: 0, failed: 0, costUsd: 0 });
+    reporter.finish({
+      ...evaluateSuiteOutcome({ totalCases: 0, passed: 0, minPassRate }),
+      costUsd: 0,
+      failures: [],
+    });
     process.exit(1);
   }
 
   let totalCases = 0;
   let passed = 0;
-  let failed = 0;
+  // Cases that produced no verdict at all. A subset of the failures, tracked
+  // separately because evaluateSuiteOutcome refuses them regardless of rate.
+  let errored = 0;
   let costUsd = 0;
   /** @type {{ skill: string, id: number, unmet?: string[], reasoning?: string, error?: string }[]} */
   const failures = [];
@@ -792,7 +1043,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
       });
 
       if ("error" in result) {
-        failed++;
+        errored++;
         failures.push({
           skill: skillName,
           id: evalCase.id,
@@ -807,34 +1058,54 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
         passed++;
         reporter.info(`  ✓ #${evalCase.id}`);
       } else {
-        failed++;
         failures.push({
           skill: skillName,
           id: evalCase.id,
           unmet: result.unmet_expectations,
           reasoning: result.reasoning,
         });
-        reporter.error(
+        // warn, not error: the floor now TOLERATES some verdict failures, so
+        // a passing run must not publish ~30 ::error:: annotations or leave
+        // `ok: false` sitting next to `met: true` in the --json payload.
+        // reporter.error stays for the error-class arm above and for the gate
+        // message itself, which are the things that actually fail a run.
+        reporter.warn(
           `${skillName}#${evalCase.id}: FAIL — ${result.unmet_expectations.join("; ") || result.reasoning}`,
         );
       }
     }
   }
 
-  console.log("\n── pnpm eval:skills summary ──");
-  console.log(`Skills run:   ${skillNames.length}`);
-  console.log(`Cases run:    ${totalCases}`);
-  console.log(`Passed:       ${passed}`);
-  console.log(`Failed:       ${failed}`);
-  console.log(`Cost (USD):   ~$${costUsd.toFixed(4)}`);
+  const outcome = evaluateSuiteOutcome({
+    totalCases,
+    passed,
+    errored,
+    minPassRate,
+  });
 
-  if (failed > 0) {
-    reporter.finish({ totalCases, passed, failed, costUsd, failures });
+  // reporter.info, not console.log: with --json the reporter stays silent so
+  // finish() can emit ONE parseable object. These lines used to be bare
+  // console.log, which made `--json` output prose followed by JSON.
+  for (const line of formatSuiteSummary({
+    skillsRun: skillNames.length,
+    costUsd,
+    outcome,
+  })) {
+    reporter.info(line);
+  }
+
+  const payload = { ...outcome, costUsd, failures };
+
+  if (!outcome.met) {
+    reporter.error(gateFailureMessage(outcome));
+    reporter.finish(payload);
     process.exit(1);
   }
 
   reporter.succeed(
-    `${passed}/${totalCases} eval case(s) passed across ${skillNames.length} skill(s) (~$${costUsd.toFixed(4)}).`,
+    `${passed}/${totalCases} eval case(s) passed (${(outcome.passRate * 100).toFixed(1)}%) ` +
+      `across ${skillNames.length} skill(s), at or above the ` +
+      `${(outcome.minPassRate * 100).toFixed(1)}% floor (~$${costUsd.toFixed(4)}).`,
   );
-  reporter.finish({ totalCases, passed, failed, costUsd });
+  reporter.finish(payload);
 }
