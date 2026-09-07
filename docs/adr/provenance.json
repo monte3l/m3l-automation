@@ -316,7 +316,7 @@
     "sourceFiles": [
       {
         "path": "bin/lib/mcp-tools.mjs",
-        "blob": "5d7043ee42ea57c56d7ffe561936f562d58d5df3"
+        "blob": "06b7f7a4f28906c2e7ec5b657d0e2c94dbceecef"
       },
       {
         "path": "bin/lib/session-name.mjs",
@@ -363,7 +363,7 @@
         "blob": "c90be7566c7e98d8c904e12c39612754987a292e"
       }
     ],
-    "verifiedAt": "2026-09-06"
+    "verifiedAt": "2026-09-07"
   },
   "0015": {
     "sourceFiles": [
@@ -820,7 +820,7 @@
       },
       {
         "path": "bin/mcp-server.mjs",
-        "blob": "3ed4f9f3d517ab7927c4d77987b3bcb3d1d570c7"
+        "blob": "d5de83b451267390150ca1f102e451184f1e02ef"
       },
       {
         "path": "bin/spoke-recovery.mjs",
@@ -847,7 +847,7 @@
         "blob": "b8783951f68fb653a4235dd99daefa6c39653a41"
       }
     ],
-    "verifiedAt": "2026-09-06"
+    "verifiedAt": "2026-09-07"
   },
   "0031": {
     "sourceFiles": [
@@ -1501,14 +1501,14 @@
     "sourceFiles": [
       {
         "path": "bin/mcp-server.mjs",
-        "blob": "3ed4f9f3d517ab7927c4d77987b3bcb3d1d570c7"
+        "blob": "d5de83b451267390150ca1f102e451184f1e02ef"
       },
       {
         "path": "docs/research/agent-cli-integration.md",
         "blob": "b11e9abc25e2106e8ceaf2099c9d65d55b1c2cd4"
       }
     ],
-    "verifiedAt": "2026-09-06"
+    "verifiedAt": "2026-09-07"
   },
   "0063": {
     "sourceFiles": [
@@ -2052,7 +2052,7 @@
     "sourceFiles": [
       {
         "path": "bin/lib/mcp-tools.mjs",
-        "blob": "5d7043ee42ea57c56d7ffe561936f562d58d5df3"
+        "blob": "06b7f7a4f28906c2e7ec5b657d0e2c94dbceecef"
       },
       {
         "path": "bin/lib/session-name.mjs",
@@ -2341,7 +2341,7 @@
       },
       {
         "path": "bin/lib/mcp-tools.mjs",
-        "blob": "5d7043ee42ea57c56d7ffe561936f562d58d5df3"
+        "blob": "06b7f7a4f28906c2e7ec5b657d0e2c94dbceecef"
       },
       {
         "path": "bin/lib/project-hub.mjs",
@@ -2353,11 +2353,11 @@
       },
       {
         "path": "bin/mcp-server.mjs",
-        "blob": "3ed4f9f3d517ab7927c4d77987b3bcb3d1d570c7"
+        "blob": "d5de83b451267390150ca1f102e451184f1e02ef"
       },
       {
         "path": "bin/tests/mcp-tools.test.ts",
-        "blob": "33a00ab3757dd372edc77289273b2536f878bdf8"
+        "blob": "067131767daa211185a6b333578697ad1c3206ab"
       },
       {
         "path": "docs/research/writing-custom-tools-and-mcp.md",
