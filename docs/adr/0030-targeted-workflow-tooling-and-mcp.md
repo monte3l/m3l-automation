@@ -1,7 +1,7 @@
 # 0030. Targeted workflow tooling and MCP adoption
 
-- **Status:** Accepted
-- **Relations:** amended-by: 0093
+- **Status:** Partially-superseded
+- **Relations:** amended-by: 0093, amended-by: 0096, partially-superseded-by: 0096 (clauses: decision item 3's tool set survives only as `commit_lint`/`catalog_query`; the "MCP is hub-only" invariant now admits read-only `m3l` query-tool grants)
 - **Date:** 2026-07-16
 - **Deciders:** Enrico Lionello
 
@@ -286,19 +286,55 @@ neither the coverage matrix nor the toolset decision above is affected. The
 headless-CI structural blocker is untouched: `code-implementer` still cannot
 rely on any MCP server inside `claude-pr-review.yml`.
 
+## Amendment (2026-09-07)
+
+[ADR-0096](./0096-m3l-mcp-server-replace-with-query-tools.md) partially
+supersedes decision item 3: an `/auditing` pass parsing every `tool_use`
+block across all 249 project session transcripts found **zero invocations**
+of any `mcp__m3l__*` tool, against ~1,425 calls to the same seven tools'
+Bash equivalents. `repo_verify`, `docs_sync`, `worktree_manage`,
+`scaffold_script`, and `spoke_recover` are retired; `commit_lint` and
+`catalog_query` survive, and the in-repo server gains new read-only query
+tools over the ADR corpus, work logs, the command catalog, and the hooks
+reference — the demand-ranked artifacts the audit found agents repeatedly
+read in full with no targeted-lookup path.
+
+**Correction to this ADR's stated benefit:** the Consequences section above
+claims `catalog_query` "instruments the ADR-0023 revisit trigger with real
+usage evidence." Zero invocations mean it instrumented nothing; the
+deferral has stood on no data from this instrument since it shipped. See
+ADR-0096's Context and "Relationship to the code-index deferral" sections
+for the full correction — the deferral itself is unaffected.
+
+**Second narrowing of the "MCP is hub-only" structural blocker:** the
+2026-07-27/2026-08-14 amendments above named four deliberate repo edits that
+would revisit the hub-only invariant; ADR-0093's 2026-09-05 amendment fired
+condition 1 once, narrowly, for one context7 grant to one spoke. ADR-0096
+fires it again for the new **read-only** `m3l` query tools: they may be
+granted to any spoke whose brief needs the matching lookup. Every
+mutating/CLI-wrapper tool this ADR originally shipped is retired by the same
+amendment, so no write-capable `m3l` tool remains for the invariant to
+guard against. The headless-CI structural blocker
+(`claude-pr-review.yml` has no `--mcp-config`) is untouched.
+
 ## Links
 
 - Supersedes / superseded by: the 2026-07-27 amendment supersedes decision
   item 4's original migration trigger; the 2026-08-14 amendment above
   supersedes the 2026-07-27 amendment's _revisit trigger_ specifically (its
   coverage matrix, toolset decision, and structural blockers stand
-  unchanged, except as corrected by the 2026-09-05 amendment). Nothing
-  supersedes this ADR as a whole. Retires the "GitHub MCP blocked by
-  enterprise policy" claim formerly stated in
-  `.claude/skills/triaging-ci/SKILL.md` and
+  unchanged, except as corrected by the 2026-09-05 amendment). The
+  2026-09-07 amendment above records [ADR-0096](./0096-m3l-mcp-server-replace-with-query-tools.md)'s
+  partial supersession of decision item 3 — everything else in this ADR
+  stands. Retires the "GitHub MCP blocked by enterprise policy" claim
+  formerly stated in `.claude/skills/triaging-ci/SKILL.md` and
   `.claude/skills/triaging-scan-alerts/SKILL.md`.
 - Amended by [ADR-0093](./0093-documentation-lookup-mcp-context7.md) — the
-  hub-only invariant's one scoped exception.
+  hub-only invariant's first scoped exception.
+- Partially superseded by / amended by
+  [ADR-0096](./0096-m3l-mcp-server-replace-with-query-tools.md) — decision
+  item 3's tool set replaced, and the hub-only invariant's second scoped
+  exception.
 - Delivery record:
   [`docs/logs/2026-07-17-adr-0030-workflow-tooling-mcp.md`](../logs/2026-07-17-adr-0030-workflow-tooling-mcp.md)
   (Phase 2 row records GitHub MCP auth as OAuth; corrected above — the shipped
