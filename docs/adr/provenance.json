@@ -40,7 +40,7 @@
     "sourceFiles": [
       {
         "path": "package.json",
-        "blob": "6fdff8a0dc36dadf4d7d84044140b246f7630ce2"
+        "blob": "3286492d33af9ed3a88f6469ea2af62569352221"
       },
       {
         "path": "packages/m3l-common/package.json",
@@ -97,7 +97,7 @@
       },
       {
         "path": "package.json",
-        "blob": "6fdff8a0dc36dadf4d7d84044140b246f7630ce2"
+        "blob": "3286492d33af9ed3a88f6469ea2af62569352221"
       },
       {
         "path": "packages/m3l-common/package.json",
@@ -130,7 +130,7 @@
       },
       {
         "path": "package.json",
-        "blob": "6fdff8a0dc36dadf4d7d84044140b246f7630ce2"
+        "blob": "3286492d33af9ed3a88f6469ea2af62569352221"
       },
       {
         "path": "packages/m3l-common/package.json",
@@ -172,7 +172,7 @@
     "sourceFiles": [
       {
         "path": "package.json",
-        "blob": "6fdff8a0dc36dadf4d7d84044140b246f7630ce2"
+        "blob": "3286492d33af9ed3a88f6469ea2af62569352221"
       },
       {
         "path": "packages/m3l-common/package.json",
@@ -248,7 +248,7 @@
       },
       {
         "path": "package.json",
-        "blob": "6fdff8a0dc36dadf4d7d84044140b246f7630ce2"
+        "blob": "3286492d33af9ed3a88f6469ea2af62569352221"
       }
     ],
     "verifiedAt": "2026-09-08"
@@ -257,7 +257,7 @@
     "sourceFiles": [
       {
         "path": "package.json",
-        "blob": "6fdff8a0dc36dadf4d7d84044140b246f7630ce2"
+        "blob": "3286492d33af9ed3a88f6469ea2af62569352221"
       }
     ],
     "verifiedAt": "2026-09-08"
@@ -307,7 +307,7 @@
       },
       {
         "path": "package.json",
-        "blob": "6fdff8a0dc36dadf4d7d84044140b246f7630ce2"
+        "blob": "3286492d33af9ed3a88f6469ea2af62569352221"
       }
     ],
     "verifiedAt": "2026-09-08"
@@ -360,7 +360,7 @@
       },
       {
         "path": "package.json",
-        "blob": "6fdff8a0dc36dadf4d7d84044140b246f7630ce2"
+        "blob": "3286492d33af9ed3a88f6469ea2af62569352221"
       }
     ],
     "verifiedAt": "2026-09-08"
@@ -506,7 +506,7 @@
       },
       {
         "path": "package.json",
-        "blob": "6fdff8a0dc36dadf4d7d84044140b246f7630ce2"
+        "blob": "3286492d33af9ed3a88f6469ea2af62569352221"
       }
     ],
     "verifiedAt": "2026-09-08"
@@ -552,7 +552,7 @@
       },
       {
         "path": "package.json",
-        "blob": "6fdff8a0dc36dadf4d7d84044140b246f7630ce2"
+        "blob": "3286492d33af9ed3a88f6469ea2af62569352221"
       },
       {
         "path": "pnpm-workspace.yaml",
@@ -783,7 +783,7 @@
       },
       {
         "path": "package.json",
-        "blob": "6fdff8a0dc36dadf4d7d84044140b246f7630ce2"
+        "blob": "3286492d33af9ed3a88f6469ea2af62569352221"
       }
     ],
     "verifiedAt": "2026-09-08"
@@ -877,7 +877,7 @@
       },
       {
         "path": "package.json",
-        "blob": "6fdff8a0dc36dadf4d7d84044140b246f7630ce2"
+        "blob": "3286492d33af9ed3a88f6469ea2af62569352221"
       },
       {
         "path": "packages/m3l-common/src/aws/clients/provider.ts",
@@ -922,7 +922,7 @@
       },
       {
         "path": "bin/lib/command-catalog.mjs",
-        "blob": "5395ccb715d0e6d651dddf31abf43d2422b79372"
+        "blob": "7c66aa9fb2c72a2e29e159b5c0b045459f642056"
       },
       {
         "path": "bin/lib/hub-sync.mjs",
@@ -986,7 +986,7 @@
       },
       {
         "path": "package.json",
-        "blob": "6fdff8a0dc36dadf4d7d84044140b246f7630ce2"
+        "blob": "3286492d33af9ed3a88f6469ea2af62569352221"
       }
     ],
     "verifiedAt": "2026-09-08"
@@ -1062,7 +1062,7 @@
       },
       {
         "path": "package.json",
-        "blob": "6fdff8a0dc36dadf4d7d84044140b246f7630ce2"
+        "blob": "3286492d33af9ed3a88f6469ea2af62569352221"
       },
       {
         "path": "packages/m3l-common/package.json",
@@ -1222,7 +1222,7 @@
       },
       {
         "path": "package.json",
-        "blob": "6fdff8a0dc36dadf4d7d84044140b246f7630ce2"
+        "blob": "3286492d33af9ed3a88f6469ea2af62569352221"
       },
       {
         "path": "packages/m3l-common/src/aws/clients/provider.ts",
@@ -1277,7 +1277,7 @@
     "sourceFiles": [
       {
         "path": "package.json",
-        "blob": "6fdff8a0dc36dadf4d7d84044140b246f7630ce2"
+        "blob": "3286492d33af9ed3a88f6469ea2af62569352221"
       }
     ],
     "verifiedAt": "2026-09-08"
@@ -1701,7 +1701,7 @@
       },
       {
         "path": "package.json",
-        "blob": "6fdff8a0dc36dadf4d7d84044140b246f7630ce2"
+        "blob": "3286492d33af9ed3a88f6469ea2af62569352221"
       }
     ],
     "verifiedAt": "2026-09-08"
@@ -1925,11 +1925,11 @@
       },
       {
         "path": "docs/plans/2026-09-08-adaptive-host-budgeting.md",
-        "blob": "c5754d5099c7b1eabbd6b76ac4d965c871e499d5"
+        "blob": "0b8b73aa9a3c35ae1bc232ac157684c2f2e7d959"
       },
       {
         "path": "package.json",
-        "blob": "6fdff8a0dc36dadf4d7d84044140b246f7630ce2"
+        "blob": "3286492d33af9ed3a88f6469ea2af62569352221"
       },
       {
         "path": "turbo.json",
