@@ -356,7 +356,7 @@ function resolveTimeBinary(platform) {
  * @param {string} name
  * @param {Lane} lane
  * @param {{ mode: "warm" | "cold", cwd: string, timeBinary: ReturnType<typeof resolveTimeBinary>, tmpDir: string }} ctx
- * @returns {Promise<{ exitCode: number | null, wallSeconds: number, userSeconds: number | null, systemSeconds: number | null, peakRssKiB: number | null, cpuEfficiency: number | null }>}
+ * @returns {Promise<{ exitCode: number | null, wallSeconds: number, userSeconds: number | null, systemSeconds: number | null, peakRssKiB: number | null, cpuEfficiency: number | null, spawnError?: string }>}
  */
 function runLaneOnce(name, lane, ctx) {
   const command = buildLaneCommand(lane, ctx.mode);
@@ -387,7 +387,29 @@ function runLaneOnce(name, lane, ctx) {
       cwd: ctx.cwd,
       stdio: "inherit",
     });
+    // A bare EventEmitter throws on an unhandled "error" event — spawn can
+    // emit one (ENOENT, EACCES, a PATH issue) before "close" ever fires, and
+    // with no listener that crashes this whole harness mid-batch instead of
+    // resolving with a reported failure, contradicting this function's own
+    // "always resolves" contract. `settled` guards against the rare case
+    // both events fire for the same child.
+    let settled = false;
+    child.on("error", (err) => {
+      if (settled) return;
+      settled = true;
+      resolve({
+        exitCode: null,
+        wallSeconds: Number(process.hrtime.bigint() - wallStart) / 1e9,
+        userSeconds: null,
+        systemSeconds: null,
+        peakRssKiB: null,
+        cpuEfficiency: null,
+        spawnError: err.message,
+      });
+    });
     child.on("close", (exitCode) => {
+      if (settled) return;
+      settled = true;
       const hrtimeWallSeconds =
         Number(process.hrtime.bigint() - wallStart) / 1e9;
       let parsed = null;
@@ -456,6 +478,11 @@ async function main() {
 
   const profile = detectHostProfile({ sessions: opts.sessions });
   const budget = deriveBudget(profile);
+  // A total-detection failure (e.g. /proc/meminfo unreadable) falls back to
+  // a plausible-looking sentinel (0 GiB, 1 core) that a reader could mistake
+  // for a real tiny-host measurement — surface it explicitly rather than
+  // letting the budget derived from it pass without comment.
+  for (const warning of profile.warnings ?? []) reporter.warn(warning);
 
   if (opts.printBudget) {
     reporter.info(`Profile: ${JSON.stringify(profile, null, 2)}`);
@@ -504,7 +531,7 @@ async function main() {
   }
 
   const tmpDir = mkdtempSync(join(tmpdir(), "bench-gates-"));
-  /** @type {Record<string, { samples: object[], medianWallSeconds: number | null, medianCpuEfficiency: number | null, medianPeakRssKiB: number | null, pressureDeltaMs: object | null }>} */
+  /** @type {Record<string, { samples: object[], failedIterations: number, medianWallSeconds: number | null, medianCpuEfficiency: number | null, medianPeakRssKiB: number | null, pressureDeltaMs: object | null }>} */
   const results = {};
 
   try {
@@ -541,6 +568,7 @@ async function main() {
       for (const [name, sample] of pairs) {
         results[name] ??= {
           samples: [],
+          failedIterations: 0,
           medianWallSeconds: null,
           medianCpuEfficiency: null,
           medianPeakRssKiB: null,
@@ -548,8 +576,12 @@ async function main() {
         };
         results[name].samples.push(sample);
         if (sample.exitCode !== 0) {
-          reporter.warn(
-            `Lane "${name}" exited ${sample.exitCode} on iteration ${iteration + 1}.`,
+          // A failed lane's numbers are not a real measurement — surface it
+          // as an error (flips report.ok, matches "never swallow silently")
+          // rather than a warning a caller could miss in the JSON payload.
+          const detail = sample.spawnError ? ` (${sample.spawnError})` : "";
+          reporter.error(
+            `Lane "${name}" exited ${sample.exitCode} on iteration ${iteration + 1}${detail}; its timing is not a valid measurement.`,
           );
         }
       }
@@ -576,20 +608,30 @@ async function main() {
 
   for (const name of laneNames) {
     const lane = results[name];
-    lane.medianWallSeconds = median(lane.samples.map((s) => s.wallSeconds));
+    // A failed run's timing is not a real measurement of the lane — exclude
+    // it from the medians rather than let it silently pull them toward a
+    // fast-crash or slow-hang-then-exit number (it stays visible in
+    // `samples` and in `failedIterations`, and its exit already emitted a
+    // reporter.error() above).
+    const okSamples = lane.samples.filter((s) => s.exitCode === 0);
+    lane.failedIterations = lane.samples.length - okSamples.length;
+    lane.medianWallSeconds = median(okSamples.map((s) => s.wallSeconds));
     lane.medianCpuEfficiency = median(
-      lane.samples.map((s) => s.cpuEfficiency).filter((v) => v !== null),
+      okSamples.map((s) => s.cpuEfficiency).filter((v) => v !== null),
     );
     lane.medianPeakRssKiB = median(
-      lane.samples.map((s) => s.peakRssKiB).filter((v) => v !== null),
+      okSamples.map((s) => s.peakRssKiB).filter((v) => v !== null),
     );
     reporter.info(
-      `${name}: median wall ${lane.medianWallSeconds?.toFixed(2)}s` +
+      `${name}: median wall ${lane.medianWallSeconds?.toFixed(2) ?? "n/a"}s` +
         (lane.medianCpuEfficiency !== null
           ? `, CPU efficiency ${lane.medianCpuEfficiency.toFixed(2)}x`
           : "") +
         (lane.medianPeakRssKiB !== null
           ? `, peak RSS ${(lane.medianPeakRssKiB / 1024).toFixed(0)} MiB`
+          : "") +
+        (lane.failedIterations > 0
+          ? ` (${lane.failedIterations}/${lane.samples.length} iteration(s) failed, excluded)`
           : ""),
     );
   }
@@ -605,6 +647,11 @@ async function main() {
     writeFileSync(opts.out, `${JSON.stringify(payload, null, 2)}\n`);
     if (!json) console.log(`\nWritten: ${opts.out}`);
   }
+  // Any lane failure already emitted reporter.error() (flips payload.ok to
+  // false) — reflect that in the process exit code too, so a failed
+  // benchmark run is detectable by a caller checking `$?` alone, not only
+  // one parsing the JSON payload.
+  if (!payload.ok) process.exitCode = 1;
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {

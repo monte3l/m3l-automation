@@ -50,6 +50,7 @@ const DEFAULT_NODE_OS = { availableParallelism, totalmem, freemem };
  *   fsType: string | null,
  *   pressure: { cpu: PressureReading | null, memory: PressureReading | null, io: PressureReading | null } | null,
  *   sessions: number,
+ *   warnings?: string[],
  * }} HostProfile
  */
 
@@ -411,32 +412,39 @@ export function parseDarwinSwapUsage(output) {
  * @returns {HostProfile}
  */
 function gatherLinuxProfile(io, common) {
+  /** @type {string[]} */
+  const warnings = [];
+  const cpuinfoCores = parseCpuinfoCores(io.readFile("/proc/cpuinfo"));
   const cpu =
     parseLscpuJson(io.run("lscpu", ["-J"])) ??
-    (() => {
-      const fallback = parseCpuinfoCores(io.readFile("/proc/cpuinfo"));
-      return fallback
-        ? { physicalCores: fallback.physicalCores, smt: fallback.smt }
-        : { physicalCores: null, smt: false };
-    })();
-  const logicalCoresFromCpuinfo = parseCpuinfoCores(
-    io.readFile("/proc/cpuinfo"),
-  )?.logicalCores;
-  const mem = parseMeminfo(io.readFile("/proc/meminfo")) ?? {
-    totalMemGiB: 0,
-    availableMemGiB: 0,
-  };
+    (cpuinfoCores
+      ? { physicalCores: cpuinfoCores.physicalCores, smt: cpuinfoCores.smt }
+      : null);
+  if (!cpu) {
+    warnings.push(
+      "CPU topology detection failed (lscpu and /proc/cpuinfo both " +
+        "unreadable/unparseable) — physicalCores/logicalCores defaulted to " +
+        "1, which understates a real multi-core host; not a measurement.",
+    );
+  }
+  const mem = parseMeminfo(io.readFile("/proc/meminfo"));
+  if (!mem) {
+    warnings.push(
+      "/proc/meminfo unreadable/unparseable — totalMemGiB/availableMemGiB " +
+        "defaulted to 0, not a real measurement.",
+    );
+  }
   const swap = parseProcSwaps(io.readFile("/proc/swaps"));
   return {
     os: "linux",
     distro: parseOsReleasePrettyName(io.readFile("/etc/os-release")),
     arch: process.arch,
-    logicalCores: logicalCoresFromCpuinfo ?? cpu.physicalCores ?? 1,
-    physicalCores: cpu.physicalCores ?? logicalCoresFromCpuinfo ?? 1,
+    logicalCores: cpuinfoCores?.logicalCores ?? cpu?.physicalCores ?? 1,
+    physicalCores: cpu?.physicalCores ?? cpuinfoCores?.logicalCores ?? 1,
     performanceCores: null,
-    smt: cpu.smt,
-    totalMemGiB: mem.totalMemGiB,
-    availableMemGiB: mem.availableMemGiB,
+    smt: cpu?.smt ?? false,
+    totalMemGiB: mem?.totalMemGiB ?? 0,
+    availableMemGiB: mem?.availableMemGiB ?? 0,
     swapGiB: swap.swapGiB,
     hasZram: swap.hasZram,
     isCI: common.isCI,
@@ -451,6 +459,7 @@ function gatherLinuxProfile(io, common) {
       io: parsePressureFile(io.readFile("/proc/pressure/io")),
     },
     sessions: common.sessions,
+    warnings,
   };
 }
 
@@ -467,9 +476,19 @@ function gatherLinuxProfile(io, common) {
  * @returns {HostProfile}
  */
 function gatherDarwinProfile(io, common) {
-  const core = parseDarwinSysctlCore(
+  /** @type {string[]} */
+  const warnings = [];
+  const rawCore = parseDarwinSysctlCore(
     io.run("sysctl", ["-n", "hw.physicalcpu", "hw.logicalcpu", "hw.memsize"]),
-  ) ?? { physicalCores: 1, logicalCores: 1, totalMemGiB: 0 };
+  );
+  if (!rawCore) {
+    warnings.push(
+      "sysctl hw.physicalcpu/hw.logicalcpu/hw.memsize detection failed — " +
+        "physicalCores/logicalCores/totalMemGiB defaulted to 1/1/0, not " +
+        "real measurements.",
+    );
+  }
+  const core = rawCore ?? { physicalCores: 1, logicalCores: 1, totalMemGiB: 0 };
   const performanceCores = parseDarwinPerformanceCores(
     io.run("sysctl", ["-n", "hw.perflevel0.logicalcpu"]),
   );
@@ -491,6 +510,7 @@ function gatherDarwinProfile(io, common) {
     fsType: null,
     pressure: null,
     sessions: common.sessions,
+    warnings,
   };
 }
 
@@ -523,6 +543,7 @@ function gatherFallbackProfile(common, nodeOs) {
     fsType: null,
     pressure: null,
     sessions: common.sessions,
+    warnings: [],
   };
 }
 
