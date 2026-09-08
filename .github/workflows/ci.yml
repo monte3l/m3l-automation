@@ -455,6 +455,13 @@ jobs:
       - name: Check harness freshness
         run: pnpm check:harness-freshness
 
+      # Same ADR-0082 pattern, second tracker: warns (non-blocking) when
+      # docs/research/typescript/refresh.md's last-verified date is stale or
+      # unset — the self-polling half of the refreshing-typescript-guidance
+      # cadence.
+      - name: Check TypeScript refresh freshness
+        run: pnpm check:typescript-freshness
+
       # Every .claude/skills/*/SKILL.md needs a sibling evals/evals.json with
       # >= 3 cases, each carrying >= 3 checklist entries. The EXEMPT_SKILLS
       # grandfather list is empty (the #775 backfill completed) but is kept

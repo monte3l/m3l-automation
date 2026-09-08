@@ -95,6 +95,7 @@
     "check:cadence": "node bin/check-cadence-doc.mjs",
     "check:context-budget": "node bin/check-context-budget.mjs",
     "check:harness-freshness": "node bin/check-harness-freshness.mjs",
+    "check:typescript-freshness": "node bin/check-typescript-freshness.mjs",
     "check:retrospective": "node bin/check-retrospective.mjs",
     "check:staleness": "node bin/check-staleness.mjs",
     "check:lefthook-shim": "node bin/check-lefthook-shim.mjs",

@@ -96,7 +96,7 @@ minutes — background it, never `--no-verify`.
 | `pre-push` (lefthook)   | `check:cli-docs`, `check:review-size`, `check:context-budget`, `check:index`                                 | repo   |
 | `pre-push` (lefthook)   | `check:harness-freshness`, `check:skill-evals`, `check:retrospective`, `check:logs-index`                    | repo   |
 | `pre-push` (lefthook)   | `check:review-policy`, `check:claude-cli-version`, `check:hooks`                                             | repo   |
-| `pre-push` (lefthook)   | `check:staleness`, `check:adr-index`, `check:adr-claims`                                                     | repo   |
+| `pre-push` (lefthook)   | `check:staleness`, `check:adr-index`, `check:adr-claims`, `check:typescript-freshness`                       | repo   |
 | `pre-push` (lefthook)   | `check:adr-provenance`, `check:adr-worthiness`, `check:mcp`, `check:lefthook-shim`, `check:promotion-stamps` | repo   |
 | `pre-push` (lefthook)   | `check-commit-trailers`, `check:skill-frontmatter`, `check:no-docker`                                        | repo   |
 

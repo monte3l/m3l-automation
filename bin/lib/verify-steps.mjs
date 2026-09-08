@@ -213,6 +213,11 @@ export const VERIFY_STEPS = [
     cmd: () => "pnpm check:harness-freshness",
   },
   {
+    ciStepName: "Check TypeScript refresh freshness",
+    id: "check-typescript-freshness",
+    cmd: () => "pnpm check:typescript-freshness",
+  },
+  {
     ciStepName: "Check retrospective loop",
     id: "check-retrospective",
     cmd: () => "pnpm check:retrospective",
