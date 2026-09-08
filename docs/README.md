@@ -134,3 +134,4 @@ Utilities
 - [CI/CD workflows](contributing/ci-cd.md) — the seven GitHub Actions workflows, triggers, and purpose
 - [Model selection](contributing/model-selection.md) — which Claude model runs which task category, and how it is enforced
 - [Instruction authoring](contributing/instruction-authoring.md) — which tier a new instruction belongs in, and what each tier costs
+- [Glossary](contributing/glossary.md) — strict definitions for project-specific terms, starting with observation/insight
