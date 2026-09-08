@@ -403,7 +403,7 @@ export const COMMAND_CATALOG = [
   {
     name: "check:promotion-stamps",
     description:
-      "ROADMAP H7 (issue #1000): BLOCKING validation of the `promoted → <path>` stamp convention /promoting-work-log-lessons and /writing-work-logs share — every docs/logs/*.md stamp's target must exist (via bin/lib/promotion-stamps.mjs's RENAMED_TARGETS alias map when the target was since renamed, never by editing the immutable log), and every docs/logs/<name>.md citation inside .claude/rules/*.md, .claude/agents/*.md, .claude/skills/*/SKILL.md, or CLAUDE.md must resolve to a real log. Does not check symmetry (a stamp's target citing its source log back) — see the lib module's header comment for why. Exits 1 on any dangling stamp/citation or stale alias.",
+      "ROADMAP H7 (issue #1000): BLOCKING validation of the `promoted → <path>` stamp convention /promoting-work-log-insights and /writing-work-logs share — every docs/logs/*.md stamp's target must exist (via bin/lib/promotion-stamps.mjs's RENAMED_TARGETS alias map when the target was since renamed, never by editing the immutable log), and every docs/logs/<name>.md citation inside .claude/rules/*.md, .claude/agents/*.md, .claude/skills/*/SKILL.md, or CLAUDE.md must resolve to a real log. Does not check symmetry (a stamp's target citing its source log back) — see the lib module's header comment for why. Exits 1 on any dangling stamp/citation or stale alias.",
   },
   {
     name: "check:skill-evals",
@@ -588,7 +588,7 @@ export const COMMAND_CATALOG = [
   {
     name: "telemetry:sessions",
     description:
-      "ADR-0084: the ONLY sanctioned reader of Claude Code's session transcripts — a thin adapter over the session-report plugin's bundled analyze-sessions.mjs, invoked on demand by /promoting-work-log-lessons and NEVER a pre-push gate. Always pins --dir to this project's transcript directory and bounds --since (default 30d); the full store measured 1,759 files / 932 MB and an unscoped scan is the workload ADR-0080 budgets against. Asserts every required top-level key (overall, by_project, by_subagent_type, by_skill, cache_breaks, top_prompts, by_day) and exits NON-ZERO naming the transcript-format instability when one is missing — the format is internal to Claude Code and officially unsupported to parse, so without this a version upgrade degrades silently to zeros. --analyzer pins a specific cached revision.",
+      "ADR-0084: the ONLY sanctioned reader of Claude Code's session transcripts — a thin adapter over the session-report plugin's bundled analyze-sessions.mjs, invoked on demand by /promoting-work-log-insights and NEVER a pre-push gate. Always pins --dir to this project's transcript directory and bounds --since (default 30d); the full store measured 1,759 files / 932 MB and an unscoped scan is the workload ADR-0080 budgets against. Asserts every required top-level key (overall, by_project, by_subagent_type, by_skill, cache_breaks, top_prompts, by_day) and exits NON-ZERO naming the transcript-format instability when one is missing — the format is internal to Claude Code and officially unsupported to parse, so without this a version upgrade degrades silently to zeros. --analyzer pins a specific cached revision.",
   },
   {
     name: "spoke:recover",

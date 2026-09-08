@@ -107,7 +107,7 @@ describe("buildGradedPrompt", () => {
     },
     {
       shape:
-        "{id, description} (writing-work-logs, promoting-work-log-lessons)",
+        "{id, description} (writing-work-logs, promoting-work-log-insights)",
       assertions: [
         {
           id: "correct-filename",

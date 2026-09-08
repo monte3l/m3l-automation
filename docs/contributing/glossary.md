@@ -43,11 +43,8 @@ about every future run.
 Every bullet under `## Insights` leads with a bolded 2–6 word keyword phrase
 naming the insight, followed by one or two sentences of specific, actionable
 guidance — the exact shape `writing-work-logs`' template requires, and the
-shape [`promoting-work-log-insights`](../../.claude/skills/promoting-work-log-lessons/SKILL.md)
-scans for when clustering recurring insights across logs. (That skill is
-mid-rename to `promoting-work-log-insights` — see
-[ADR-0099](../adr/0099-observation-and-insight-vocabulary.md) — this link
-targets its current path.)
+shape [`promoting-work-log-insights`](../../.claude/skills/promoting-work-log-insights/SKILL.md)
+scans for when clustering recurring insights across logs.
 
 **An insight has two states:**
 
@@ -117,9 +114,8 @@ product name ("CloudWatch Logs Insights", "GitHub Insights", "Claude Code's
 
 - [`writing-work-logs`](../../.claude/skills/writing-work-logs/SKILL.md) —
   writes the `## Insights` section this page defines
-- [`promoting-work-log-insights`](../../.claude/skills/promoting-work-log-lessons/SKILL.md) —
-  the cross-log sweep that promotes candidate insights (mid-rename to
-  `promoting-work-log-insights` — link targets its current path)
+- [`promoting-work-log-insights`](../../.claude/skills/promoting-work-log-insights/SKILL.md) —
+  the cross-log sweep that promotes candidate insights
 - [Instruction authoring](./instruction-authoring.md) — the six tiers a
   promoted insight is routed to
 - [`docs/research/retrospective.md`](../research/retrospective.md) — the

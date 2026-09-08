@@ -99,7 +99,7 @@ additively, in the same gate.
 
 ## Superseding note
 
-`promoting-work-log-lessons`/SKILL.md Step 3 held the only routing guidance
+`promoting-work-log-insights`/SKILL.md Step 3 held the only routing guidance
 that existed before this page, scoped to lessons promoted from a work log
 and missing hooks as a destination entirely. Step 3 now cites this page
 instead of restating its own copy of the tier list.

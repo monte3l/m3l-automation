@@ -857,7 +857,7 @@
       },
       {
         "path": "docs/adr/README.md",
-        "blob": "43d940b9e450ed8e483e57168e394bc08c925f31"
+        "blob": "b4c00bfde310b516b375a0973885c0ccd7d412d5"
       },
       {
         "path": "docs/logs/2026-08-14-aws-rds-data.md",
@@ -2000,20 +2000,16 @@
         "blob": "6dad00b55562b5d1a60a913209662f16d7b7644a"
       },
       {
-        "path": ".claude/skills/promoting-work-log-lessons/SKILL.md",
-        "blob": "0efa0af482289b478423aa1189ba34e501064ee3"
-      },
-      {
         "path": "bin/check-control-chars.mjs",
         "blob": "fb89735c491f22af10bee278cfffee6daf3d3ed7"
       },
       {
         "path": "bin/check-retrospective.mjs",
-        "blob": "11406fe472cb7a8a12815319627fc0f872eddb0b"
+        "blob": "39bb8b728871a2c1f337a304a7c12a2397472e4d"
       },
       {
         "path": "bin/session-telemetry.mjs",
-        "blob": "8365a0e3e9a03dbb27c3748b4ab1762300b12e11"
+        "blob": "4e48f7e01e4dfeed0825ad72464bdc9d1ba6fed5"
       },
       {
         "path": "CLAUDE.md",
@@ -2080,7 +2076,7 @@
       },
       {
         "path": "bin/session-telemetry.mjs",
-        "blob": "8365a0e3e9a03dbb27c3748b4ab1762300b12e11"
+        "blob": "4e48f7e01e4dfeed0825ad72464bdc9d1ba6fed5"
       },
       {
         "path": "bin/worktree-new.mjs",
@@ -2095,7 +2091,7 @@
         "blob": "1c8dd5683cc5463ae3ba98de0b9b0766e5633782"
       }
     ],
-    "verifiedAt": "2026-09-07"
+    "verifiedAt": "2026-09-08"
   },
   "0088": {
     "sourceFiles": [
@@ -2109,7 +2105,7 @@
       },
       {
         "path": "bin/session-telemetry.mjs",
-        "blob": "8365a0e3e9a03dbb27c3748b4ab1762300b12e11"
+        "blob": "4e48f7e01e4dfeed0825ad72464bdc9d1ba6fed5"
       },
       {
         "path": "bin/worktree-new.mjs",
@@ -2124,7 +2120,7 @@
         "blob": "b0bebce5ab3010955e4cc10d2cef34c3903f591a"
       }
     ],
-    "verifiedAt": "2026-09-07"
+    "verifiedAt": "2026-09-08"
   },
   "0089": {
     "sourceFiles": [
@@ -2150,7 +2146,7 @@
       },
       {
         "path": "docs/contributing/skills-catalog.md",
-        "blob": "0751a445fbce2aeeded8b400876ec517c2ca0c35"
+        "blob": "5e2436ecb3cc6aafe96a988f79aa6b60bb59e13c"
       },
       {
         "path": "docs/plans/archive/2026-09-03-skill-invocation-and-listing-budget.md",
@@ -2262,7 +2258,7 @@
       },
       {
         "path": "docs/contributing/skills-catalog.md",
-        "blob": "0751a445fbce2aeeded8b400876ec517c2ca0c35"
+        "blob": "5e2436ecb3cc6aafe96a988f79aa6b60bb59e13c"
       },
       {
         "path": "docs/logs/2026-07-17-adr-0030-workflow-tooling-mcp.md",
@@ -2307,7 +2303,7 @@
       },
       {
         "path": "docs/adr/README.md",
-        "blob": "43d940b9e450ed8e483e57168e394bc08c925f31"
+        "blob": "b4c00bfde310b516b375a0973885c0ccd7d412d5"
       },
       {
         "path": "docs/contributing/filing-work.md",
@@ -2328,7 +2324,7 @@
       },
       {
         "path": "docs/adr/README.md",
-        "blob": "43d940b9e450ed8e483e57168e394bc08c925f31"
+        "blob": "b4c00bfde310b516b375a0973885c0ccd7d412d5"
       },
       {
         "path": "docs/decision-notes/README.md",
@@ -2427,7 +2423,28 @@
       },
       {
         "path": "docs/contributing/instruction-authoring.md",
-        "blob": "7f3ddc5dfec3ed8b4471de571180dcaee6aa88fa"
+        "blob": "f3d6b1a1f5af32d5683d29682d27e397bc4ea67a"
+      }
+    ],
+    "verifiedAt": "2026-09-08"
+  },
+  "0099": {
+    "sourceFiles": [
+      {
+        "path": "bin/lib/promotion-stamps.mjs",
+        "blob": "c54c5f862b4ed8a58822ebfa19bf37b23ce47995"
+      },
+      {
+        "path": "CLAUDE.md",
+        "blob": "82ab71cfedc7445482de1ff8b8f8f5d98fc0ca34"
+      },
+      {
+        "path": "docs/contributing/glossary.md",
+        "blob": "1e8efc8fcae1f847e166434fa609fba4bd3b49a9"
+      },
+      {
+        "path": "docs/logs/README.md",
+        "blob": "cb324e198c277478e9ce868f1a1636fdcf56aeae"
       }
     ],
     "verifiedAt": "2026-09-08"

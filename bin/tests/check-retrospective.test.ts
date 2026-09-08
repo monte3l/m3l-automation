@@ -364,7 +364,7 @@ describe("evaluateSweepFreshness", () => {
     );
     expect(findings).toHaveLength(1);
     expect(findings[0]).toContain("have not been swept");
-    expect(findings[0]).toContain("/promoting-work-log-lessons");
+    expect(findings[0]).toContain("/promoting-work-log-insights");
   });
 
   test("a backlog one under the threshold stays silent", () => {
