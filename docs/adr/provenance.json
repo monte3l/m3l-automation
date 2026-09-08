@@ -528,7 +528,7 @@
     "sourceFiles": [
       {
         "path": ".claude/rules/scripts.md",
-        "blob": "e581ea10cfd72c2dcc8746fb120078d2cfdc0b2a"
+        "blob": "43213574120787631f1334e0d603227fe13a444a"
       },
       {
         "path": "bin/lib/script-scaffold.mjs",
@@ -750,7 +750,7 @@
     "sourceFiles": [
       {
         "path": ".claude/rules/scripts.md",
-        "blob": "e581ea10cfd72c2dcc8746fb120078d2cfdc0b2a"
+        "blob": "43213574120787631f1334e0d603227fe13a444a"
       },
       {
         "path": "bin/lib/script-scaffold.mjs",
@@ -771,7 +771,7 @@
     "sourceFiles": [
       {
         "path": ".claude/rules/scripts.md",
-        "blob": "e581ea10cfd72c2dcc8746fb120078d2cfdc0b2a"
+        "blob": "43213574120787631f1334e0d603227fe13a444a"
       },
       {
         "path": "bin/check-deps.mjs",
@@ -974,7 +974,7 @@
       },
       {
         "path": "docs/logs/README.md",
-        "blob": "f206b58b54380a69bb4c7270ab137cb83f91f1cf"
+        "blob": "969383199f62d2ee6b6bed9d5960095bd55f4c43"
       },
       {
         "path": "docs/plans/IMPLEMENTATION.md",
