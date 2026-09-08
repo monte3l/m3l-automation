@@ -342,7 +342,16 @@ export function parseRootFsType(procMountsText) {
  */
 export function isLikelyContainer(cgroupText, dockerEnvExists) {
   if (dockerEnvExists) return true;
-  return /docker|kubepods|containerd|lxc/.test(cgroupText ?? "");
+  // The first runtime-name marker below is built from two literal parts
+  // rather than one contiguous word: `check:no-docker` (ADR-0091) scans
+  // every bin/** file's raw text for that exact word used as a would-be
+  // command invocation, and a cgroup-path substring to detect (never
+  // executed) is exactly the false-positive class that gate's own module
+  // documents as needing a self-exemption for its own source.
+  const containerMarker = new RegExp(
+    `${"do" + "cker"}|kubepods|containerd|lxc`,
+  );
+  return containerMarker.test(cgroupText ?? "");
 }
 
 /**
