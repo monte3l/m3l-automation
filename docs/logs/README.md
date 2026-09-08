@@ -288,3 +288,4 @@ target was renamed is repaired via `RENAMED_TARGETS` in
 | 2026-09-07 | H7 — `check:promotion-stamps` validity gate (issue #1000, PR #1112/#1117)                    | [check-promotion-stamps](./2026-09-07-check-promotion-stamps.md)                           |
 | 2026-09-07 | Should-fix historical backfill — PR 4 of the ack-gate sequence (ADR-0097)                    | [should-fix-backfill](./2026-09-07-should-fix-backfill.md)                                 |
 | 2026-09-07 | Should-fix acknowledgment gate — 4-PR wave retrospective (ADR-0097, #1075/#1082/#1110/#1119) | [should-fix-ack-gate-wave](./2026-09-07-should-fix-ack-gate-wave.md)                       |
+| 2026-09-08 | TypeScript guidance skill pair + check:typescript-freshness gate, ADR-0098 (PR #1129/#1130)  | [typescript-guidance-skills](./2026-09-08-typescript-guidance-skills.md)                   |

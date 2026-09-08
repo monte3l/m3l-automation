@@ -153,6 +153,18 @@ In **Settings → Branches → Branch protection rules**, add a rule for `main`:
     see the workflow's `claude_args` comment and
     `docs/research/pr-review-action-tuning.md` for why.
 
+    **The round count is attempts, not convergence failures** — a PR that
+    already reached `PASS` and then receives one more trivial commit (a typo
+    fix, a one-line eval-schema correction) still consumes a round slot on
+    that push, and can hit the ceiling on a diff that would have sailed
+    through review on its own. Once a PR reaches a clean `PASS`, batch any
+    further small fixes into as few follow-up pushes as possible rather than
+    pushing each one separately — confirmed in practice
+    (`docs/logs/2026-09-08-typescript-guidance-skills.md`), where a single
+    one-line follow-up push after a converged `PASS` tripped the ceiling and
+    required the override procedure below for a change that was never
+    actually disputed.
+
     A separate, non-blocking step logs run metrics (turns used against the
     cap, wall/API duration, cost, prompt-cache read/write tokens, reviewable
     diff size, review mode — full or delta — and **which** tools hit
