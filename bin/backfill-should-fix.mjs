@@ -413,7 +413,7 @@ function renderReport(results, summary, meta) {
   );
   lines.push("");
 
-  lines.push("## Lessons");
+  lines.push("## Insights");
   lines.push("");
   lines.push(
     "- The dominant historical failure mode was never auto-merge or a manual override of a " +

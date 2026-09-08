@@ -2,7 +2,7 @@
 name: writing-work-logs
 description: >-
   Produces a structured Markdown work log in docs/logs/ covering what shipped,
-  what went as planned, what diverged and why, and durable lessons. Invoked by
+  what went as planned, what diverged and why, and durable insights. Invoked by
   /writing-work-logs or "document this task", "log what happened", "record what
   we built". Invoke proactively when a significant task wraps up — real-time
   context is lost once the session closes.
@@ -12,7 +12,10 @@ description: >-
 
 This skill turns the current conversation into a durable `docs/logs/` entry — a
 Markdown file that records what shipped, what went smoothly, what diverged (and
-why), and concrete lessons for future tasks in this project.
+why), and concrete insights for future tasks in this project. See
+[`docs/contributing/glossary.md`](../../../docs/contributing/glossary.md)
+(ADR-0099) for the strict definitions of **observation** and **insight** this
+page uses throughout.
 
 Scope (which tasks get a log at all) lives in
 [`docs/logs/README.md`](../../../docs/logs/README.md) — don't re-decide it
@@ -151,31 +154,39 @@ If nothing diverged, write: "Everything executed as planned; no divergences
 were observed." — and omit the numbered list entirely. Do not pad the section
 with manufactured divergences.
 
-### Lessons learned
+### Insights
 
-Bulleted synthesis from the "What didn't go as planned" items plus any
-non-obvious insights from the "What went as planned" section.
+Bulleted synthesis from the "What didn't go as planned" items (each is an
+**observation** — see the glossary) plus any non-obvious observation from the
+"What went as planned" section. Synthesizing an observation into a
+generalized, actionable claim is what makes it an **insight** — the two are
+distinct (glossary), and this section holds insights, not raw observations.
 
 Each bullet:
 
-- Leads with a keyword phrase (2–6 words) capturing the lesson topic, wrapped in
+- Leads with a keyword phrase (2–6 words) capturing the insight's topic, wrapped in
   `**bold**` Markdown syntax (e.g. `- **Front-load the shape** — …`). The bold
-  is not decoration: a future reader — and the `/promoting-work-log-lessons`
-  skill — scans these keyword phrases to cluster recurring lessons, so make the
-  phrase the searchable name of the lesson.
+  is not decoration: a future reader — and the `/promoting-work-log-insights`
+  skill — scans these keyword phrases to cluster recurring insights, so make the
+  phrase the searchable name of the insight.
 - Follows with one or two sentences of specific, actionable guidance.
 
-Write at least one lesson even when everything went smoothly — a smooth run
-confirms prior lessons still hold, or identifies a workflow element worth
+Write at least one insight even when everything went smoothly — a smooth run
+confirms prior insights still hold, or identifies a workflow element worth
 repeating explicitly.
 
-**Provenance marker:** if you fold a lesson into a durable rule in this same
-change set (see Step 4), append `_(promoted → <path>)_` to that lesson's bullet,
+**Provenance marker:** if you fold an insight into a durable rule in this same
+change set (see Step 4), append `_(promoted → <path>)_` to that insight's bullet,
 naming the file you added it to — e.g.
 `- **Run gen:index before format** — … _(promoted → .claude/skills/syncing-docs/SKILL.md)_`.
-This marker records that the lesson has left the log and now lives where it
-changes behavior; `/promoting-work-log-lessons` reads it to avoid re-proposing an
-already-promoted lesson. Leave the marker off any lesson you did not promote.
+This marker records that the insight has left the log and now lives where it
+changes behavior; `/promoting-work-log-insights` reads it to avoid re-proposing an
+already-promoted insight. Leave the marker off any insight you did not promote.
+
+**Heading note:** logs written before ADR-0099 use `## Lessons learned` or
+`## Lessons` — this is the same section under its current name. Never rename
+an existing log's heading (`docs/logs/` is immutable); use `## Insights` only
+in new logs.
 
 ## Step 3 — Write the file, and index it
 
@@ -186,7 +197,7 @@ Use this exact template. No YAML frontmatter.
 
 <one-paragraph intro: what task this log covers, what pipeline it ran through,
 and what it records (what shipped, what matched the plan, what diverged,
-durable lessons)>
+durable insights)>
 
 Plan of record: [`docs/plans/<plan-file>.md`](../plans/<plan-file>.md)
 
@@ -202,7 +213,7 @@ Plan of record: [`docs/plans/<plan-file>.md`](../plans/<plan-file>.md)
 
 …
 
-## Lessons learned
+## Insights
 
 …
 ```
@@ -231,10 +242,10 @@ not the mechanism — this step is.
 3. Insert it in date-ascending order within that table (the README's
    maintenance note documents this).
 
-## Step 4 — Promote durable lessons
+## Step 4 — Promote durable insights
 
-Scan the log's "Lessons learned" and "What didn't go as planned" sections. For
-any lesson that **generalizes beyond this submodule** (a convention or tactic the
+Scan the log's "Insights" and "What didn't go as planned" sections. For
+any insight that **generalizes beyond this submodule** (a convention or tactic the
 next task would also need), propose folding it into its durable home in the same
 change set, so the rules track lived experience instead of drifting from it:
 
@@ -245,21 +256,21 @@ change set, so the rules track lived experience instead of drifting from it:
   `spec-conformance-reviewer.md`).
 
 Keep additions concise — terse imperative bullets, a code snippet only where the
-exact syntax _is_ the lesson. Skip a lesson that is purely specific to this one
-submodule, or that is **already captured** — before proposing a promotion, grep
-the likely target for the lesson's keyword to check it isn't already written
+exact syntax _is_ the insight. Skip an insight that is purely specific to this
+one submodule, or that is **already captured** — before proposing a promotion, grep
+the likely target for the insight's keyword to check it isn't already written
 down, e.g. `grep -rin "gen:index" .claude/rules .claude/agents .claude/skills`.
 The log stays the durable narrative; the rules/prompts are where a recurring
-lesson must live to actually change behavior.
+insight must live to actually change behavior.
 
-When you do promote a lesson here, stamp its bullet with the
-`_(promoted → <path>)_` marker described under _Lessons learned_ above, so the
-log records where the lesson now lives.
+When you do promote an insight here, stamp its bullet with the
+`_(promoted → <path>)_` marker described under _Insights_ above, so the
+log records where the insight now lives.
 
 Promoting at write time is best-effort and single-log — you only see this one
-task. The periodic `/promoting-work-log-lessons` sweep is the backstop that
-catches lessons which only reveal themselves as durable once they recur across
-several logs, so it is fine to leave a borderline "maybe generalizes" lesson
+task. The periodic `/promoting-work-log-insights` sweep is the backstop that
+catches insights which only reveal themselves as durable once they recur across
+several logs, so it is fine to leave a borderline "maybe generalizes" insight
 unpromoted here rather than force it.
 
 **A follow-up that lives only in a work log does not exist.** This holds for
@@ -271,8 +282,8 @@ evidence rots like any other authored claim, and a plan asserting something was
 (`2026-08-20-a6-pipeline-phase-trace.md`, `2026-07-22-promotion-audit.md`,
 `2026-07-28-w5-config-accessor-fleet-retrofit.md`).
 
-**File library friction into the backlog tracker (distinct from lesson
-promotion).** A lesson changes _how we work_ (→ rules/agents); a **friction
+**File library friction into the backlog tracker (distinct from insight
+promotion).** An insight changes _how we work_ (→ rules/agents); a **friction
 item** is a concrete _pending library change_ the log surfaced (a missing API, a
 deferred capability, a "this fought back"). File each into
 `docs/plans/IMPLEMENTATION.md` — an id, title, priority, the source log, and the
@@ -306,7 +317,7 @@ After writing, print:
 5. **Sweep-cadence check:** count the logs newer than the most recent
    `_(promoted → …)_` stamp (`grep -l "promoted →" docs/logs/*.md`, then
    compare dates). If **5 or more** new logs have accumulated since the last
-   sweep, recommend running `/promoting-work-log-lessons` now — this is the
+   sweep, recommend running `/promoting-work-log-insights` now — this is the
    documented trigger for the cross-log sweep (see `docs/logs/README.md`).
 
 **Commit it immediately** (its own small `docs:` commit via
@@ -325,7 +336,7 @@ contradict this step by telling the same handoff the opposite way.
 
 The examples below show the expected style for the two most distinctive
 sections. Match this style — future agents read these logs to extract process
-lessons, so precision matters.
+insights, so precision matters.
 
 ### "What didn't go as planned" — example item
 
@@ -347,7 +358,7 @@ the right reason (missing module, not a logic error). The blocks self-resolve
 once the module exists.
 ```
 
-### "Lessons learned" — example bullets
+### "Insights" — example bullets
 
 ```markdown
 - **Never add RED-phase eslint-disable blocks for import-resolution errors.**

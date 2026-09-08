@@ -60,7 +60,7 @@ topic snapshot.
 
 A third living tracker sits alongside the two named in the table above:
 [`retrospective.md`](retrospective.md) is the per-log ledger of
-`/promoting-work-log-lessons` sweeps (ADR-0084), carrying its own
+`/promoting-work-log-insights` sweeps (ADR-0084), carrying its own
 machine-readable `last-swept` / `logs-considered` header that the
 `check:retrospective` `pre-push` gate reads. Same in-place convention as
 `harness-refresh.md` and `typescript/refresh.md`, a third question: those

@@ -44,7 +44,7 @@ Ask in this order; stop at the first "yes":
    unprompted?** → a `docs/contributing/*.md` page, linked from wherever a
    session would actually need it.
 
-If a lesson could land in two places, prefer the most specific one an agent
+If an insight could land in two places, prefer the most specific one an agent
 actually reads while doing the relevant work — a tactic buried in CLAUDE.md
 is weaker than the same tactic in the spoke prompt that governs the task.
 (This is the one line inherited unchanged from the promotion-time tiebreak
@@ -100,7 +100,7 @@ additively, in the same gate.
 ## Superseding note
 
 `promoting-work-log-insights`/SKILL.md Step 3 held the only routing guidance
-that existed before this page, scoped to lessons promoted from a work log
+that existed before this page, scoped to insights promoted from a work log
 and missing hooks as a destination entirely. Step 3 now cites this page
 instead of restating its own copy of the tier list.
 

@@ -88,10 +88,11 @@ that reviews it" structural, and keeps the hub's context lean.
   gates; `check:script-scaffold` + knip are the backstops).
 - **Current state**: see `docs/implementation-status.md` for the authoritative
   built-vs-documented tracker and suggested build order.
-- **Lessons learned**: `docs/logs/` holds per-unit work logs (scope:
-  [`docs/logs/README.md`](../logs/README.md)). The
+- **Insights**: `docs/logs/` holds per-unit work logs (scope:
+  [`docs/logs/README.md`](../logs/README.md); vocabulary:
+  [`docs/contributing/glossary.md`](./glossary.md), ADR-0099). The
   `core/errors` log (`docs/logs/2026-06-29-core-errors.md`) is the durable
-  source for the process lessons baked into the spoke prompts — front-load exact
+  source for the process insights baked into the spoke prompts — front-load exact
   contract nuances, lint in-loop, justify error-channel `eslint-disable`, read
   coverage from `coverage-final.json` (the v8 text table hides 100% files), and
   trust the CLI over the IDE/LSP.
