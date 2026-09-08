@@ -29,11 +29,12 @@ difference matters for a skill you use rarely.
   skill regardless of how it's phrased or how many other skills exist.
 - **Plain English** ("open a PR for this") depends on Claude matching your
   request against every skill's `description`, which is injected into the
-  model's context inside a fixed **skill-listing budget** — about 1% of the
-  active context window. This repo currently uses 7,739 of that budget's
-  ~8,000 characters at a 200,000-token context window (enforced by
-  `pnpm check:context-budget`, which fails the push if the listing grows past
-  it). If the listing ever did overflow that budget, Claude Code drops
+  model's context inside a fixed **skill-listing budget** — 2% of the active
+  context window, raised from Anthropic's 1% default (ADR-0098). This repo
+  currently uses about 8,800 of that budget's ~16,000 characters at a
+  200,000-token context window (enforced by `pnpm check:context-budget`,
+  which fails the push if the listing grows past it). If the listing ever
+  did overflow that budget, Claude Code drops
   descriptions starting with the **least-invoked** skills — so a skill you
   reach for once a month is exactly the one at risk of silently stopping to
   trigger on prose.
@@ -54,11 +55,13 @@ next when it's a link in a chain.
 
 ### Planning and research
 
-| I want to...                                                                         | Skill                             | Also triggers on                                               |
-| ------------------------------------------------------------------------------------ | --------------------------------- | -------------------------------------------------------------- |
-| Investigate a topic and get a plan, without writing code yet                         | `/auditing`                       | "audit the codebase", "audit \[topic]", "investigate and plan" |
-| Check a specific decision or approach against Anthropic's own docs before committing | `/researching-anthropic-guidance` | "what does Anthropic recommend for X"                          |
-| Sweep the whole harness (agents/skills/hooks/rules/CLAUDE.md) for staleness          | `/refreshing-anthropic-guidance`  | "is our harness up to date with Anthropic"                     |
+| I want to...                                                                               | Skill                              | Also triggers on                                                                  |
+| ------------------------------------------------------------------------------------------ | ---------------------------------- | --------------------------------------------------------------------------------- |
+| Investigate a topic and get a plan, without writing code yet                               | `/auditing`                        | "audit the codebase", "audit \[topic]", "investigate and plan"                    |
+| Check a specific decision or approach against Anthropic's own docs before committing       | `/researching-anthropic-guidance`  | "what does Anthropic recommend for X"                                             |
+| Sweep the whole harness (agents/skills/hooks/rules/CLAUDE.md) for staleness                | `/refreshing-anthropic-guidance`   | "is our harness up to date with Anthropic"                                        |
+| Check a TypeScript language/compiler/toolchain question against upstream's own docs        | `/researching-typescript-guidance` | "what does the TypeScript team say about X", "is erasableSyntaxOnly still needed" |
+| Sweep tsconfig/ESM/packaging/lint/language-feature assumptions against upstream TypeScript | `/refreshing-typescript-guidance`  | "are we behind on TypeScript", "did TS 7 move our defaults"                       |
 
 ### Starting a change
 

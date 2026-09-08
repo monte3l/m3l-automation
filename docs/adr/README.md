@@ -220,7 +220,7 @@ surface).
 | 0086 | [Per-attempt retry metadata leaves `core/polling` by a sibling detailed method](./0086-retry-attempt-metadata-seam.md)                                    | Accepted             |
 | 0087 | [Claude Code session naming convention](./0087-claude-code-session-naming-convention.md)                                                                  | Accepted             |
 | 0088 | [Automatic session naming via a launcher wrapper](./0088-automatic-session-naming-via-launcher.md)                                                        | Accepted             |
-| 0089 | [Skill invocation stance, the listing-budget ceiling, and where routing guidance lives](./0089-skill-invocation-stance-and-listing-budget.md)             | Accepted             |
+| 0089 | [Skill invocation stance, the listing-budget ceiling, and where routing guidance lives](./0089-skill-invocation-stance-and-listing-budget.md)             | Partially-superseded |
 | 0090 | [Native `subagentStatusLine` supersedes the JSONL spoke-lifecycle tracker](./0090-subagent-statusline-supersedes-lifecycle-tracker.md)                    | Accepted             |
 | 0091 | [Podman and Containerfiles replace Docker for the console's app containers](./0091-podman-replaces-docker.md)                                             | Accepted             |
 | 0092 | [Out-of-band usage cache for the statusline's first network dependency](./0092-out-of-band-usage-cache.md)                                                | Accepted             |
@@ -229,5 +229,6 @@ surface).
 | 0095 | [ADR-worthiness routing and a lightweight decision-note tier](./0095-adr-worthiness-and-decision-note-tier.md)                                            | Accepted             |
 | 0096 | [Replace the in-repo `m3l` MCP server's tool set with read-only query tools](./0096-m3l-mcp-server-replace-with-query-tools.md)                           | Accepted             |
 | 0097 | [A Should-fix acknowledgment gate for claude-pr-review](./0097-should-fix-acknowledgment-gate.md)                                                         | Accepted             |
+| 0098 | [Raise the skill-listing budget fraction from 1% to 2%](./0098-raise-skill-listing-budget-fraction.md)                                                    | Accepted             |
 
 <!-- END GENERATED ADR INDEX -->

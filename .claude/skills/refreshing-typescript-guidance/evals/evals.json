@@ -1,0 +1,73 @@
+{
+  "skill_name": "refreshing-typescript-guidance",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "we haven't looked at our typescript setup against upstream in ages -- is any of it stale?",
+      "expected_output": "The response reads docs/research/typescript/refresh.md first, reports its recorded last-verified date and typescript-version, builds a release delta from devblogs.microsoft.com/typescript or github.com/microsoft/TypeScript/releases newer than that recorded version, then emits exactly five WOULD-DISPATCH lines -- one per fixed facet slug -- passing the delta into all five rather than treating it as a sixth facet, and writes no file other than the tracker.",
+      "files": [
+        {
+          "path": "docs/research/typescript/refresh.md",
+          "content": "# TypeScript refresh tracker\n\n<!-- typescript-refresh: last-verified=2026-03-01 typescript-version=6.0.1 -->\n\n## Facets\n\n### Compiler config & flags\n\n- CLAIM: noUncheckedIndexedAccess and exactOptionalPropertyTypes are set on top of strict because they are not part of the strict umbrella -- typescriptlang.org tsconfig reference (recorded 2026-03-01, tier T1)\n  - VERDICT: UNCHANGED (re-fetched 2026-03-01)\n"
+        },
+        {
+          "path": "tsconfig.base.json",
+          "content": "{\n  \"compilerOptions\": {\n    \"strict\": true,\n    \"noUncheckedIndexedAccess\": true,\n    \"exactOptionalPropertyTypes\": true\n  }\n}\n"
+        },
+        {
+          "path": "package.json",
+          "content": "{\n  \"name\": \"@m3l-automation/m3l-automation\",\n  \"devDependencies\": {\n    \"typescript\": \"6.0.3\"\n  }\n}\n"
+        }
+      ],
+      "expectations": [
+        "The WOULD-RUN read of docs/research/typescript/refresh.md appears earlier in the response text than any WOULD-DISPATCH line, and the response contains 2026-03-01 or 6.0.1 drawn from that file.",
+        "The response contains exactly five WOULD-DISPATCH lines, one per fixed facet slug (compiler-config-flags, modules-esm-node-interop, packaging-declaration-emit, lint-typing-rules, language-features-deprecations), appearing consecutively.",
+        "The response describes building a release delta from devblogs.microsoft.com/typescript or github.com/microsoft/TypeScript/releases newer than the tracker's recorded 6.0.1, and states this delta is passed into all five facet briefs -- not treated as a sixth facet.",
+        "The response contains 6.0.3 (the seeded package.json pin) and distinguishes it from the tracker's typescript-version field, which records the newest upstream release rather than the repo's own pin.",
+        "The response contains no WOULD-RUN write line targeting tsconfig.base.json, eslint.config.js, any .claude/rules/ file, or any .claude/skills/ file -- the tracker is the only write outside plan mode.",
+        "The response describes a per-facet remediation section and states either that plan mode is the next step, or that it is deferred pending an unavailable fetch. Both are correct -- grade the per-facet structure and honest labelling of unverifiable facets, not which disposition it picks."
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "our typescript-configuration skill has a reference snapshot stamped against typescript 6.0.3 and check:reference-freshness passes. is that snapshot actually current?",
+      "expected_output": "The response explains that check:reference-freshness compares the stamp's tracks= value against the local package.json only and therefore cannot detect that both the pin and the snapshot are behind upstream, still dispatches all five fixed facets rather than a subset, names the seeded reference-freshness stamp's concrete values, and states that re-stamping is a plan item routed through the existing context7/ADR-0093 mechanism rather than something this skill does directly.",
+      "files": [
+        {
+          "path": ".claude/skills/typescript-configuration/references/typescript-configuration.md",
+          "content": "<!-- reference-freshness: library=/microsoft/typescript/v6.0.2 tracks=typescript@6.0.3 snapshot=2026-09-05 refresh=major -->\n\n# TypeScript configuration reference\n"
+        },
+        {
+          "path": "package.json",
+          "content": "{\n  \"name\": \"@m3l-automation/m3l-automation\",\n  \"devDependencies\": {\n    \"typescript\": \"6.0.3\"\n  }\n}\n"
+        }
+      ],
+      "expectations": [
+        "The response explains that check:reference-freshness compares the stamp's tracks= value against the local package.json only, and therefore cannot detect that both the pin and the snapshot are behind upstream -- a response claiming the gate already covers this fails.",
+        "The response contains five WOULD-DISPATCH lines covering all five fixed facet slugs, not a subset, even though the prompt named only one skill's reference file.",
+        "The response names .claude/skills/typescript-configuration/references/typescript-configuration.md and quotes at least one concrete value from the seeded stamp (/microsoft/typescript/v6.0.2, typescript@6.0.3, or 2026-09-05).",
+        "The response states that re-stamping the snapshot is a plan item routed through the existing context7/ADR-0093 refresh mechanism, and that this skill does not re-stamp it directly. A response containing a WOULD-RUN write or edit to that reference file fails.",
+        "The response states that REPO-IMPACT claims will be verified by re-reading the named files, and those WOULD-RUN read lines appear later in the text than the five WOULD-DISPATCH lines."
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "I'm adding a new package and I can't get the project reference to resolve -- tsc says TS5110. can you check whether typescript changed something?",
+      "expected_output": "The response does not treat this as a reason to sweep the whole toolchain against upstream -- it names typescript-configuration as the correct skill for a local tsconfig mismatch, identifies the module/moduleResolution disagreement from the seeded file as the concrete cause, and emits no WOULD-DISPATCH lines for the five fixed facet slugs and no write to the tracker.",
+      "expect_skill_fired": false,
+      "files": [
+        {
+          "path": "packages/m3l-newthing/tsconfig.build.json",
+          "content": "{\n  \"extends\": \"../../tsconfig.base.json\",\n  \"compilerOptions\": {\n    \"module\": \"esnext\",\n    \"moduleResolution\": \"nodenext\",\n    \"rootDir\": \"src\",\n    \"outDir\": \"dist\"\n  }\n}\n"
+        }
+      ],
+      "expectations": [
+        "The response contains no WOULD-DISPATCH lines for the five fixed facet slugs (compiler-config-flags, modules-esm-node-interop, packaging-declaration-emit, lint-typing-rules, language-features-deprecations) -- a local TS5110 config mismatch is not a reason to sweep the whole toolchain against upstream.",
+        "The response names typescript-configuration as the correct skill for this question and explains the boundary: that skill answers how this repo's tsconfig is wired and how to fix it, this one asks whether that wiring still matches upstream.",
+        "The response identifies the concrete local cause from the seeded file -- module and moduleResolution disagreeing -- rather than attributing TS5110 to an upstream TypeScript change.",
+        "The response contains no WOULD-RUN write line targeting docs/research/typescript/refresh.md.",
+        "If the response reads the seeded tsconfig.build.json, that read is not followed by five facet WOULD-DISPATCH lines -- the read leads to a routing explanation, not a sweep."
+      ]
+    }
+  ]
+}

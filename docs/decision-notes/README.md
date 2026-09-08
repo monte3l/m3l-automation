@@ -76,3 +76,4 @@ grows past ~20 entries.
 | 0003 | [Why `SessionEnd`, `Notification`, and `PostCompact` stay unwired](./0003-unwired-hook-events.md)                   | 2026-09-07 |
 | 0004 | [A collapse-detector pass-rate floor for the skill-eval suite](./0004-skill-eval-pass-rate-floor.md)                | 2026-09-07 |
 | 0005 | [Name and complete the six instruction-authoring tiers](./0005-instruction-tier-placement.md)                       | 2026-09-07 |
+| 0006 | [TypeScript guidance source tiering, facets, and sweep cadence](./0006-typescript-source-tiering.md)                | 2026-09-08 |

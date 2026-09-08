@@ -1,0 +1,48 @@
+{
+  "skill_name": "researching-typescript-guidance",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "we're thinking about turning on isolatedDeclarations across every package, not just the build projects. what does the TypeScript team actually say about it -- the constraints it imposes, what it buys, and how it interacts with declaration emit? research this before we plan it",
+      "expected_output": "The response emits at least 3 distinct WOULD-DISPATCH: Explore lines covering separate facets (declaration-emit semantics, annotation constraints on authors, packaging/attw interaction), states it will read references/typescript-sources.md before composing briefs, restricts every brief to T1/T2 sources with a TIER field in the findings format, and outlines a synthesis plan naming both Consensus and Contradictions/drift sections.",
+      "files": [
+        {
+          "path": "tsconfig.base.json",
+          "content": "{\n  \"compilerOptions\": {\n    \"target\": \"es2025\",\n    \"module\": \"nodenext\",\n    \"moduleResolution\": \"nodenext\",\n    \"strict\": true,\n    \"composite\": true,\n    \"declaration\": true\n    // isolatedDeclarations deliberately NOT set here -- the tooling project\n    // (which includes tests) can't satisfy it; only *.build.json sets it.\n  }\n}\n"
+        }
+      ],
+      "expectations": [
+        "Response emits at least 3 distinct WOULD-DISPATCH: Explore lines, each scoped to a different facet -- declaration-emit semantics, the annotation constraints isolatedDeclarations imposes on authors, and its packaging/attw interaction must each appear as a separate dispatch with a distinct brief, not merged into one.",
+        "The response states it will read references/typescript-sources.md before composing agent briefs to obtain the source allowlist -- it does not inline a self-derived source list.",
+        "Every brief names only sources from the T1/T2 allowlist (typescriptlang.org, devblogs.microsoft.com/typescript, github.com/microsoft/TypeScript, nodejs.org, typescript-eslint.io, arethetypeswrong, publint); no brief names Matt Pocock, Total TypeScript, TypeScript Deep Dive, tsconfig/bases, DefinitelyTyped, Stack Overflow, Medium, or any other non-allowlisted source.",
+        "The findings format the briefs specify includes a TIER field per source (T1 or T2), and the response states T1 outranks T2 when sources disagree.",
+        "The response references the seeded tsconfig.base.json's existing comment (isolatedDeclarations deliberately excluded from base because the tooling project includes tests) to anchor what the research is meant to resolve -- it does not plan the research in a vacuum.",
+        "All WOULD-DISPATCH lines appear in the response before any synthesis plan; the planned briefing names both a Consensus and a Contradictions/drift section as distinct headings."
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "did TypeScript 7 break anything we'd care about? we're on 6.0.3. give me the actual list of breaking changes, and tell me where you got it from",
+      "expected_output": "The response emits at least 3 distinct WOULD-DISPATCH: Explore lines across different facets of the 6-to-7 delta (compiler defaults, removed options/targets, module-resolution changes), at least one brief names devblogs.microsoft.com/typescript or github.com/microsoft/TypeScript/releases as a first-class source to fetch directly, and the response explicitly states the Breaking-Changes wiki is stale at TS 4.9 and must not be used as the source for current breaking changes.",
+      "expectations": [
+        "Response emits at least 3 distinct WOULD-DISPATCH: Explore lines, each scoped to a different facet of the 6-to-7 delta -- compiler defaults, removed options/targets, and module-resolution changes are the minimum expected facets.",
+        "At least one WOULD-DISPATCH brief explicitly names devblogs.microsoft.com/typescript or github.com/microsoft/TypeScript/releases as a first-class source to fetch directly, not relying on generic search ranking alone.",
+        "The response states that github.com/microsoft/TypeScript/wiki/Breaking-Changes is stale at TS 4.9 and must not be used as the source for current (TS 5+) breaking changes -- a response that cites that wiki page as the authoritative current list fails this criterion.",
+        "Every GitHub-scoped brief restricts to github.com/microsoft/* or raw.githubusercontent.com/microsoft/*; no brief targets bare github.com, a different org, or microsoft/typescript-go as a live, separate repository.",
+        "WOULD-DISPATCH lines appear in the response before the synthesis plan is described; no repo file is written without explicit user confirmation."
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "can we drop the .js extensions from our relative imports now that node strips types natively? and do we need erasableSyntaxOnly? I want to know who actually decides this before we touch tsconfig",
+      "expected_output": "The response emits at least 3 distinct WOULD-DISPATCH: Explore lines across Node's type-stripping semantics, TypeScript's erasableSyntaxOnly/rewriteRelativeImportExtensions flags, and NodeNext resolution's extension requirement, with at least one brief targeting nodejs.org/api/typescript.html and the response stating Node is co-normative T1 on the runtime boundary rather than subordinate to Microsoft.",
+      "expectations": [
+        "Response emits at least 3 distinct WOULD-DISPATCH: Explore lines, each scoped to a different facet -- Node's type-stripping semantics, TypeScript's erasableSyntaxOnly/rewriteRelativeImportExtensions flags, and NodeNext resolution's extension requirement must each appear as a separate dispatch.",
+        "At least one WOULD-DISPATCH brief explicitly targets nodejs.org/api/typescript.html, and the response states Node is co-normative T1 on the runtime boundary -- a response treating nodejs.org as a lower tier than typescriptlang.org fails this criterion.",
+        "The response states that a Microsoft-vs-Node disagreement on the runtime boundary would be a genuine two-owner conflict to surface, not one to silently resolve in favor of one side.",
+        "The response distinguishes this question from typescript-configuration's scope -- it does not answer 'how this repo's tsconfig is wired' in place of researching upstream, and does not promise to edit tsconfig.base.json itself.",
+        "Every brief restricts to the T1/T2 allowlist; no brief names a third-party tutorial, blog, or individual author's material."
+      ]
+    }
+  ]
+}
