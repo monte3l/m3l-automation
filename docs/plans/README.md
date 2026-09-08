@@ -25,11 +25,12 @@ by `pnpm check:landing-plans` (blocking). This list is the set that gate
 scans — a plan doc that's finished belongs in [`archive/`](./archive/)
 instead of carrying a stale table.
 
-| Plan                                                             | Wave / issue                                                |
-| ---------------------------------------------------------------- | ----------------------------------------------------------- |
-| [`2026-08-20-agent-operator.md`](./2026-08-20-agent-operator.md) | Agent-operator programme (V-series) — V10/V11/V13 remaining |
-| [`2026-08-20-cli-evolution.md`](./2026-08-20-cli-evolution.md)   | CLI-first evolution programme (U-series) — U13 remaining    |
-| [`2026-08-20-m3l-console.md`](./2026-08-20-m3l-console.md)       | m3l console programme (X-series) — X8a-d, X13 remaining     |
+| Plan                                                                               | Wave / issue                                                   |
+| ---------------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| [`2026-08-20-agent-operator.md`](./2026-08-20-agent-operator.md)                   | Agent-operator programme (V-series) — V10/V11/V13 remaining    |
+| [`2026-08-20-cli-evolution.md`](./2026-08-20-cli-evolution.md)                     | CLI-first evolution programme (U-series) — U13 remaining       |
+| [`2026-08-20-m3l-console.md`](./2026-08-20-m3l-console.md)                         | m3l console programme (X-series) — X8a-d, X13 remaining        |
+| [`2026-09-08-adaptive-host-budgeting.md`](./2026-09-08-adaptive-host-budgeting.md) | Adaptive host budgeting (ADR-0080 follow-on) — P1-P3 remaining |
 
 ## Archive
 

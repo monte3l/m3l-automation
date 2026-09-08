@@ -40,7 +40,7 @@
     "sourceFiles": [
       {
         "path": "package.json",
-        "blob": "4933f6f08ff067c3c01127e654a2e51838bddfc5"
+        "blob": "6fdff8a0dc36dadf4d7d84044140b246f7630ce2"
       },
       {
         "path": "packages/m3l-common/package.json",
@@ -97,7 +97,7 @@
       },
       {
         "path": "package.json",
-        "blob": "4933f6f08ff067c3c01127e654a2e51838bddfc5"
+        "blob": "6fdff8a0dc36dadf4d7d84044140b246f7630ce2"
       },
       {
         "path": "packages/m3l-common/package.json",
@@ -130,7 +130,7 @@
       },
       {
         "path": "package.json",
-        "blob": "4933f6f08ff067c3c01127e654a2e51838bddfc5"
+        "blob": "6fdff8a0dc36dadf4d7d84044140b246f7630ce2"
       },
       {
         "path": "packages/m3l-common/package.json",
@@ -172,7 +172,7 @@
     "sourceFiles": [
       {
         "path": "package.json",
-        "blob": "4933f6f08ff067c3c01127e654a2e51838bddfc5"
+        "blob": "6fdff8a0dc36dadf4d7d84044140b246f7630ce2"
       },
       {
         "path": "packages/m3l-common/package.json",
@@ -248,7 +248,7 @@
       },
       {
         "path": "package.json",
-        "blob": "4933f6f08ff067c3c01127e654a2e51838bddfc5"
+        "blob": "6fdff8a0dc36dadf4d7d84044140b246f7630ce2"
       }
     ],
     "verifiedAt": "2026-09-08"
@@ -257,7 +257,7 @@
     "sourceFiles": [
       {
         "path": "package.json",
-        "blob": "4933f6f08ff067c3c01127e654a2e51838bddfc5"
+        "blob": "6fdff8a0dc36dadf4d7d84044140b246f7630ce2"
       }
     ],
     "verifiedAt": "2026-09-08"
@@ -307,7 +307,7 @@
       },
       {
         "path": "package.json",
-        "blob": "4933f6f08ff067c3c01127e654a2e51838bddfc5"
+        "blob": "6fdff8a0dc36dadf4d7d84044140b246f7630ce2"
       }
     ],
     "verifiedAt": "2026-09-08"
@@ -360,7 +360,7 @@
       },
       {
         "path": "package.json",
-        "blob": "4933f6f08ff067c3c01127e654a2e51838bddfc5"
+        "blob": "6fdff8a0dc36dadf4d7d84044140b246f7630ce2"
       }
     ],
     "verifiedAt": "2026-09-08"
@@ -506,7 +506,7 @@
       },
       {
         "path": "package.json",
-        "blob": "4933f6f08ff067c3c01127e654a2e51838bddfc5"
+        "blob": "6fdff8a0dc36dadf4d7d84044140b246f7630ce2"
       }
     ],
     "verifiedAt": "2026-09-08"
@@ -528,7 +528,7 @@
     "sourceFiles": [
       {
         "path": ".claude/rules/scripts.md",
-        "blob": "43213574120787631f1334e0d603227fe13a444a"
+        "blob": "0b8a4eb39455718c97e89d89bd73928d9163c7b1"
       },
       {
         "path": "bin/lib/script-scaffold.mjs",
@@ -552,7 +552,7 @@
       },
       {
         "path": "package.json",
-        "blob": "4933f6f08ff067c3c01127e654a2e51838bddfc5"
+        "blob": "6fdff8a0dc36dadf4d7d84044140b246f7630ce2"
       },
       {
         "path": "pnpm-workspace.yaml",
@@ -750,7 +750,7 @@
     "sourceFiles": [
       {
         "path": ".claude/rules/scripts.md",
-        "blob": "43213574120787631f1334e0d603227fe13a444a"
+        "blob": "0b8a4eb39455718c97e89d89bd73928d9163c7b1"
       },
       {
         "path": "bin/lib/script-scaffold.mjs",
@@ -771,7 +771,7 @@
     "sourceFiles": [
       {
         "path": ".claude/rules/scripts.md",
-        "blob": "43213574120787631f1334e0d603227fe13a444a"
+        "blob": "0b8a4eb39455718c97e89d89bd73928d9163c7b1"
       },
       {
         "path": "bin/check-deps.mjs",
@@ -783,7 +783,7 @@
       },
       {
         "path": "package.json",
-        "blob": "4933f6f08ff067c3c01127e654a2e51838bddfc5"
+        "blob": "6fdff8a0dc36dadf4d7d84044140b246f7630ce2"
       }
     ],
     "verifiedAt": "2026-09-08"
@@ -877,7 +877,7 @@
       },
       {
         "path": "package.json",
-        "blob": "4933f6f08ff067c3c01127e654a2e51838bddfc5"
+        "blob": "6fdff8a0dc36dadf4d7d84044140b246f7630ce2"
       },
       {
         "path": "packages/m3l-common/src/aws/clients/provider.ts",
@@ -986,7 +986,7 @@
       },
       {
         "path": "package.json",
-        "blob": "4933f6f08ff067c3c01127e654a2e51838bddfc5"
+        "blob": "6fdff8a0dc36dadf4d7d84044140b246f7630ce2"
       }
     ],
     "verifiedAt": "2026-09-08"
@@ -1062,7 +1062,7 @@
       },
       {
         "path": "package.json",
-        "blob": "4933f6f08ff067c3c01127e654a2e51838bddfc5"
+        "blob": "6fdff8a0dc36dadf4d7d84044140b246f7630ce2"
       },
       {
         "path": "packages/m3l-common/package.json",
@@ -1222,7 +1222,7 @@
       },
       {
         "path": "package.json",
-        "blob": "4933f6f08ff067c3c01127e654a2e51838bddfc5"
+        "blob": "6fdff8a0dc36dadf4d7d84044140b246f7630ce2"
       },
       {
         "path": "packages/m3l-common/src/aws/clients/provider.ts",
@@ -1277,7 +1277,7 @@
     "sourceFiles": [
       {
         "path": "package.json",
-        "blob": "4933f6f08ff067c3c01127e654a2e51838bddfc5"
+        "blob": "6fdff8a0dc36dadf4d7d84044140b246f7630ce2"
       }
     ],
     "verifiedAt": "2026-09-08"
@@ -1701,7 +1701,7 @@
       },
       {
         "path": "package.json",
-        "blob": "4933f6f08ff067c3c01127e654a2e51838bddfc5"
+        "blob": "6fdff8a0dc36dadf4d7d84044140b246f7630ce2"
       }
     ],
     "verifiedAt": "2026-09-08"
@@ -1831,7 +1831,7 @@
       },
       {
         "path": "bin/context-budget-baseline.json",
-        "blob": "5d10eb6101e58aa0ceecc3f5defe466b250fa925"
+        "blob": "eca9e5c3220a779e94d52e162c09cc5800d69653"
       },
       {
         "path": "bin/spoke-recovery.mjs",
@@ -1896,8 +1896,12 @@
         "blob": "6dad00b55562b5d1a60a913209662f16d7b7644a"
       },
       {
+        "path": "bin/mcp-server.mjs",
+        "blob": "c711e77d89c65cd568333743236e1f822693b4f7"
+      },
+      {
         "path": "bin/setup-host-resources.mjs",
-        "blob": "4815cb9edb23e5c2e32ce20ba419b4402f90925c"
+        "blob": "089bba43aab25cf8ef99fa401e370344f9ad14ee"
       },
       {
         "path": "bin/worktree-setup.mjs",
@@ -1909,7 +1913,7 @@
       },
       {
         "path": "docs/contributing/host-resources.md",
-        "blob": "f7b6075e65a062b0cfe50c0c9696b1d2fb75178f"
+        "blob": "b3060067cb3d71e980beab4539dd0d4f3cee7029"
       },
       {
         "path": "docs/logs/2026-08-19-check-test-counts-contention.md",
@@ -1918,6 +1922,14 @@
       {
         "path": "docs/logs/2026-08-27-parallel-session-oom.md",
         "blob": "90d0c81b757dd7c3e7d919c3e6de354fbece82f2"
+      },
+      {
+        "path": "docs/plans/2026-09-08-adaptive-host-budgeting.md",
+        "blob": "c5754d5099c7b1eabbd6b76ac4d965c871e499d5"
+      },
+      {
+        "path": "package.json",
+        "blob": "6fdff8a0dc36dadf4d7d84044140b246f7630ce2"
       },
       {
         "path": "turbo.json",
