@@ -54,6 +54,7 @@
       "id": 3,
       "prompt": "I'm adding a new package and I can't get the project reference to resolve -- tsc says TS5110. can you check whether typescript changed something?",
       "expected_output": "The response does not treat this as a reason to sweep the whole toolchain against upstream -- it names typescript-configuration as the correct skill for a local tsconfig mismatch, identifies the module/moduleResolution disagreement from the seeded file as the concrete cause, and emits no WOULD-DISPATCH lines for the five fixed facet slugs and no write to the tracker.",
+      "expect_skill_fired": false,
       "files": [
         {
           "path": "packages/m3l-newthing/tsconfig.build.json",
