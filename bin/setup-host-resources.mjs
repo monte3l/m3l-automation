@@ -20,9 +20,10 @@
  *
  * Steps:
  *   1. earlyoom — install (apt) + enable, tuned to avoid killing
- *      sshd/systemd/tmux/sudo and prefer killing Node-hosted processes
- *      (matched by /proc/PID/comm, not argv — see EARLYOOM_PREFER's own
- *      comment for why "node"/"claude"/"vitest"/"tsc" don't work as tokens).
+ *      sshd/systemd/tmux/sudo/the Claude Code CLI itself, and prefer
+ *      killing Node-hosted processes (matched by /proc/PID/comm, not argv
+ *      — see EARLYOOM_AVOID/EARLYOOM_PREFER's own comments for why
+ *      "node"/"vitest"/"tsc" don't work as tokens).
  *   2. zram swap — install zram-tools, ~50% of RAM, zstd.
  *   3. vm.swappiness — lower via /etc/sysctl.d/ drop-in (never raises it).
  *   4. user-.slice MemoryMax — system-wide drop-in bounding the TOTAL memory
@@ -59,7 +60,6 @@ import { join } from "node:path";
 import { repoRoot, parseJsonFlag, createReporter } from "./lib/report.mjs";
 import { recommendToolMemoryLimitGiB } from "./check-host-resources.mjs";
 
-const EARLYOOM_AVOID = "^(sshd|systemd|tmux|sudo|dbus-daemon)$";
 // earlyoom's --prefer/--avoid match /proc/PID/comm (the kernel thread name,
 // truncated to 15 visible bytes), NOT argv (`man earlyoom`: "EARLYOOM_NAME
 // Process name truncated to 16 bytes, as reported in /proc/PID/comm"). Node
@@ -68,18 +68,22 @@ const EARLYOOM_AVOID = "^(sshd|systemd|tmux|sudo|dbus-daemon)$";
 // on this host for eslint, vitest, tsc, and this repo's own
 // bin/mcp-server.mjs, all Node-hosted and all presenting as "MainThread". A
 // literal "node" token therefore never matches any real Node process. The
-// original list's "claude" token DID match — the Claude Code CLI binary's own
-// comm is literally "claude" — which meant the ORIGINAL regex boosted the
-// interactive session's own kill-priority (+300 oom_score) while leaving
-// every actual toolchain process it named unmatched: the opposite of the
-// intent (protect the foreground session, prefer killing background
-// toolchain fan-out). "esbuild" is kept for a native (non-Node-hosted)
-// esbuild binary, which sets its own comm directly — not present in this
-// repo's tsc-only build today, but harmless to list for a consumer that adds
-// a bundler. Comm-based matching still can't distinguish a heavy toolchain
-// process from a long-lived Node service that also presents as "MainThread"
-// (e.g. bin/mcp-server.mjs) — a known coarseness; a cgroup-scoped guard
-// would be the precise fix if that proves insufficient in practice.
+// original PREFER list's "claude" token DID match — the Claude Code CLI
+// binary's own comm is literally "claude" — which meant the ORIGINAL regex
+// boosted the interactive session's own kill-priority (+300 oom_score)
+// while leaving every actual toolchain process it named unmatched: the
+// opposite of the intent. Fixing PREFER alone only returns "claude" to
+// neutral priority, though — actually protecting the foreground session
+// (not merely no-longer-preferring to kill it) means adding it here, to
+// AVOID, alongside the other processes this host cannot afford to lose.
+const EARLYOOM_AVOID = "^(sshd|systemd|tmux|sudo|dbus-daemon|claude)$";
+// "esbuild" is kept for a native (non-Node-hosted) esbuild binary, which
+// sets its own comm directly — not present in this repo's tsc-only build
+// today, but harmless to list for a consumer that adds a bundler.
+// Comm-based matching still can't distinguish a heavy toolchain process
+// from a long-lived Node service that also presents as "MainThread" (e.g.
+// bin/mcp-server.mjs) — a known coarseness; a cgroup-scoped guard would be
+// the precise fix if that proves insufficient in practice.
 const EARLYOOM_PREFER = "^(MainThread|node-MainThread|esbuild)$";
 const SWAPPINESS_TARGET = 10;
 // earlyoom only acts once BOTH the memory and swap conditions hold
@@ -260,6 +264,24 @@ function shQuiet(cmd, args) {
 }
 
 /**
+ * Read a file, tolerating any failure (missing, EACCES, etc.) as "unknown"
+ * rather than throwing — mirrors {@link shQuiet}'s tolerance for a failed
+ * command. Every drift/current-state probe in `run()` should be able to
+ * fail without aborting the whole multi-step script; a raw `fs` throw here
+ * would otherwise abort before steps 2-7 ever run.
+ *
+ * @param {string} path
+ * @returns {string | null}
+ */
+function tryReadFile(path) {
+  try {
+    return readFileSync(path, "utf8");
+  } catch {
+    return null;
+  }
+}
+
+/**
  * @param {{ apply: boolean, sessions: number }} opts
  * @param {import("./lib/report.mjs").createReporter extends (...args: any) => infer R ? R : never} reporter
  */
@@ -282,9 +304,7 @@ function run(opts, reporter) {
   // 1. earlyoom
   const earlyoomActive =
     shQuiet("systemctl", ["is-active", "earlyoom"]) === "active";
-  const existingEarlyoomOverride = existsSync(EARLYOOM_OVERRIDE_PATH)
-    ? readFileSync(EARLYOOM_OVERRIDE_PATH, "utf8")
-    : null;
+  const existingEarlyoomOverride = tryReadFile(EARLYOOM_OVERRIDE_PATH);
   const earlyoomState = classifyEarlyoomState({
     active: earlyoomActive,
     existingOverride: existingEarlyoomOverride,
@@ -311,7 +331,8 @@ function run(opts, reporter) {
     }
   } else {
     reporter.info(
-      `[1/7] earlyoom: would install + enable, tuned --avoid '${EARLYOOM_AVOID}' ` +
+      `[1/7] earlyoom: would install + enable, tuned -m 5 -s ` +
+        `${EARLYOOM_SWAP_FREE_MIN_PERCENT} --avoid '${EARLYOOM_AVOID}' ` +
         `--prefer '${EARLYOOM_PREFER}'.`,
     );
     if (opts.apply) {

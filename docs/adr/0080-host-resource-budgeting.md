@@ -204,11 +204,16 @@ decided above, both in `buildEarlyoomOverride()`
    interactive session's own OOM kill-priority (+300 `oom_score`) while
    leaving every actual toolchain process invisible to `--prefer`. Fixed to
    `^(MainThread|node-MainThread|esbuild)$` — `claude` removed, `node`/
-   `vitest`/`tsc` replaced with the comm values Node actually presents. This
-   remains coarse (a heavy toolchain process and a long-lived Node service
-   like `bin/mcp-server.mjs` both present as `MainThread`, so `--prefer`
-   cannot distinguish them) — a cgroup-scoped guard would be the precise fix
-   if this proves insufficient in practice.
+   `vitest`/`tsc` replaced with the comm values Node actually presents.
+   Removing `claude` from `--prefer` only returns it to neutral kill
+   priority, though — a pre-merge review round correctly pointed out that
+   _protecting_ the session means adding it to `EARLYOOM_AVOID`
+   (`^(sshd|systemd|tmux|sudo|dbus-daemon|claude)$`) as well, which the
+   final version of this fix does. `--prefer` remains coarse (a heavy
+   toolchain process and a long-lived Node service like
+   `bin/mcp-server.mjs` both present as `MainThread`, so it cannot
+   distinguish them) — a cgroup-scoped guard would be the precise fix if
+   this proves insufficient in practice.
 2. **The `-s` (free-swap floor) argument was left at earlyoom's own default
    of 10**, uncalibrated against the swap this same script provisions in the
    same run (zram at ~50% of RAM). earlyoom only acts once **both** the
@@ -256,3 +261,14 @@ Fixed narrowly: `lint:workspace`'s script gained
 (the `packages/m3l-common`-only pass) was confirmed **not** to cross the
 default ceiling on its own and was left unchanged — the fix is scoped to
 the demonstrated failure, not applied blanket.
+
+**Known limitation, flagged by review rather than resolved here:** the
+`8192` figure is a fixed constant, the same category of problem this ADR's
+own `50%` concurrency caps already are. Measured peak RSS at that ceiling
+is ~5.7 GiB — on the documented 16 GiB/`--sessions=2` floor,
+`recommendToolMemoryLimitGiB` derives a 6 GiB `CLAUDE_CODE_TOOL_MEMORY_LIMIT`,
+leaving thin margin before a local run risks a silent cgroup kill instead of
+the loud crash this fix replaces. Deriving `NODE_OPTIONS` from the same
+per-host budget is exactly what this wave's remaining slices (see
+`docs/plans/2026-09-08-adaptive-host-budgeting.md`) intend to generalize,
+rather than special-casing this one script now.

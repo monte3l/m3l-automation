@@ -73,6 +73,14 @@ describe("buildEarlyoomOverride", () => {
     expect(avoid.test("tmux")).toBe(true);
   });
 
+  test("--avoid regex matches 'claude' (regression: the interactive session must be protected by avoid, not just by no-longer-preferring it)", () => {
+    const unit = buildEarlyoomOverride();
+    const match = /--avoid '([^']+)'/.exec(unit);
+    expect(match).not.toBeNull();
+    const avoid = new RegExp(match?.[1] ?? "");
+    expect(avoid.test("claude")).toBe(true);
+  });
+
   test("the -s free-swap floor is raised to at least 50 (was hardcoded to earlyoom's default of 10)", () => {
     const unit = buildEarlyoomOverride();
     const match = /-s (\d+)/.exec(unit);
