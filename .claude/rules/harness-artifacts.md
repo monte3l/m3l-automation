@@ -101,3 +101,17 @@ paths:
   wiring, and prefer a belt-and-suspenders in-hook check (reading the payload's
   `source` field, mirroring `reinject-compact-handoff.mjs`'s `shouldReinject()`)
   alongside the settings.json matcher, not instead of it.
+
+- **An idempotent `bin/` setup script's "already applied" check must compare
+  the target's actual content against what it would write now, not just
+  whether the target is active/present.** `setup-host-resources.mjs`'s step 1
+  originally only asked `systemctl is-active earlyoom` and reported
+  "already active — leaving as-is" unconditionally when true — so a fix to
+  the script's own earlyoom tuning (a corrected `--prefer` regex) could never
+  reach a host that had already run `--apply` once, since the check never
+  looked at the on-disk drop-in's content at all. Confirmed live, not
+  hypothetical: this exact host's drop-in still had the pre-fix regex until a
+  `classifyEarlyoomState()`-style content comparison was added
+  (`docs/logs/2026-09-08-earlyoom-process-matching.md`). Any idempotent
+  script whose target configuration can itself change across script versions
+  needs this comparison, not just an existence/active check.
