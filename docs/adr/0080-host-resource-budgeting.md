@@ -182,3 +182,77 @@ choice:
   `.worktreeinclude` literal present in main is missing locally, so a worktree
   created _before_ this change is flagged rather than left silently
   under-provisioned.
+
+## Update 2026-09-08 — earlyoom's `--prefer` matched the wrong process names
+
+Re-deriving this ADR's `earlyoom` config against a live host (rather than
+trusting that "applied" means "working") found two defects in the tuning
+decided above, both in `buildEarlyoomOverride()`
+(`bin/setup-host-resources.mjs`):
+
+1. **`--prefer`/`--avoid` match `/proc/PID/comm`, not argv** (`man earlyoom`:
+   `EARLYOOM_NAME` is "Process name truncated to 16 bytes, as reported in
+   /proc/PID/comm"). The original `--prefer '^(node|claude|vitest|tsc|esbuild)$'`
+   was written as if it matched the command line. In fact Node's main thread
+   always reports comm `MainThread` (a worker thread reports
+   `node-MainThread`) regardless of the script it runs — confirmed live
+   against eslint, vitest, tsc, and this repo's own `bin/mcp-server.mjs`, all
+   presenting as `MainThread`. So the literal token `node` never matched any
+   real Node process, and `vitest`/`tsc` never matched either. Meanwhile
+   `claude` — the Claude Code CLI binary's own comm — DID match, which meant
+   the guard was **inverted relative to its intent**: it boosted the
+   interactive session's own OOM kill-priority (+300 `oom_score`) while
+   leaving every actual toolchain process invisible to `--prefer`. Fixed to
+   `^(MainThread|node-MainThread|esbuild)$` — `claude` removed, `node`/
+   `vitest`/`tsc` replaced with the comm values Node actually presents. This
+   remains coarse (a heavy toolchain process and a long-lived Node service
+   like `bin/mcp-server.mjs` both present as `MainThread`, so `--prefer`
+   cannot distinguish them) — a cgroup-scoped guard would be the precise fix
+   if this proves insufficient in practice.
+2. **The `-s` (free-swap floor) argument was left at earlyoom's own default
+   of 10**, uncalibrated against the swap this same script provisions in the
+   same run (zram at ~50% of RAM). earlyoom only acts once **both** the
+   memory and swap floors are breached (`man earlyoom`) — pairing `-s 10`
+   with ~50%-of-RAM zram means roughly 90% of that provisioned swap must be
+   exhausted, on top of memory already being critically low, before the
+   guard is permitted to fire — well past the point a heavy fan-out has
+   already made the host unresponsive, the exact livelock this ADR exists to
+   prevent. Raised to `-s 50`, so the swap condition is satisfied once
+   roughly half the provisioned cushion is spent, without loosening the `-m
+5` memory floor.
+
+Both defects were reliability regressions in an already-shipped safety net,
+not new tuning — the fix ships alone, ahead of any further concurrency work
+against this host, since raising concurrency on top of a broken OOM guard
+compounds the wrong risk first.
+
+## Update 2026-09-08 — `lint:workspace` crashes on ARM64 (different mechanism, discovered alongside the above)
+
+While verifying the earlyoom fix, `pnpm verify` failed at `lint:workspace`
+with `FATAL ERROR: Ineffective mark-compacts near heap limit ... JavaScript
+heap out of memory` (exit 134) — reproducible alone on an otherwise idle box
+(19 GB of 23 GB free, zero memory PSI), so not the contention this ADR
+addresses. This is a **different mechanism** from everything above: it is
+Node's own **per-process V8 heap ceiling**, not host memory pressure. This
+ADR's original measurements already recorded "Node default heap 4192 MB per
+process, uncapped" as a fact about the host, but framed it only as a
+livelock contributor (many uncapped processes competing for real RAM); it
+did not anticipate a **single** process crashing against its own default
+ceiling independent of how much system RAM sits idle. Measured directly on
+this host: `require("v8").getHeapStatistics().heap_size_limit` = 4288 MB,
+regardless of `totalmem()` = 23.4 GB — the default does not scale with
+system memory the way this ADR's other mitigations (percentages of
+`availableParallelism()`/`totalmem()`) do.
+
+CI's identical `lint-workspace` job runs on `ubuntu-latest` (x86_64) and had
+not hit this, which is why it shipped unnoticed until run on ARM64 — whether
+that is a smaller true memory footprint on x86_64 or a difference in that
+platform's default ceiling was not investigated; either way, raising the
+ceiling has no downside on a passing host, since it only removes headroom
+that wasn't in use.
+
+Fixed narrowly: `lint:workspace`'s script gained
+`NODE_OPTIONS=--max-old-space-size=8192` (`package.json`). `lint:library`
+(the `packages/m3l-common`-only pass) was confirmed **not** to cross the
+default ceiling on its own and was left unchanged — the fix is scoped to
+the demonstrated failure, not applied blanket.

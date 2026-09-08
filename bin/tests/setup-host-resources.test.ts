@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest";
 import {
   parseSessionsFlag,
   buildEarlyoomOverride,
+  classifyEarlyoomState,
   buildUserSliceOverride,
   buildClaudeRcOverride,
   extractMemoryMaxGiB,
@@ -43,6 +44,94 @@ describe("buildEarlyoomOverride", () => {
     expect(unit).toContain("ExecStart=/usr/bin/earlyoom");
     expect(unit).toContain("--avoid");
     expect(unit).toContain("--prefer");
+  });
+
+  test("--prefer regex matches Node's real comm values but not the literal 'node' token", () => {
+    const unit = buildEarlyoomOverride();
+    const match = /--prefer '([^']+)'/.exec(unit);
+    expect(match).not.toBeNull();
+    const prefer = new RegExp(match?.[1] ?? "");
+    expect(prefer.test("MainThread")).toBe(true);
+    expect(prefer.test("node-MainThread")).toBe(true);
+    expect(prefer.test("node")).toBe(false);
+  });
+
+  test("--prefer regex does not match 'claude' (regression: must not boost the interactive session's own kill-priority)", () => {
+    const unit = buildEarlyoomOverride();
+    const match = /--prefer '([^']+)'/.exec(unit);
+    expect(match).not.toBeNull();
+    const prefer = new RegExp(match?.[1] ?? "");
+    expect(prefer.test("claude")).toBe(false);
+  });
+
+  test("--avoid regex is unaffected by the --prefer fix and still protects sshd/tmux", () => {
+    const unit = buildEarlyoomOverride();
+    const match = /--avoid '([^']+)'/.exec(unit);
+    expect(match).not.toBeNull();
+    const avoid = new RegExp(match?.[1] ?? "");
+    expect(avoid.test("sshd")).toBe(true);
+    expect(avoid.test("tmux")).toBe(true);
+  });
+
+  test("the -s free-swap floor is raised to at least 50 (was hardcoded to earlyoom's default of 10)", () => {
+    const unit = buildEarlyoomOverride();
+    const match = /-s (\d+)/.exec(unit);
+    expect(match).not.toBeNull();
+    const swapFreeMinPercent = Number(match?.[1]);
+    expect(swapFreeMinPercent).toBeGreaterThanOrEqual(50);
+  });
+
+  test("the -m memory floor stays at 5 (unchanged by the -s fix)", () => {
+    const unit = buildEarlyoomOverride();
+    const match = /-m (\d+)/.exec(unit);
+    expect(match).not.toBeNull();
+    expect(Number(match?.[1])).toBe(5);
+  });
+});
+
+describe("classifyEarlyoomState", () => {
+  test("not active with a null override -> install", () => {
+    expect(
+      classifyEarlyoomState({ active: false, existingOverride: null }),
+    ).toBe("install");
+  });
+
+  test("not active, even with an existing override that matches the current build -> install", () => {
+    // Regardless of on-disk content, an inactive service must be (re)installed
+    // and enabled — content comparison only matters once the service is live.
+    expect(
+      classifyEarlyoomState({
+        active: false,
+        existingOverride: buildEarlyoomOverride(),
+      }),
+    ).toBe("install");
+  });
+
+  test("active with an override byte-identical to the current build -> current", () => {
+    expect(
+      classifyEarlyoomState({
+        active: true,
+        existingOverride: buildEarlyoomOverride(),
+      }),
+    ).toBe("current");
+  });
+
+  test("active with a null override (service running without this script's drop-in) -> refresh", () => {
+    expect(
+      classifyEarlyoomState({ active: true, existingOverride: null }),
+    ).toBe("refresh");
+  });
+
+  test("active with a stale override that differs from the current build -> refresh", () => {
+    const staleOverride =
+      "# Managed by bin/setup-host-resources.mjs (ADR-0080) — safe to\n" +
+      "# regenerate; re-run `--apply` after any of its earlyoom constants change.\n" +
+      "[Service]\n" +
+      "ExecStart=\n" +
+      "ExecStart=/usr/bin/earlyoom -m 5 -s 10 --avoid '^(sshd|systemd|tmux|sudo|dbus-daemon)$' --prefer '^(node|claude|vitest|tsc|esbuild)$'\n";
+    expect(
+      classifyEarlyoomState({ active: true, existingOverride: staleOverride }),
+    ).toBe("refresh");
   });
 });
 

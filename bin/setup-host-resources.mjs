@@ -20,7 +20,9 @@
  *
  * Steps:
  *   1. earlyoom — install (apt) + enable, tuned to avoid killing
- *      sshd/systemd/tmux/sudo and prefer killing node/claude/vitest/tsc.
+ *      sshd/systemd/tmux/sudo and prefer killing Node-hosted processes
+ *      (matched by /proc/PID/comm, not argv — see EARLYOOM_PREFER's own
+ *      comment for why "node"/"claude"/"vitest"/"tsc" don't work as tokens).
  *   2. zram swap — install zram-tools, ~50% of RAM, zstd.
  *   3. vm.swappiness — lower via /etc/sysctl.d/ drop-in (never raises it).
  *   4. user-.slice MemoryMax — system-wide drop-in bounding the TOTAL memory
@@ -58,8 +60,44 @@ import { repoRoot, parseJsonFlag, createReporter } from "./lib/report.mjs";
 import { recommendToolMemoryLimitGiB } from "./check-host-resources.mjs";
 
 const EARLYOOM_AVOID = "^(sshd|systemd|tmux|sudo|dbus-daemon)$";
-const EARLYOOM_PREFER = "^(node|claude|vitest|tsc|esbuild)$";
+// earlyoom's --prefer/--avoid match /proc/PID/comm (the kernel thread name,
+// truncated to 15 visible bytes), NOT argv (`man earlyoom`: "EARLYOOM_NAME
+// Process name truncated to 16 bytes, as reported in /proc/PID/comm"). Node
+// >=12 sets its main thread's comm to "MainThread" (a worker thread's is
+// "node-MainThread") regardless of the script it's running — confirmed live
+// on this host for eslint, vitest, tsc, and this repo's own
+// bin/mcp-server.mjs, all Node-hosted and all presenting as "MainThread". A
+// literal "node" token therefore never matches any real Node process. The
+// original list's "claude" token DID match — the Claude Code CLI binary's own
+// comm is literally "claude" — which meant the ORIGINAL regex boosted the
+// interactive session's own kill-priority (+300 oom_score) while leaving
+// every actual toolchain process it named unmatched: the opposite of the
+// intent (protect the foreground session, prefer killing background
+// toolchain fan-out). "esbuild" is kept for a native (non-Node-hosted)
+// esbuild binary, which sets its own comm directly — not present in this
+// repo's tsc-only build today, but harmless to list for a consumer that adds
+// a bundler. Comm-based matching still can't distinguish a heavy toolchain
+// process from a long-lived Node service that also presents as "MainThread"
+// (e.g. bin/mcp-server.mjs) — a known coarseness; a cgroup-scoped guard
+// would be the precise fix if that proves insufficient in practice.
+const EARLYOOM_PREFER = "^(MainThread|node-MainThread|esbuild)$";
 const SWAPPINESS_TARGET = 10;
+// earlyoom only acts once BOTH the memory and swap conditions hold
+// (`earlyoom --help`: "both memory and swap must be below minimum for
+// earlyoom to act") — so the swap floor below is not independent of the
+// swap this same script provisions in step 2. zram is sized to ~50% of RAM;
+// pairing that with earlyoom's own default -s 10 (free swap must fall below
+// 10% of TOTAL swap) means roughly 90% of the provisioned swap has to be
+// exhausted, on top of memory already being critically low (-m 5), before
+// the guard is permitted to fire at all — which defers it well past the
+// point a heavy fan-out has already made the host unresponsive, the exact
+// livelock this script exists to prevent. Raising the floor to 50% makes the
+// swap condition true once roughly half of the provisioned cushion is spent
+// — still requires genuine memory pressure via -m, but no longer requires
+// swap to be nearly full first.
+const EARLYOOM_SWAP_FREE_MIN_PERCENT = 50;
+const EARLYOOM_OVERRIDE_PATH =
+  "/etc/systemd/system/earlyoom.service.d/override.conf";
 const SERIAL_PREPUSH_MEM_THRESHOLD_GIB = 20;
 
 /**
@@ -82,10 +120,37 @@ export function parseSessionsFlag(argv) {
  */
 export function buildEarlyoomOverride() {
   return (
+    "# Managed by bin/setup-host-resources.mjs (ADR-0080) — safe to\n" +
+    "# regenerate; re-run `--apply` after any of its earlyoom constants change.\n" +
     "[Service]\n" +
     "ExecStart=\n" +
-    `ExecStart=/usr/bin/earlyoom -m 5 -s 10 --avoid '${EARLYOOM_AVOID}' --prefer '${EARLYOOM_PREFER}'\n`
+    `ExecStart=/usr/bin/earlyoom -m 5 -s ${EARLYOOM_SWAP_FREE_MIN_PERCENT} --avoid '${EARLYOOM_AVOID}' --prefer '${EARLYOOM_PREFER}'\n`
   );
+}
+
+/**
+ * Classify what step 1 (earlyoom) needs to do, from the service's live
+ * active-state and its on-disk drop-in content (`null` when the file is
+ * absent). Pure predicate, exported for unit testing — `run()` only
+ * translates this into reporter/side-effect calls.
+ *
+ * A prior version of this script only checked "is the service active",
+ * which meant a host that already had earlyoom running would report
+ * "already active — leaving as-is" FOREVER, even after a fix changed
+ * {@link buildEarlyoomOverride}'s content (e.g. the --prefer/--avoid comm
+ * matching or the -s swap floor) — the new tuning would never reach an
+ * already-provisioned host without a manual reinstall. Comparing content
+ * against the live drop-in, the same way steps 3/4/6/7 already compare
+ * their own current-vs-target state, closes that gap.
+ *
+ * @param {{ active: boolean, existingOverride: string | null }} state
+ * @returns {"install" | "refresh" | "current"}
+ */
+export function classifyEarlyoomState(state) {
+  if (!state.active) return "install";
+  return state.existingOverride === buildEarlyoomOverride()
+    ? "current"
+    : "refresh";
 }
 
 /**
@@ -215,9 +280,35 @@ function run(opts, reporter) {
   );
 
   // 1. earlyoom
-  const earlyoomActive = shQuiet("systemctl", ["is-active", "earlyoom"]);
-  if (earlyoomActive === "active") {
-    reporter.info("[1/7] earlyoom: already active — leaving as-is.");
+  const earlyoomActive =
+    shQuiet("systemctl", ["is-active", "earlyoom"]) === "active";
+  const existingEarlyoomOverride = existsSync(EARLYOOM_OVERRIDE_PATH)
+    ? readFileSync(EARLYOOM_OVERRIDE_PATH, "utf8")
+    : null;
+  const earlyoomState = classifyEarlyoomState({
+    active: earlyoomActive,
+    existingOverride: existingEarlyoomOverride,
+  });
+  if (earlyoomState === "current") {
+    reporter.info(
+      "[1/7] earlyoom: already active and tuned as expected — leaving as-is.",
+    );
+  } else if (earlyoomState === "refresh") {
+    reporter.info(
+      `[1/7] earlyoom: active, but its tuning is stale (drop-in ` +
+        `${existingEarlyoomOverride === null ? "missing" : "differs"}) — ` +
+        `would rewrite to -m 5 -s ${EARLYOOM_SWAP_FREE_MIN_PERCENT} --avoid ` +
+        `'${EARLYOOM_AVOID}' --prefer '${EARLYOOM_PREFER}' and restart.`,
+    );
+    if (opts.apply) {
+      sh("sudo", ["mkdir", "-p", "/etc/systemd/system/earlyoom.service.d"]);
+      sh("sudo", ["tee", EARLYOOM_OVERRIDE_PATH], {
+        input: buildEarlyoomOverride(),
+      });
+      sh("sudo", ["systemctl", "daemon-reload"]);
+      sh("sudo", ["systemctl", "restart", "earlyoom"]);
+      reporter.change("updated", "earlyoom.service", "(tuning refreshed)");
+    }
   } else {
     reporter.info(
       `[1/7] earlyoom: would install + enable, tuned --avoid '${EARLYOOM_AVOID}' ` +
@@ -226,13 +317,9 @@ function run(opts, reporter) {
     if (opts.apply) {
       sh("sudo", ["apt-get", "install", "-y", "earlyoom"]);
       sh("sudo", ["mkdir", "-p", "/etc/systemd/system/earlyoom.service.d"]);
-      sh(
-        "sudo",
-        ["tee", "/etc/systemd/system/earlyoom.service.d/override.conf"],
-        {
-          input: buildEarlyoomOverride(),
-        },
-      );
+      sh("sudo", ["tee", EARLYOOM_OVERRIDE_PATH], {
+        input: buildEarlyoomOverride(),
+      });
       sh("sudo", ["systemctl", "daemon-reload"]);
       sh("sudo", ["systemctl", "enable", "--now", "earlyoom"]);
       reporter.change("updated", "earlyoom.service", "(installed + enabled)");
