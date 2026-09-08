@@ -1819,7 +1819,7 @@
       },
       {
         "path": "bin/check-context-budget.mjs",
-        "blob": "44b0c5ad33439af75164a1356a63ad124801e231"
+        "blob": "e165847f715c863be7a4ea6a6c70ea888139c0f4"
       },
       {
         "path": "bin/check-file-budget.mjs",
@@ -2118,7 +2118,7 @@
     "sourceFiles": [
       {
         "path": "bin/check-context-budget.mjs",
-        "blob": "44b0c5ad33439af75164a1356a63ad124801e231"
+        "blob": "e165847f715c863be7a4ea6a6c70ea888139c0f4"
       },
       {
         "path": "bin/run-skill-evals.mjs",
@@ -2411,7 +2411,7 @@
       },
       {
         "path": "bin/check-context-budget.mjs",
-        "blob": "44b0c5ad33439af75164a1356a63ad124801e231"
+        "blob": "e165847f715c863be7a4ea6a6c70ea888139c0f4"
       },
       {
         "path": "docs/contributing/instruction-authoring.md",

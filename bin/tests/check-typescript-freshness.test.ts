@@ -98,9 +98,9 @@ describe("evaluateFreshness", () => {
   });
 
   test("an unparseable header omits typescriptVersion — there is none to report", () => {
-    expect(evaluateFreshness(null, NOW).payload).not.toHaveProperty(
-      "typescriptVersion",
-    );
+    expect(
+      Object.hasOwn(evaluateFreshness(null, NOW).payload, "typescriptVersion"),
+    ).toBe(false);
   });
 
   test("BRANCH: last-verified=unset warns rather than reading as fresh", () => {
@@ -310,7 +310,7 @@ describe("runTypescriptFreshnessCheck", () => {
       readTracker: () => {
         // The whole point of the case: the runner must survive a throw that
         // is not an Error, which is exactly what this rule forbids writing.
-        // eslint-disable-next-line @typescript-eslint/only-throw-error
+        // eslint-disable-next-line @typescript-eslint/only-throw-error -- intentional non-Error throw to verify the runner survives it
         throw "just a string";
       },
     });

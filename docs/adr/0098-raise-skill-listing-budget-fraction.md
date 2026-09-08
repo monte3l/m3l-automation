@@ -36,25 +36,31 @@ did not have:
    the least-invoked skills and logs a warning to the debug log — never an
    error. This repo's gate hard-fails the push instead, stricter than
    upstream's own behavior.
-2. **The gate's denominator undercounts the true contended listing.** All
-   four skill sources — personal, project, plugin, and bundled — share one
-   budgeted listing with no source-based carve-out (confirmed against
-   `code.claude.com/docs/en/skills`, `/plugins`, and `/settings-reference`).
-   `bin/check-context-budget.mjs` counts only `.claude/skills/` (22 entries,
-   7,996 chars); this session's environment separately carried ~6 enabled
-   marketplace plugins and several Anthropic built-in skills, pushing the
-   true contended listing to roughly 48 entries. Uninstalling one plugin
-   (`session-report`) during this same session measurably reduced the real
-   listing but left the gate's own count of 22 unchanged, since the gate has
-   no visibility into plugin-provided skills at all.
+2. **The gate's denominator is a pre-existing scope limit, not something this
+   raise creates or worsens.** All four skill sources — personal, project,
+   plugin, and bundled — share one budgeted listing with no source-based
+   carve-out (confirmed against `code.claude.com/docs/en/skills`, `/plugins`,
+   and `/settings-reference`). `bin/check-context-budget.mjs` counts only
+   `.claude/skills/` (22 entries, 7,996 chars); this session's environment
+   separately carried ~6 enabled marketplace plugins and several Anthropic
+   built-in skills, pushing the true contended listing to roughly 48
+   entries. Uninstalling one plugin (`session-report`) during this same
+   session measurably reduced the real listing but left the gate's own count
+   of 22 unchanged, since the gate has no visibility into plugin-provided
+   skills at all — true at 1% and equally true at 2%. This gate was never a
+   precise proxy for a fair per-source share of the platform's true shared
+   budget; it is a repo-hygiene ratchet against _this repo's own_
+   uncontrolled description growth, with Claude Code's own graceful
+   least-invoked-first degradation as the real backstop against true
+   overflow of the full listing.
 
 This does not resolve ADR-0089's underlying objection — "no established
 practice for handling the next skill past a raised ceiling" — which is a
 governance concern about counter-pressure, not a factual claim the new
 evidence bears on directly. The maintainer was shown this conflict explicitly
-before deciding: raising the fraction again, now with a wider corpus and a
-correctly-sized denominator, is a considered choice to make once more, not an
-unnoticed reversal.
+before deciding: raising the fraction again, now with a wider corpus and an
+accurately-scoped understanding of what the denominator does and doesn't
+cover, is a considered choice to make once more, not an unnoticed reversal.
 
 ## Decision drivers
 
@@ -63,8 +69,11 @@ unnoticed reversal.
   skills' trigger keywords to fit — ADR-0089 itself records that an earlier
   trim "over-cut trigger phrases the eval suite depended on" and five
   descriptions needed restoring.
-- The gate should measure against the true contended listing as closely as a
-  repo-local check reasonably can, not a denominator known to undercount it.
+- The gate's stated purpose (a repo-hygiene ratchet against this repo's own
+  authored-description growth) and its actual denominator (repo-only) should
+  stay honestly matched — the raise should not be framed as if it makes the
+  local number a more accurate proxy for the platform's true shared budget,
+  which it does not and was never meant to.
 - ADR-0089's counter-pressure concern — growth must stay a conscious,
   reviewed choice, never silent — must survive this change, not be
   abandoned by it.

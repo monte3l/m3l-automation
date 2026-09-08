@@ -51,14 +51,19 @@
  *      exactly the skills a naive read would expect it least — the
  *      low-usage ones a truncation drops first (ADR-0089's trim to 7,734
  *      chars). ADR-0098 raised the fraction to 2% (~16,000 chars) once a
- *      second skill pair pushed the corpus back toward the ceiling and
- *      research confirmed the gate's 22-skill denominator undercounts the
- *      true contended listing, which also includes enabled plugins and
- *      built-ins (~48 entries at time of writing) — the ceiling stays a hard
- *      fail either way; only the number it's measured against changed. A
- *      per-skill WARN alone cannot catch aggregate overflow: N descriptions
- *      each under the 1,536-char per-skill threshold can still sum well past
- *      the aggregate budget.
+ *      second skill pair needed room. This gate's denominator has always
+ *      covered only `.claude/skills/`, not the full listing Claude Code
+ *      loads (which also includes enabled plugins and built-ins — ~48
+ *      entries at time of writing) — a pre-existing scope limit this raise
+ *      doesn't change or compound. The gate was never a precise proxy for a
+ *      fair per-source share of the platform's true shared budget, only a
+ *      repo-hygiene ratchet against THIS repo's own uncontrolled description
+ *      growth, with Claude Code's own graceful least-invoked-first
+ *      degradation as the real backstop against true overflow. The ceiling
+ *      stays a hard fail either way; only the number it's measured against
+ *      changed. A per-skill WARN alone cannot catch aggregate overflow: N
+ *      descriptions each under the 1,536-char per-skill threshold can still
+ *      sum well past the aggregate budget.
  *
  * A fourth, INFORMATIONAL-only measurement (2026-09-01 harness-refresh sweep)
  * reports total `.claude/skills/*\/SKILL.md` **body** bytes (the payload
@@ -111,12 +116,14 @@ export const SKILL_DESC_WARN_CHARS = 1536;
  * listing (`code.claude.com/docs/en/skills`). Anthropic's documented default
  * is 1%; this repo raised it to 2% via the `skillListingBudgetFraction`
  * settings.json key (ADR-0098, partially superseding ADR-0089's rejection of
- * that same raise) once a second skill pair pushed the corpus back toward
- * the ceiling and research established the gate's repo-only denominator
- * undercounts the true contended listing. Named to track that live setting
- * — this gate should keep measuring against whatever `skillListingBudgetFraction`
- * currently says, not a value hardcoded independently of it, so update both
- * together if it changes again.
+ * that same raise) once a second skill pair needed room. This gate's
+ * repo-only denominator has always been a pre-existing scope limit relative
+ * to the true listing Claude Code loads (which also includes enabled
+ * plugins and built-ins) — a fact the raise doesn't change, not a
+ * justification for it. Named to track the live setting — this gate should
+ * keep measuring against whatever `skillListingBudgetFraction` currently
+ * says, not a value hardcoded independently of it, so update both together
+ * if it changes again.
  */
 export const SKILL_LISTING_BUDGET_FRACTION = 0.02;
 /** Reference context windows the aggregate skill-listing budget is reported against. */
