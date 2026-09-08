@@ -40,7 +40,7 @@
     "sourceFiles": [
       {
         "path": "package.json",
-        "blob": "3e0e36db1e7b048d973d7e60938bce32c9320658"
+        "blob": "4933f6f08ff067c3c01127e654a2e51838bddfc5"
       },
       {
         "path": "packages/m3l-common/package.json",
@@ -97,7 +97,7 @@
       },
       {
         "path": "package.json",
-        "blob": "3e0e36db1e7b048d973d7e60938bce32c9320658"
+        "blob": "4933f6f08ff067c3c01127e654a2e51838bddfc5"
       },
       {
         "path": "packages/m3l-common/package.json",
@@ -130,7 +130,7 @@
       },
       {
         "path": "package.json",
-        "blob": "3e0e36db1e7b048d973d7e60938bce32c9320658"
+        "blob": "4933f6f08ff067c3c01127e654a2e51838bddfc5"
       },
       {
         "path": "packages/m3l-common/package.json",
@@ -172,7 +172,7 @@
     "sourceFiles": [
       {
         "path": "package.json",
-        "blob": "3e0e36db1e7b048d973d7e60938bce32c9320658"
+        "blob": "4933f6f08ff067c3c01127e654a2e51838bddfc5"
       },
       {
         "path": "packages/m3l-common/package.json",
@@ -219,10 +219,10 @@
     "sourceFiles": [
       {
         "path": "docs/contributing/branch-protection.md",
-        "blob": "216865c09e8b563986a3726fce6228cf6eeba0e0"
+        "blob": "43ec135cbe20f2a9aef990c189623d43e9a6ca43"
       }
     ],
-    "verifiedAt": "2026-09-07"
+    "verifiedAt": "2026-09-08"
   },
   "0010": {
     "sourceFiles": [
@@ -248,7 +248,7 @@
       },
       {
         "path": "package.json",
-        "blob": "3e0e36db1e7b048d973d7e60938bce32c9320658"
+        "blob": "4933f6f08ff067c3c01127e654a2e51838bddfc5"
       }
     ],
     "verifiedAt": "2026-09-08"
@@ -257,7 +257,7 @@
     "sourceFiles": [
       {
         "path": "package.json",
-        "blob": "3e0e36db1e7b048d973d7e60938bce32c9320658"
+        "blob": "4933f6f08ff067c3c01127e654a2e51838bddfc5"
       }
     ],
     "verifiedAt": "2026-09-08"
@@ -307,7 +307,7 @@
       },
       {
         "path": "package.json",
-        "blob": "3e0e36db1e7b048d973d7e60938bce32c9320658"
+        "blob": "4933f6f08ff067c3c01127e654a2e51838bddfc5"
       }
     ],
     "verifiedAt": "2026-09-08"
@@ -360,7 +360,7 @@
       },
       {
         "path": "package.json",
-        "blob": "3e0e36db1e7b048d973d7e60938bce32c9320658"
+        "blob": "4933f6f08ff067c3c01127e654a2e51838bddfc5"
       }
     ],
     "verifiedAt": "2026-09-08"
@@ -389,7 +389,7 @@
       },
       {
         "path": "docs/contributing/branch-protection.md",
-        "blob": "216865c09e8b563986a3726fce6228cf6eeba0e0"
+        "blob": "43ec135cbe20f2a9aef990c189623d43e9a6ca43"
       }
     ],
     "verifiedAt": "2026-09-08"
@@ -438,7 +438,7 @@
       },
       {
         "path": "docs/contributing/branch-protection.md",
-        "blob": "216865c09e8b563986a3726fce6228cf6eeba0e0"
+        "blob": "43ec135cbe20f2a9aef990c189623d43e9a6ca43"
       },
       {
         "path": "docs/logs/2026-07-24-w5-promote-destructive-gate.md",
@@ -506,7 +506,7 @@
       },
       {
         "path": "package.json",
-        "blob": "3e0e36db1e7b048d973d7e60938bce32c9320658"
+        "blob": "4933f6f08ff067c3c01127e654a2e51838bddfc5"
       }
     ],
     "verifiedAt": "2026-09-08"
@@ -552,7 +552,7 @@
       },
       {
         "path": "package.json",
-        "blob": "3e0e36db1e7b048d973d7e60938bce32c9320658"
+        "blob": "4933f6f08ff067c3c01127e654a2e51838bddfc5"
       },
       {
         "path": "pnpm-workspace.yaml",
@@ -783,7 +783,7 @@
       },
       {
         "path": "package.json",
-        "blob": "3e0e36db1e7b048d973d7e60938bce32c9320658"
+        "blob": "4933f6f08ff067c3c01127e654a2e51838bddfc5"
       }
     ],
     "verifiedAt": "2026-09-08"
@@ -877,7 +877,7 @@
       },
       {
         "path": "package.json",
-        "blob": "3e0e36db1e7b048d973d7e60938bce32c9320658"
+        "blob": "4933f6f08ff067c3c01127e654a2e51838bddfc5"
       },
       {
         "path": "packages/m3l-common/src/aws/clients/provider.ts",
@@ -974,7 +974,7 @@
       },
       {
         "path": "docs/logs/README.md",
-        "blob": "987c6fde31c10b25e9b5c1e620c2620fa5d5d17a"
+        "blob": "f206b58b54380a69bb4c7270ab137cb83f91f1cf"
       },
       {
         "path": "docs/plans/IMPLEMENTATION.md",
@@ -986,7 +986,7 @@
       },
       {
         "path": "package.json",
-        "blob": "3e0e36db1e7b048d973d7e60938bce32c9320658"
+        "blob": "4933f6f08ff067c3c01127e654a2e51838bddfc5"
       }
     ],
     "verifiedAt": "2026-09-08"
@@ -1062,7 +1062,7 @@
       },
       {
         "path": "package.json",
-        "blob": "3e0e36db1e7b048d973d7e60938bce32c9320658"
+        "blob": "4933f6f08ff067c3c01127e654a2e51838bddfc5"
       },
       {
         "path": "packages/m3l-common/package.json",
@@ -1222,7 +1222,7 @@
       },
       {
         "path": "package.json",
-        "blob": "3e0e36db1e7b048d973d7e60938bce32c9320658"
+        "blob": "4933f6f08ff067c3c01127e654a2e51838bddfc5"
       },
       {
         "path": "packages/m3l-common/src/aws/clients/provider.ts",
@@ -1277,7 +1277,7 @@
     "sourceFiles": [
       {
         "path": "package.json",
-        "blob": "3e0e36db1e7b048d973d7e60938bce32c9320658"
+        "blob": "4933f6f08ff067c3c01127e654a2e51838bddfc5"
       }
     ],
     "verifiedAt": "2026-09-08"
@@ -1701,7 +1701,7 @@
       },
       {
         "path": "package.json",
-        "blob": "3e0e36db1e7b048d973d7e60938bce32c9320658"
+        "blob": "4933f6f08ff067c3c01127e654a2e51838bddfc5"
       }
     ],
     "verifiedAt": "2026-09-08"
@@ -1972,7 +1972,7 @@
       },
       {
         "path": "docs/contributing/branch-protection.md",
-        "blob": "216865c09e8b563986a3726fce6228cf6eeba0e0"
+        "blob": "43ec135cbe20f2a9aef990c189623d43e9a6ca43"
       },
       {
         "path": "docs/contributing/hooks-reference.md",
@@ -2226,7 +2226,7 @@
       },
       {
         "path": ".claude/skills/typescript-configuration/references/typescript-configuration.md",
-        "blob": "9415f6ad0315adbc3408e3331d5f674d020bbc63"
+        "blob": "53f3eced067ece537d8b041caf0ea1fe53e999c0"
       },
       {
         "path": ".claude/skills/vitest-testing/references/vitest-testing.md",
@@ -2390,10 +2390,10 @@
       },
       {
         "path": "docs/contributing/branch-protection.md",
-        "blob": "216865c09e8b563986a3726fce6228cf6eeba0e0"
+        "blob": "43ec135cbe20f2a9aef990c189623d43e9a6ca43"
       }
     ],
-    "verifiedAt": "2026-09-07"
+    "verifiedAt": "2026-09-08"
   },
   "0098": {
     "sourceFiles": [
@@ -2403,7 +2403,7 @@
       },
       {
         "path": ".claude/skills/refreshing-typescript-guidance/SKILL.md",
-        "blob": "974d463df16771fbeba6ab41601f6454eaefb30f"
+        "blob": "50a6dad1ea13a3a54defd9a3f224c7f0ccf65f60"
       },
       {
         "path": ".claude/skills/researching-typescript-guidance/SKILL.md",

@@ -1,4 +1,5 @@
 {
+  "//": "erasableSyntaxOnly is scripts/*-only (2026-09-08 refreshing-typescript-guidance sweep) — not investigated for this package, so left unset rather than added as a drive-by.",
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "rootDir": "src",

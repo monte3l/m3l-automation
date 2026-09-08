@@ -1,8 +1,10 @@
 {
   "$schema": "https://unpkg.com/knip@6/schema.json",
   "ignoreDependencies": [
+    "@arethetypeswrong/cli",
     "@commitlint/config-conventional",
-    "@commitlint/types"
+    "@commitlint/types",
+    "publint"
   ],
   "ignoreBinaries": ["mkfifo", "podman"],
   "ignoreIssues": {

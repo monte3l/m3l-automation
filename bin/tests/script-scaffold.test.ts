@@ -659,6 +659,7 @@ describe("tsconfigShapeErrors", () => {
       outDir: "dist",
       tsBuildInfoFile: "dist/.tsbuildinfo",
       isolatedDeclarations: true,
+      erasableSyntaxOnly: true,
     },
   } as const;
 

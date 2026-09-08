@@ -7,6 +7,12 @@
 > below are stable across it. Refresh: re-run `mcp__context7__query-docs`
 > against `/microsoft/typescript` (ADR-0093; hub-only) on a major bump, or when
 > `pnpm check:reference-freshness` flags this file.
+>
+> **2026-09-08 hand-correction** — `refreshing-typescript-guidance`'s first
+> real sweep found and fixed three transcription errors below (wrong `target`
+> value, a missing `strict`-family member, a TS 7 forward-looking caveat) that
+> were never part of what the Context7 pull returned — the stamp above is
+> unchanged, since none of this is upstream content drift.
 
 Current semantics for the options this repo relies on, distilled for editing its
 tsconfig set.
@@ -19,17 +25,20 @@ tsconfig set.
 - Under NodeNext, **relative imports require an explicit extension** (`.js`,
   `.mjs`, `.cjs`). Bare package specifiers are fine; directory/`index` resolution
   is not. Missing/incorrect extensions surface as **TS2834 / TS2835**.
-- `target` (syntax level, `es2024` here) is independent of `module` (output
+- `target` (syntax level, `es2025` here) is independent of `module` (output
   format). Both are set explicitly.
 - `rewriteRelativeImportExtensions` exists (rewrite `./x.ts` → `./x.js` in emit)
   but this repo instead writes `.js` in source directly; don't mix approaches.
 
 ## Strictness
 
-- `strict: true` turns on: `noImplicitAny`, `strictNullChecks`,
+- `strict: true` turns on: `noImplicitAny`, `noImplicitThis`, `strictNullChecks`,
   `strictFunctionTypes`, `strictBindCallApply`, `strictPropertyInitialization`,
   `strictBuiltinIteratorReturn`, `useUnknownInCatchVariables`, `alwaysStrict`.
-  Individual members can be toggled after `strict` for gradual adoption.
+  Individual members can be toggled after `strict` for gradual adoption — except
+  `alwaysStrict`, which TS 7.0 assumes `true` and no longer allows disabling
+  (inert on this repo's pinned `typescript@6.0.3`, which still honors an
+  explicit override).
 - **Not** included in `strict` (so set explicitly):
   - `noUncheckedIndexedAccess` — indexed access yields `T | undefined`.
   - `exactOptionalPropertyTypes` — optional `?` ≠ `| undefined`; assigning

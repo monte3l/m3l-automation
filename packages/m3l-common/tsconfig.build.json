@@ -1,4 +1,5 @@
 {
+  "//": "erasableSyntaxOnly is scripts/*-only (2026-09-08 refreshing-typescript-guidance sweep): this package legitimately uses constructor parameter properties (e.g. src/aws/ecs/client.ts) the flag would reject. Extending it here needs its own investigation, not a drive-by addition.",
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "rootDir": "src",
