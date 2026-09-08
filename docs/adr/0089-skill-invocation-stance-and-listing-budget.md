@@ -1,6 +1,7 @@
 # 0089. Skill invocation stance, the listing-budget ceiling, and where routing guidance lives
 
-- **Status:** Accepted
+- **Status:** Partially-superseded
+- **Relations:** partially-superseded-by: 0098 (clauses: the Option 2 rejection — raising `skillListingBudgetFraction` — under §Decision and §Considered options)
 - **Date:** 2026-09-03
 - **Deciders:** Repo maintainer
 

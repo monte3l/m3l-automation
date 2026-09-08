@@ -35,20 +35,30 @@
  *      Code listing-truncation threshold (`code.claude.com/docs/en/skills`).
  *      Not ratcheted: descriptions churn with normal skill-writing edits and
  *      a hard per-file gate here would fight that.
- *   3b. Aggregate skill-listing weight vs. Claude Code's documented ~1%-of-
- *      context-window listing budget: a HARD ceiling at the
- *      SKILL_LISTING_ENFORCED_WINDOW reference window (200k tokens — the
- *      floor a session can run at), reported informationally against every
- *      window in SKILL_LISTING_REFERENCE_WINDOWS. Unlike #3, this one is
- *      enforced: on overflow Claude Code silently drops descriptions
+ *   3b. Aggregate skill-listing weight vs. Claude Code's ~2%-of-context-window
+ *      listing budget (raised from Anthropic's 1% documented default via
+ *      `skillListingBudgetFraction` in settings.json — ADR-0098): a HARD
+ *      ceiling at the SKILL_LISTING_ENFORCED_WINDOW reference window (200k
+ *      tokens — the floor a session can run at), reported informationally
+ *      against every window in SKILL_LISTING_REFERENCE_WINDOWS. Unlike #3,
+ *      this one is enforced: on overflow Claude Code drops descriptions
  *      starting with the least-invoked skills (`code.claude.com/docs/en/
- *      skills`), so a 22-skill repo whose combined descriptions already ran
- *      2.7x over the 200k-window budget (21,684 chars vs. an ~8,000-char
- *      budget, measured 2026-09-02) was degrading prose-triggered invocation
- *      silently, for exactly the skills a naive read would expect it least —
- *      the low-usage ones a truncation drops first. A per-skill WARN alone
- *      cannot catch this: 22 descriptions each under the 1,536-char
- *      per-skill threshold can still sum well past the aggregate budget.
+ *      skills`) — graceful degradation, not an error, but this gate still
+ *      hard-fails ahead of that point so growth stays a conscious choice. A
+ *      22-skill repo whose combined descriptions already ran 2.7x over the
+ *      then-1% budget (21,684 chars vs. an ~8,000-char budget, measured
+ *      2026-09-02) was degrading prose-triggered invocation silently, for
+ *      exactly the skills a naive read would expect it least — the
+ *      low-usage ones a truncation drops first (ADR-0089's trim to 7,734
+ *      chars). ADR-0098 raised the fraction to 2% (~16,000 chars) once a
+ *      second skill pair pushed the corpus back toward the ceiling and
+ *      research confirmed the gate's 22-skill denominator undercounts the
+ *      true contended listing, which also includes enabled plugins and
+ *      built-ins (~48 entries at time of writing) — the ceiling stays a hard
+ *      fail either way; only the number it's measured against changed. A
+ *      per-skill WARN alone cannot catch aggregate overflow: N descriptions
+ *      each under the 1,536-char per-skill threshold can still sum well past
+ *      the aggregate budget.
  *
  * A fourth, INFORMATIONAL-only measurement (2026-09-01 harness-refresh sweep)
  * reports total `.claude/skills/*\/SKILL.md` **body** bytes (the payload
@@ -97,13 +107,18 @@ export const RULE_CEILING_BYTES = 10_000;
 /** Claude Code's documented listing-truncation threshold for a single skill's description. */
 export const SKILL_DESC_WARN_CHARS = 1536;
 /**
- * Claude Code's documented fraction of the context window budgeted for the
- * skill-description listing (`code.claude.com/docs/en/skills`). Named to
- * track the `skillListingBudgetFraction` settings.json key, if this repo
- * ever raises it — this gate should keep measuring against whatever the
- * live setting says, not a value hardcoded independently of it.
+ * The fraction of the context window budgeted for the skill-description
+ * listing (`code.claude.com/docs/en/skills`). Anthropic's documented default
+ * is 1%; this repo raised it to 2% via the `skillListingBudgetFraction`
+ * settings.json key (ADR-0098, partially superseding ADR-0089's rejection of
+ * that same raise) once a second skill pair pushed the corpus back toward
+ * the ceiling and research established the gate's repo-only denominator
+ * undercounts the true contended listing. Named to track that live setting
+ * — this gate should keep measuring against whatever `skillListingBudgetFraction`
+ * currently says, not a value hardcoded independently of it, so update both
+ * together if it changes again.
  */
-export const SKILL_LISTING_BUDGET_FRACTION = 0.01;
+export const SKILL_LISTING_BUDGET_FRACTION = 0.02;
 /** Reference context windows the aggregate skill-listing budget is reported against. */
 export const SKILL_LISTING_REFERENCE_WINDOWS = Object.freeze([
   200_000, 1_000_000,
@@ -1059,7 +1074,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     }
   }
 
-  // --- 3b. Aggregate skill-listing budget vs. Claude Code's ~1%-of-context-window cap (HARD at SKILL_LISTING_ENFORCED_WINDOW) ---
+  // --- 3b. Aggregate skill-listing budget vs. Claude Code's ~2%-of-context-window cap (HARD at SKILL_LISTING_ENFORCED_WINDOW; ADR-0098) ---
   const listingBudgets = checkSkillListingBudget(totalSkillDescChars);
   const estListingTokens = Math.ceil(totalSkillDescChars / 4);
   const enforcedBudget = listingBudgets.find(
@@ -1073,7 +1088,8 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
         `Claude Code enforces at a ${SKILL_LISTING_ENFORCED_WINDOW.toLocaleString()}-token context ` +
         `window (${SKILL_LISTING_BUDGET_FRACTION * 100}% of context, code.claude.com/docs/en/skills). ` +
         `On overflow Claude Code drops descriptions starting with the least-invoked skills — trim the ` +
-        `longest descriptions below, or raise skillListingBudgetFraction in settings.json.`,
+        `longest descriptions below, or raise skillListingBudgetFraction again in settings.json and ` +
+        `this constant together (ADR-0098).`,
     );
   }
 
