@@ -289,3 +289,4 @@ target was renamed is repaired via `RENAMED_TARGETS` in
 | 2026-09-07 | Should-fix historical backfill — PR 4 of the ack-gate sequence (ADR-0097)                    | [should-fix-backfill](./2026-09-07-should-fix-backfill.md)                                 |
 | 2026-09-07 | Should-fix acknowledgment gate — 4-PR wave retrospective (ADR-0097, #1075/#1082/#1110/#1119) | [should-fix-ack-gate-wave](./2026-09-07-should-fix-ack-gate-wave.md)                       |
 | 2026-09-08 | TypeScript guidance skill pair + check:typescript-freshness gate, ADR-0098 (PR #1129/#1130)  | [typescript-guidance-skills](./2026-09-08-typescript-guidance-skills.md)                   |
+| 2026-09-08 | First real refreshing-typescript-guidance sweep + review-round override (PR #1132)           | [typescript-refresh-first-sweep](./2026-09-08-typescript-refresh-first-sweep.md)           |

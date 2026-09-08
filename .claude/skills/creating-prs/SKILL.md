@@ -480,7 +480,20 @@ turning an open, mergeable PR into one. Three outcomes, one **default**:
   enforce this as a required check once its dogfood period ends
   (`docs/contributing/branch-protection.md`); treat it as a precondition now
   regardless, so a PR merged during the dogfood period doesn't need a
-  retrofit once it's promoted to required. Once clear:
+  retrofit once it's promoted to required.
+
+  **Check `mergeStateStatus` before pushing solely to clear `should-fix-ack`
+  or any other currently-non-required check.** `gh pr view --json
+mergeStateStatus` — if it already reads `MERGEABLE`/`UNSTABLE` rather than
+  `BLOCKED`, that check failing is costing nothing yet, and _any_ push
+  (including a footer-only `--allow-empty` acknowledgment commit) re-triggers
+  `claude-pr-review.yml` and spends one of the finite `MAX_REVIEW_ROUNDS`
+  review attempts. A push made purely to acknowledge a Should-fix after the
+  `review` check had already converged to PASS burned the last round this
+  way, converting a cleanly mergeable PR into one `BLOCKED` on the _required_
+  `review` check and needing the round-limit override procedure (`docs/contributing/branch-protection.md`
+  § Overriding a disputed finding) to recover
+  (`docs/logs/2026-09-08-typescript-refresh-first-sweep.md`). Once clear:
 
   ```bash
   gh pr merge <number> --squash

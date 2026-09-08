@@ -46,7 +46,9 @@ paths:
   (`docs/logs/2026-07-27-scripts-codepipeline-ops.md`).
 - **Scaffold with the generator, never by hand:** `pnpm scaffold:script
 <name>` emits the whole shape; evolve it via `templates/script/` + the
-  manifest together.
+  manifest together — a `tsconfig*.json.tmpl` `compilerOptions` change also
+  needs `bin/tests/script-scaffold.test.ts`'s mirrored fixture updated, or
+  it desyncs silently.
 - **Fill in the README's `### Examples` section before calling a script
   done** — at least 3 runnable examples spanning read-only → mutating →
   destructive/interactive. Full spec and enforcement:
