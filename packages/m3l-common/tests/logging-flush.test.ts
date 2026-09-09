@@ -18,12 +18,12 @@
  *    underlying exporter failure is reported to stderr instead).
  */
 
-import { readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { tmpdir } from "node:os";
 import * as path from "node:path";
 
-import { afterEach, describe, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 import { M3LFileListExporter } from "../src/core/exporters/index.js";
 import type { M3LLogEvent } from "../src/core/logging/index.js";
@@ -38,25 +38,25 @@ afterEach(() => {
 
 describe("M3LFileLoggerHandler.flush()", () => {
   let tempFileCounter = 0;
-  const tempFiles: string[] = [];
+  let sandboxDir = "";
+
+  // Per-test mkdtemp sandbox (mirrors exporters-atomic-write.test.ts) rather
+  // than writing straight into the bare OS tmpdir().
+  beforeEach(async () => {
+    sandboxDir = await mkdtemp(path.join(tmpdir(), "m3l-logging-flush-"));
+  });
+
+  afterEach(async () => {
+    await rm(sandboxDir, { recursive: true, force: true });
+  });
 
   function nextTempFilePath(): string {
     tempFileCounter += 1;
-    const filePath = path.join(
-      tmpdir(),
+    return path.join(
+      sandboxDir,
       `m3l-logging-flush-test-${tempFileCounter}-${randomUUID()}.json`,
     );
-    tempFiles.push(filePath);
-    return filePath;
   }
-
-  afterEach(async () => {
-    while (tempFiles.length > 0) {
-      const filePath = tempFiles.pop();
-      if (filePath === undefined) continue;
-      await rm(filePath, { force: true });
-    }
-  });
 
   test("flush() resolves immediately when nothing has been queued", async () => {
     const filePath = nextTempFilePath();

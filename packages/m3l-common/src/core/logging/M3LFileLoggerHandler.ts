@@ -131,6 +131,11 @@ export class M3LFileLoggerHandler implements M3LLoggerHandler {
    * failure to `process.stderr` rather than letting it propagate, so a
    * queued write failing does not make `flush()` reject.
    *
+   * `flush()` is intended to be called once emission has stopped (e.g.
+   * immediately before process exit). The wait loop has no bound: if
+   * `handle()` keeps being invoked at least once per settled write, the
+   * queue keeps re-chaining and this promise can be delayed indefinitely.
+   *
    * @returns A promise that resolves once every currently-queued (and any
    *   write enqueued while waiting) write has settled.
    *
@@ -159,9 +164,10 @@ export class M3LFileLoggerHandler implements M3LLoggerHandler {
    * the sequential queue for subsequent writes, so it is caught and
    * reported to `process.stderr` as a best-effort diagnostic — `handle()`
    * is synchronous and gives the caller no promise to await or catch. The
-   * diagnostic write itself is also guarded, so a broken/closed stderr
-   * stream (e.g. `EPIPE`) can never make this method — or the write queue
-   * it's chained onto — reject.
+   * diagnostic write itself is also guarded, so a stderr stream that
+   * synchronously throws on write (e.g. after it has already ended or been
+   * destroyed) can never make this method — or the write queue it's chained
+   * onto — reject.
    */
   async #writeSnapshot(snapshot: readonly M3LLogEvent[]): Promise<void> {
     try {
@@ -180,7 +186,8 @@ export class M3LFileLoggerHandler implements M3LLoggerHandler {
           `m3l-logging: M3LFileLoggerHandler failed to write log file: ${detail}\n`,
         );
       } catch {
-        // Intentionally silent: a broken/closed stderr stream (e.g. EPIPE)
+        // Intentionally silent: a stderr stream that synchronously throws
+        // on write (e.g. after it has already ended or been destroyed)
         // must not mask the original write failure this diagnostic was
         // reporting, and re-reporting through another channel would just
         // relocate the same hazard.

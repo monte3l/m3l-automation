@@ -1920,6 +1920,10 @@ describe("M3LFileListExporter", () => {
       code: "EISDIR",
     });
     vi.spyOn(fsp, "writeFile").mockRejectedValue(writeError);
+    // writeFileAtomic's failure path does best-effort temp-file cleanup via
+    // fsp.rm(tempPath, { force: true }); mock it so the failure path never
+    // touches the real filesystem.
+    const rmSpy = vi.spyOn(fsp, "rm").mockResolvedValue(undefined);
     const exporter = new M3LFileListExporter<Row>({
       filePath: "/exports/is-a-directory",
     });
@@ -1937,6 +1941,7 @@ describe("M3LFileListExporter", () => {
     expect((thrown as M3LError).context).toMatchObject({
       filePath: "/exports/is-a-directory",
     });
+    expect(rmSpy).toHaveBeenCalledTimes(1);
   });
 
   test("re-throws an M3LError from the write path unwrapped, without double-wrapping", async () => {
@@ -1944,6 +1949,9 @@ describe("M3LFileListExporter", () => {
       code: "ERR_UNDERLYING",
     });
     vi.spyOn(fsp, "writeFile").mockRejectedValue(original);
+    // Same best-effort cleanup path as above — mock fsp.rm to avoid a real,
+    // unmocked filesystem call.
+    vi.spyOn(fsp, "rm").mockResolvedValue(undefined);
     const exporter = new M3LFileListExporter<Row>({
       filePath: "/exports/list.json",
     });
