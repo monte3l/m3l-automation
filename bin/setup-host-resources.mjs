@@ -434,7 +434,7 @@ function run(opts, reporter) {
   );
   if (existsSync(rcUnitPath)) {
     reporter.info(
-      "[5/7] claude-rc.service: would add MemoryMax=6G + OOMPolicy=kill drop-in.",
+      "[5/7] claude-rc.service: would add MemoryMax=10G + OOMPolicy=kill drop-in.",
     );
     if (opts.apply) {
       const dropinDir = join(
