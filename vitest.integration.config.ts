@@ -1,4 +1,10 @@
 import { defineConfig } from "vitest/config";
+import { detectHostProfile, deriveBudget } from "./bin/lib/host-profile.mjs";
+
+// docs/plans/2026-09-08-adaptive-host-budgeting.md, Stage 2 — see
+// vitest.config.ts's header comment for the full rationale behind
+// `concurrentLaneWorkers` replacing the old fixed `maxWorkers: "50%"`.
+const { concurrentLaneWorkers } = deriveBudget(detectHostProfile());
 
 // Integration run for tests that bind a real loopback socket, invoked as a
 // third pass by `pnpm test` / `pnpm test:coverage` (see package.json)
@@ -31,9 +37,7 @@ import { defineConfig } from "vitest/config";
 export default defineConfig({
   test: {
     pool: "forks",
-    // ADR-0080: cap the pool at half of this host's cores — see
-    // vitest.config.ts for the full rationale.
-    maxWorkers: "50%",
+    maxWorkers: concurrentLaneWorkers,
     include: ["**/tests/integration/**/*.test.ts"],
     exclude: ["**/dist/**", "**/node_modules/**", "**/.claude/worktrees/**"],
     coverage: {

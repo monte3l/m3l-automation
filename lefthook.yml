@@ -42,10 +42,13 @@ commit-msg:
 # the two both ways (it compares the token SET per stage, not lane names or
 # groupings, so chaining several checks into one lane below changes nothing there).
 #
-# ADR-0080: on a memory-constrained host, `parallel: true` here plus turbo's own
-# fan-out (capped 50%, turbo.json) and vitest's own fan-out (capped 50%,
-# vitest.config.ts) can still stack three heavy lanes (test/typecheck/build-exports)
-# concurrently. `bin/setup-host-resources.mjs` writes a gitignored
+# ADR-0080 / docs/plans/2026-09-08-adaptive-host-budgeting.md: on a memory-
+# constrained host, `parallel: true` here plus turbo's own fan-out and
+# vitest's own fan-out (each independently self-capped via
+# `deriveBudget`'s `concurrentLaneWorkers` — see bin/lib/host-profile.mjs,
+# turbo.json, vitest.config.ts) can still stack three heavy lanes
+# (test/typecheck/build-exports) concurrently. `bin/setup-host-resources.mjs`
+# writes a gitignored
 # `lefthook-local.yml` forcing `pre-push: parallel: false` when the host has under
 # ~20 GiB RAM — lefthook's own documented local-override mechanism
 # (https://lefthook.dev/examples/lefthook-local), not a change to this shared file.

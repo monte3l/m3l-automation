@@ -1,14 +1,17 @@
 {
   "$schema": "https://turborepo.dev/schema.json",
   "globalDependencies": ["tsconfig.base.json", "pnpm-lock.yaml"],
-  // ADR-0080: absent, this defaulted to 10 concurrent tasks — oversubscribing
-  // a 4-core host by 2.5x when `build`/`typecheck` fan out across all 19
-  // workspace packages, and doing so WHILE lefthook's `pre-push` runs the
-  // vitest lane concurrently (`parallel: true`). A percentage scales with
-  // whatever host actually runs it rather than baking in one machine's core
-  // count; 50% leaves the other half for vitest's own capped fork pool (see
-  // vitest.config.ts) and the lighter check:* lanes running at the same time.
-  "concurrency": "50%",
+  // ADR-0080 originally fixed this at "50%" — a blind percentage of raw
+  // logical cores that is the wrong number on SMT (x86_64 CI) and P/E-core
+  // (Apple Silicon) hosts alike (docs/plans/2026-09-08-adaptive-host-budgeting.md).
+  // Stage 2 of that plan replaced the static field with a per-invocation
+  // `--concurrency=N` CLI flag, computed from the detected host profile by
+  // `bin/print-concurrency.mjs` and passed through the `build`/`typecheck`
+  // package.json scripts (turbo has no config-time compute seam, only a CLI
+  // flag). Leaving no field here means a `turbo run <task>` invoked directly
+  // (bypassing those scripts) falls back to turbo's own built-in default —
+  // 10 concurrent tasks, the exact oversubscription this whole mechanism
+  // exists to avoid — so always go through `pnpm build`/`pnpm typecheck`.
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
