@@ -40,11 +40,10 @@ import path from "node:path";
 import { afterEach, describe, expect, expectTypeOf, test, vi } from "vitest";
 
 // Named imports (not `fsp.<method>` member calls) are used for the real,
-// unmocked filesystem calls in the torn-write round-trip tests below: the
-// repo's `no-restricted-syntax` guard bans mutating `fs`/`fsp`/`fsPromises`
-// *member-expression* calls in tests, but a bare identifier call
-// (`mkdtemp(...)`) is unaffected — mirrors the pattern in
-// `tests/checkpoint.test.ts`.
+// unmocked filesystem calls in the torn-write round-trip tests below: these
+// are the mkdtemp-sandbox real-fs calls the test-I/O policy permits
+// (style-guide.md § Runner, layout & the test-I/O policy) — mirrors the
+// pattern in `tests/checkpoint.test.ts`.
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 
 // Make 'node:fs' and 'node:fs/promises' configurable so vi.spyOn can

@@ -384,13 +384,12 @@ choosing a parameter's mode. **[advisory]**
 mkdtemp(join(tmpdir(), …))` — removed in teardown; never the repo tree,
   `process.cwd()`, `import.meta.dirname`, or a fixed/literal path. A read-only
   scan of the real tree (a gate asserting against `docs/` or a manifest file)
-  is fine; only mutation is constrained to the sandbox. **[advisory]** for
-  now: `no-restricted-syntax` currently bans only the **member-expression**
-  form (`fs.mkdtempSync(...)`), not the bare named-import form this repo's own
-  convention uses — the exact gap issue #862 found. A follow-up PR widens the
-  selector and adds a `check:test-fs-isolation` gate (path-shape rules,
-  ADR-0100) to close it; until then, nothing mechanically stops a fixed-path
-  or `cwd()`-rooted call written as a bare import.
+  is fine; only mutation is constrained to the sandbox. **[enforced]**
+  (`no-restricted-syntax` — seven selectors covering a literal path, a
+  `process.cwd()`/`import.meta.dirname`-rooted path, and a `mkdtemp` root not
+  under `os.tmpdir()`, regardless of call style — plus `check:test-fs-isolation`
+  for the one rule no per-node selector can express: a `mkdtemp` sandbox with
+  no matching `rm`/`rmSync` anywhere in the file. `docs/adr/0100`.)
 - **Mock the filesystem when it is a collaborator; use a real sandbox when it
   is the subject.** Some suites' entire point is a real filesystem guarantee —
   `core/storage`'s append-only suites assert `O_NOFOLLOW` refusal and
@@ -399,11 +398,9 @@ mkdtemp(join(tmpdir(), …))` — removed in teardown; never the repo tree,
   `fs` there would mock the behavior under test, not isolate it. **[advisory]**
 - **Integration tests are a separate layer, not an excluded one.**
   `*.integration.test.ts` under `**/tests/integration/` runs under its own
-  `vitest.integration.config.ts`, which is real today. **[enforced]** for that
-  execution split. It is **not yet** exempt from the two rules above at the
-  lint level — `no-restricted-syntax`'s `files` glob still matches it — so the
-  follow-up PR that widens the selector also carves out this directory with
-  an `ignores` entry.
+  `vitest.integration.config.ts`, and is exempt from both rules above.
+  **[enforced]** (Vitest project split for execution; `no-restricted-syntax`'s
+  `ignores` entry at the lint level.)
 
 ### What to test
 

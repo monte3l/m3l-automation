@@ -231,5 +231,6 @@ surface).
 | 0097 | [A Should-fix acknowledgment gate for claude-pr-review](./0097-should-fix-acknowledgment-gate.md)                                                         | Accepted             |
 | 0098 | [Raise the skill-listing budget fraction from 1% to 2%](./0098-raise-skill-listing-budget-fraction.md)                                                    | Accepted             |
 | 0099 | [Observation/insight vocabulary replaces the undefined "lesson"](./0099-observation-and-insight-vocabulary.md)                                            | Accepted             |
+| 0100 | [Test I/O is governed by sandbox isolation, not by an I/O ban](./0100-test-fs-sandbox-isolation.md)                                                       | Accepted             |
 
 <!-- END GENERATED ADR INDEX -->

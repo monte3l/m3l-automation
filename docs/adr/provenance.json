@@ -7,7 +7,7 @@
       },
       {
         "path": ".github/workflows/ci.yml",
-        "blob": "398d279acd0c521352cb8489006d612466db4269"
+        "blob": "e8e545238be226534161df3aff7b573cc95e2b72"
       },
       {
         "path": ".node-version",
@@ -19,7 +19,7 @@
       },
       {
         "path": "CLAUDE.md",
-        "blob": "5634be9a01afd3427350fbd98f940b9b098082de"
+        "blob": "80a102063126ea3f90a006c3fff2760be1bed92f"
       },
       {
         "path": "docs/contributing/contributing.md",
@@ -27,7 +27,7 @@
       },
       {
         "path": "lefthook.yml",
-        "blob": "7532ef55ea0f88969685d01c544d2edc61c9491e"
+        "blob": "b5be61b8bb0e9c364e06084d9d4373ef23059397"
       },
       {
         "path": "turbo.json",
@@ -40,7 +40,7 @@
     "sourceFiles": [
       {
         "path": "package.json",
-        "blob": "2651b6ce76505454b5dee829d91afca4331d9ba5"
+        "blob": "a3999ce79c45373dc501f9da6199cc0a920f24f1"
       },
       {
         "path": "packages/m3l-common/package.json",
@@ -69,7 +69,7 @@
       },
       {
         "path": ".github/workflows/ci.yml",
-        "blob": "398d279acd0c521352cb8489006d612466db4269"
+        "blob": "e8e545238be226534161df3aff7b573cc95e2b72"
       },
       {
         "path": ".node-version",
@@ -85,7 +85,7 @@
       },
       {
         "path": "bin/lib/verify-steps.mjs",
-        "blob": "6b728d32b93db00a77fed40e3d3236791f1dd536"
+        "blob": "98c6661c51b08ac9c7e9e3920ab7e6c872e280ff"
       },
       {
         "path": "docs/contributing/contributing.md",
@@ -93,11 +93,11 @@
       },
       {
         "path": "lefthook.yml",
-        "blob": "7532ef55ea0f88969685d01c544d2edc61c9491e"
+        "blob": "b5be61b8bb0e9c364e06084d9d4373ef23059397"
       },
       {
         "path": "package.json",
-        "blob": "2651b6ce76505454b5dee829d91afca4331d9ba5"
+        "blob": "a3999ce79c45373dc501f9da6199cc0a920f24f1"
       },
       {
         "path": "packages/m3l-common/package.json",
@@ -130,7 +130,7 @@
       },
       {
         "path": "package.json",
-        "blob": "2651b6ce76505454b5dee829d91afca4331d9ba5"
+        "blob": "a3999ce79c45373dc501f9da6199cc0a920f24f1"
       },
       {
         "path": "packages/m3l-common/package.json",
@@ -172,7 +172,7 @@
     "sourceFiles": [
       {
         "path": "package.json",
-        "blob": "2651b6ce76505454b5dee829d91afca4331d9ba5"
+        "blob": "a3999ce79c45373dc501f9da6199cc0a920f24f1"
       },
       {
         "path": "packages/m3l-common/package.json",
@@ -189,20 +189,20 @@
       },
       {
         "path": ".github/workflows/ci.yml",
-        "blob": "398d279acd0c521352cb8489006d612466db4269"
+        "blob": "e8e545238be226534161df3aff7b573cc95e2b72"
       },
       {
         "path": ".github/workflows/dependency-review.yml",
         "blob": "a10b117b3ff5a84647dc7700c377e6870c873f4c"
       }
     ],
-    "verifiedAt": "2026-09-08"
+    "verifiedAt": "2026-09-09"
   },
   "0008": {
     "sourceFiles": [
       {
         "path": ".github/workflows/ci.yml",
-        "blob": "398d279acd0c521352cb8489006d612466db4269"
+        "blob": "e8e545238be226534161df3aff7b573cc95e2b72"
       },
       {
         "path": "bin/lint-commit.mjs",
@@ -210,7 +210,7 @@
       },
       {
         "path": "lefthook.yml",
-        "blob": "7532ef55ea0f88969685d01c544d2edc61c9491e"
+        "blob": "b5be61b8bb0e9c364e06084d9d4373ef23059397"
       }
     ],
     "verifiedAt": "2026-09-09"
@@ -236,11 +236,11 @@
       },
       {
         "path": ".github/workflows/ci.yml",
-        "blob": "398d279acd0c521352cb8489006d612466db4269"
+        "blob": "e8e545238be226534161df3aff7b573cc95e2b72"
       },
       {
         "path": "CLAUDE.md",
-        "blob": "5634be9a01afd3427350fbd98f940b9b098082de"
+        "blob": "80a102063126ea3f90a006c3fff2760be1bed92f"
       },
       {
         "path": "docs/adr/template.md",
@@ -248,7 +248,7 @@
       },
       {
         "path": "package.json",
-        "blob": "2651b6ce76505454b5dee829d91afca4331d9ba5"
+        "blob": "a3999ce79c45373dc501f9da6199cc0a920f24f1"
       }
     ],
     "verifiedAt": "2026-09-09"
@@ -257,7 +257,7 @@
     "sourceFiles": [
       {
         "path": "package.json",
-        "blob": "2651b6ce76505454b5dee829d91afca4331d9ba5"
+        "blob": "a3999ce79c45373dc501f9da6199cc0a920f24f1"
       }
     ],
     "verifiedAt": "2026-09-09"
@@ -299,7 +299,7 @@
       },
       {
         "path": "CLAUDE.md",
-        "blob": "5634be9a01afd3427350fbd98f940b9b098082de"
+        "blob": "80a102063126ea3f90a006c3fff2760be1bed92f"
       },
       {
         "path": "docs/implementation-status.md",
@@ -307,7 +307,7 @@
       },
       {
         "path": "package.json",
-        "blob": "2651b6ce76505454b5dee829d91afca4331d9ba5"
+        "blob": "a3999ce79c45373dc501f9da6199cc0a920f24f1"
       }
     ],
     "verifiedAt": "2026-09-09"
@@ -360,7 +360,7 @@
       },
       {
         "path": "package.json",
-        "blob": "2651b6ce76505454b5dee829d91afca4331d9ba5"
+        "blob": "a3999ce79c45373dc501f9da6199cc0a920f24f1"
       }
     ],
     "verifiedAt": "2026-09-09"
@@ -369,7 +369,7 @@
     "sourceFiles": [
       {
         "path": ".claude/rules/tests.md",
-        "blob": "8e9c408d9409425045e9746130b8107b6fb284fc"
+        "blob": "e530d81b069101b79efeff7a7e8eef777d67866b"
       },
       {
         "path": ".github/dependabot.yml",
@@ -385,7 +385,7 @@
       },
       {
         "path": "CLAUDE.md",
-        "blob": "5634be9a01afd3427350fbd98f940b9b098082de"
+        "blob": "80a102063126ea3f90a006c3fff2760be1bed92f"
       },
       {
         "path": "docs/contributing/branch-protection.md",
@@ -506,7 +506,7 @@
       },
       {
         "path": "package.json",
-        "blob": "2651b6ce76505454b5dee829d91afca4331d9ba5"
+        "blob": "a3999ce79c45373dc501f9da6199cc0a920f24f1"
       }
     ],
     "verifiedAt": "2026-09-09"
@@ -548,11 +548,11 @@
       },
       {
         "path": "lefthook.yml",
-        "blob": "7532ef55ea0f88969685d01c544d2edc61c9491e"
+        "blob": "b5be61b8bb0e9c364e06084d9d4373ef23059397"
       },
       {
         "path": "package.json",
-        "blob": "2651b6ce76505454b5dee829d91afca4331d9ba5"
+        "blob": "a3999ce79c45373dc501f9da6199cc0a920f24f1"
       },
       {
         "path": "pnpm-workspace.yaml",
@@ -634,7 +634,7 @@
       },
       {
         "path": "CLAUDE.md",
-        "blob": "5634be9a01afd3427350fbd98f940b9b098082de"
+        "blob": "80a102063126ea3f90a006c3fff2760be1bed92f"
       },
       {
         "path": "docs/implementation-status.md",
@@ -691,7 +691,7 @@
       },
       {
         "path": "CLAUDE.md",
-        "blob": "5634be9a01afd3427350fbd98f940b9b098082de"
+        "blob": "80a102063126ea3f90a006c3fff2760be1bed92f"
       },
       {
         "path": "docs/contributing/model-selection.md",
@@ -729,7 +729,7 @@
     "sourceFiles": [
       {
         "path": "CLAUDE.md",
-        "blob": "5634be9a01afd3427350fbd98f940b9b098082de"
+        "blob": "80a102063126ea3f90a006c3fff2760be1bed92f"
       },
       {
         "path": "docs/reference/aws/clients.md",
@@ -783,7 +783,7 @@
       },
       {
         "path": "package.json",
-        "blob": "2651b6ce76505454b5dee829d91afca4331d9ba5"
+        "blob": "a3999ce79c45373dc501f9da6199cc0a920f24f1"
       }
     ],
     "verifiedAt": "2026-09-09"
@@ -853,11 +853,11 @@
     "sourceFiles": [
       {
         "path": "CLAUDE.md",
-        "blob": "5634be9a01afd3427350fbd98f940b9b098082de"
+        "blob": "80a102063126ea3f90a006c3fff2760be1bed92f"
       },
       {
         "path": "docs/adr/README.md",
-        "blob": "b4c00bfde310b516b375a0973885c0ccd7d412d5"
+        "blob": "a39f61d852d75ac355642fc52dae39738c7625a3"
       },
       {
         "path": "docs/logs/2026-08-14-aws-rds-data.md",
@@ -877,7 +877,7 @@
       },
       {
         "path": "package.json",
-        "blob": "2651b6ce76505454b5dee829d91afca4331d9ba5"
+        "blob": "a3999ce79c45373dc501f9da6199cc0a920f24f1"
       },
       {
         "path": "packages/m3l-common/src/aws/clients/provider.ts",
@@ -890,7 +890,7 @@
     "sourceFiles": [
       {
         "path": ".github/workflows/ci.yml",
-        "blob": "398d279acd0c521352cb8489006d612466db4269"
+        "blob": "e8e545238be226534161df3aff7b573cc95e2b72"
       },
       {
         "path": ".github/workflows/pages.yml",
@@ -922,7 +922,7 @@
       },
       {
         "path": "bin/lib/command-catalog.mjs",
-        "blob": "a2ec17b00fbd32bcb5aaa1572339faa362db0c12"
+        "blob": "446bcd1952617687f953db8630923491b739a62a"
       },
       {
         "path": "bin/lib/hub-sync.mjs",
@@ -934,7 +934,7 @@
       },
       {
         "path": "bin/lib/verify-steps.mjs",
-        "blob": "6b728d32b93db00a77fed40e3d3236791f1dd536"
+        "blob": "98c6661c51b08ac9c7e9e3920ab7e6c872e280ff"
       },
       {
         "path": "bin/lint-commit.mjs",
@@ -986,7 +986,7 @@
       },
       {
         "path": "package.json",
-        "blob": "2651b6ce76505454b5dee829d91afca4331d9ba5"
+        "blob": "a3999ce79c45373dc501f9da6199cc0a920f24f1"
       }
     ],
     "verifiedAt": "2026-09-09"
@@ -1020,7 +1020,7 @@
       },
       {
         "path": ".github/workflows/ci.yml",
-        "blob": "398d279acd0c521352cb8489006d612466db4269"
+        "blob": "e8e545238be226534161df3aff7b573cc95e2b72"
       },
       {
         "path": "docs/plans/IMPLEMENTATION.md",
@@ -1035,7 +1035,7 @@
         "blob": "64c41b9133e7f218072e5cc3c2d3fa24210deb7e"
       }
     ],
-    "verifiedAt": "2026-09-08"
+    "verifiedAt": "2026-09-09"
   },
   "0035": {
     "sourceFiles": [
@@ -1062,7 +1062,7 @@
       },
       {
         "path": "package.json",
-        "blob": "2651b6ce76505454b5dee829d91afca4331d9ba5"
+        "blob": "a3999ce79c45373dc501f9da6199cc0a920f24f1"
       },
       {
         "path": "packages/m3l-common/package.json",
@@ -1121,7 +1121,7 @@
     "sourceFiles": [
       {
         "path": "CLAUDE.md",
-        "blob": "5634be9a01afd3427350fbd98f940b9b098082de"
+        "blob": "80a102063126ea3f90a006c3fff2760be1bed92f"
       }
     ],
     "verifiedAt": "2026-09-09"
@@ -1222,7 +1222,7 @@
       },
       {
         "path": "package.json",
-        "blob": "2651b6ce76505454b5dee829d91afca4331d9ba5"
+        "blob": "a3999ce79c45373dc501f9da6199cc0a920f24f1"
       },
       {
         "path": "packages/m3l-common/src/aws/clients/provider.ts",
@@ -1260,7 +1260,7 @@
     "sourceFiles": [
       {
         "path": "docs/contributing/style-guide.md",
-        "blob": "21890d8e08fb3946dcb9be722626d45bf596eefa"
+        "blob": "188d7b848ffc92021ab2215e69f182d792019f9e"
       },
       {
         "path": "docs/reference/core/pipeline.md",
@@ -1277,7 +1277,7 @@
     "sourceFiles": [
       {
         "path": "package.json",
-        "blob": "2651b6ce76505454b5dee829d91afca4331d9ba5"
+        "blob": "a3999ce79c45373dc501f9da6199cc0a920f24f1"
       }
     ],
     "verifiedAt": "2026-09-09"
@@ -1307,7 +1307,7 @@
       },
       {
         "path": "CLAUDE.md",
-        "blob": "5634be9a01afd3427350fbd98f940b9b098082de"
+        "blob": "80a102063126ea3f90a006c3fff2760be1bed92f"
       },
       {
         "path": "docs/contributing/filing-work.md",
@@ -1545,7 +1545,7 @@
     "sourceFiles": [
       {
         "path": ".github/workflows/ci.yml",
-        "blob": "398d279acd0c521352cb8489006d612466db4269"
+        "blob": "e8e545238be226534161df3aff7b573cc95e2b72"
       },
       {
         "path": "bin/lib/changed-paths.mjs",
@@ -1556,7 +1556,7 @@
         "blob": "35cb899531dae08c630295c4d0b25cc783d1c50f"
       }
     ],
-    "verifiedAt": "2026-09-08"
+    "verifiedAt": "2026-09-09"
   },
   "0068": {
     "sourceFiles": [
@@ -1661,7 +1661,7 @@
       },
       {
         "path": "CLAUDE.md",
-        "blob": "5634be9a01afd3427350fbd98f940b9b098082de"
+        "blob": "80a102063126ea3f90a006c3fff2760be1bed92f"
       },
       {
         "path": "docs/contributing/subagent-context-management.md",
@@ -1697,11 +1697,11 @@
       },
       {
         "path": "lefthook.yml",
-        "blob": "7532ef55ea0f88969685d01c544d2edc61c9491e"
+        "blob": "b5be61b8bb0e9c364e06084d9d4373ef23059397"
       },
       {
         "path": "package.json",
-        "blob": "2651b6ce76505454b5dee829d91afca4331d9ba5"
+        "blob": "a3999ce79c45373dc501f9da6199cc0a920f24f1"
       }
     ],
     "verifiedAt": "2026-09-09"
@@ -1839,7 +1839,7 @@
       },
       {
         "path": "CLAUDE.md",
-        "blob": "5634be9a01afd3427350fbd98f940b9b098082de"
+        "blob": "80a102063126ea3f90a006c3fff2760be1bed92f"
       },
       {
         "path": "docs/contributing/model-selection.md",
@@ -1868,7 +1868,7 @@
       },
       {
         "path": "bin/lib/verify-steps.mjs",
-        "blob": "6b728d32b93db00a77fed40e3d3236791f1dd536"
+        "blob": "98c6661c51b08ac9c7e9e3920ab7e6c872e280ff"
       },
       {
         "path": "bin/sync-hub.mjs",
@@ -1883,7 +1883,7 @@
         "blob": "290eff3616805df4c50d647e8ca37fa9060caa05"
       }
     ],
-    "verifiedAt": "2026-09-08"
+    "verifiedAt": "2026-09-09"
   },
   "0080": {
     "sourceFiles": [
@@ -1909,7 +1909,7 @@
       },
       {
         "path": "CLAUDE.md",
-        "blob": "5634be9a01afd3427350fbd98f940b9b098082de"
+        "blob": "80a102063126ea3f90a006c3fff2760be1bed92f"
       },
       {
         "path": "docs/contributing/host-resources.md",
@@ -1929,7 +1929,7 @@
       },
       {
         "path": "package.json",
-        "blob": "2651b6ce76505454b5dee829d91afca4331d9ba5"
+        "blob": "a3999ce79c45373dc501f9da6199cc0a920f24f1"
       },
       {
         "path": "turbo.json",
@@ -1967,7 +1967,7 @@
       },
       {
         "path": "CLAUDE.md",
-        "blob": "5634be9a01afd3427350fbd98f940b9b098082de"
+        "blob": "80a102063126ea3f90a006c3fff2760be1bed92f"
       },
       {
         "path": "docs/research/harness-refresh.md",
@@ -2013,7 +2013,7 @@
       },
       {
         "path": "CLAUDE.md",
-        "blob": "5634be9a01afd3427350fbd98f940b9b098082de"
+        "blob": "80a102063126ea3f90a006c3fff2760be1bed92f"
       },
       {
         "path": "docs/research/retrospective.md",
@@ -2026,7 +2026,7 @@
     "sourceFiles": [
       {
         "path": "CLAUDE.md",
-        "blob": "5634be9a01afd3427350fbd98f940b9b098082de"
+        "blob": "80a102063126ea3f90a006c3fff2760be1bed92f"
       },
       {
         "path": "docs/plans/2026-08-20-agent-operator.md",
@@ -2134,7 +2134,7 @@
       },
       {
         "path": "CLAUDE.md",
-        "blob": "5634be9a01afd3427350fbd98f940b9b098082de"
+        "blob": "80a102063126ea3f90a006c3fff2760be1bed92f"
       },
       {
         "path": "docs/contributing/agent-operating-model.md",
@@ -2303,7 +2303,7 @@
       },
       {
         "path": "docs/adr/README.md",
-        "blob": "b4c00bfde310b516b375a0973885c0ccd7d412d5"
+        "blob": "a39f61d852d75ac355642fc52dae39738c7625a3"
       },
       {
         "path": "docs/contributing/filing-work.md",
@@ -2314,7 +2314,7 @@
         "blob": "0915d8bc8a00fb43f0c943b5ccf8019d094a65cc"
       }
     ],
-    "verifiedAt": "2026-09-08"
+    "verifiedAt": "2026-09-09"
   },
   "0095": {
     "sourceFiles": [
@@ -2324,7 +2324,7 @@
       },
       {
         "path": "docs/adr/README.md",
-        "blob": "b4c00bfde310b516b375a0973885c0ccd7d412d5"
+        "blob": "a39f61d852d75ac355642fc52dae39738c7625a3"
       },
       {
         "path": "docs/decision-notes/README.md",
@@ -2436,7 +2436,7 @@
       },
       {
         "path": "CLAUDE.md",
-        "blob": "5634be9a01afd3427350fbd98f940b9b098082de"
+        "blob": "80a102063126ea3f90a006c3fff2760be1bed92f"
       },
       {
         "path": "docs/contributing/glossary.md",
@@ -2445,6 +2445,63 @@
       {
         "path": "docs/logs/README.md",
         "blob": "8c0e2cc4f12a180b155a8f059146d5ac18d2caf1"
+      }
+    ],
+    "verifiedAt": "2026-09-09"
+  },
+  "0100": {
+    "sourceFiles": [
+      {
+        "path": ".claude/rules/harness-artifacts.md",
+        "blob": "dfcb82c7e8c1e4a33c7c9ff318af989ddae4d46f"
+      },
+      {
+        "path": ".claude/rules/tests.md",
+        "blob": "e530d81b069101b79efeff7a7e8eef777d67866b"
+      },
+      {
+        "path": "bin/check-deps.mjs",
+        "blob": "2cd2452f929aed6c976aa49d826ce1de02e6f718"
+      },
+      {
+        "path": "bin/check-test-fs-isolation.mjs",
+        "blob": "e0e81ddbb9c7c401f604b5d9670173483b683d7e"
+      },
+      {
+        "path": "bin/lib/browser-safe-subpath.mjs",
+        "blob": "67b3fd910b244d6745bc294c8435536235120801"
+      },
+      {
+        "path": "docs/contributing/contributing.md",
+        "blob": "34313a04cba1d645de98bdd9858402321854d8f0"
+      },
+      {
+        "path": "docs/contributing/style-guide.md",
+        "blob": "188d7b848ffc92021ab2215e69f182d792019f9e"
+      },
+      {
+        "path": "packages/m3l-common/tests/checkpoint.test.ts",
+        "blob": "fec64b743a9cc907f7597615e1d6905f52963592"
+      },
+      {
+        "path": "packages/m3l-common/tests/exporters.test.ts",
+        "blob": "b83af4151c83e4b9c8a28580b7e27567ab381fa6"
+      },
+      {
+        "path": "packages/m3l-common/tests/storage-append-only-segments-listing.test.ts",
+        "blob": "7559b4c3b57b312e418baceeb1a24f6974a35bac"
+      },
+      {
+        "path": "packages/m3l-console-server/tests/integration/handler.integration.test.ts",
+        "blob": "4e52e119e3fcb561b40c0e7968f89dd938d59f5f"
+      },
+      {
+        "path": "packages/m3l-console-server/tests/integration/store.integration.test.ts",
+        "blob": "9bce621e4235c7c1dcd3937e5472c1df1bba3363"
+      },
+      {
+        "path": "rules/02-testing.md",
+        "blob": "eaf1052dd67488b727f6241d2bd2d1fd3abda8dc"
       }
     ],
     "verifiedAt": "2026-09-09"

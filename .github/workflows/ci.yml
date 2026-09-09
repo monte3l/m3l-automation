@@ -604,6 +604,14 @@ jobs:
       - name: Check file budget
         run: pnpm check:file-budget
 
+      # The test-I/O sandbox policy (style-guide.md, docs/adr/0100): a
+      # mkdtemp()/mkdtempSync() sandbox with no matching rm/rmSync anywhere in
+      # the file. Complements the eslint.config.js no-restricted-syntax
+      # selectors, which cover every rule in the policy except this one
+      # whole-file presence check (issue #862).
+      - name: Check test filesystem isolation
+        run: pnpm check:test-fs-isolation
+
       # Per-file test counts recorded in docs/implementation-status.md must match
       # the live suite. Derived from `vitest list` — a collection pass, not a
       # full run (see bin/check-test-counts.mjs) — independent of the `test`

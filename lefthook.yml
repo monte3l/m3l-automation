@@ -157,8 +157,13 @@ pre-push:
     # failure. Cannot catch the live failure itself (a fail-open shim means
     # pre-push never runs, so this copy of the gate never runs either); the
     # blocking guard-lefthook-shim.mjs PreToolUse hook covers that case.
+    # check:test-fs-isolation (issue #862, docs/adr/0100) joined the same way:
+    # it reads only git-tracked test file text, no network call, negligible
+    # cost. It closes the one part of the test-I/O sandbox policy no
+    # eslint.config.js selector can express — a mkdtemp() sandbox created with
+    # no matching rm/rmSync anywhere in the file.
     checks:
-      run: node bin/verify-signed-range.mjs && node bin/check-commit-trailers.mjs && pnpm check:control-chars && pnpm check:no-docker && pnpm check:file-budget && pnpm check:agents && pnpm check:script-docs && pnpm check:cli-docs && pnpm check:review-size && pnpm check:context-budget && pnpm check:provenance && pnpm check:index && pnpm check:adr-index && pnpm check:adr-claims && pnpm check:adr-provenance && pnpm check:adr-worthiness && pnpm check:harness-freshness && pnpm check:typescript-freshness && pnpm check:retrospective && pnpm check:staleness && pnpm check:logs-index && pnpm check:promotion-stamps && pnpm check:lefthook-shim && pnpm check:skill-evals && pnpm check:claude-cli-version && pnpm check:review-policy && pnpm check:hooks && pnpm check:skill-frontmatter && pnpm check:mcp
+      run: node bin/verify-signed-range.mjs && node bin/check-commit-trailers.mjs && pnpm check:control-chars && pnpm check:no-docker && pnpm check:file-budget && pnpm check:test-fs-isolation && pnpm check:agents && pnpm check:script-docs && pnpm check:cli-docs && pnpm check:review-size && pnpm check:context-budget && pnpm check:provenance && pnpm check:index && pnpm check:adr-index && pnpm check:adr-claims && pnpm check:adr-provenance && pnpm check:adr-worthiness && pnpm check:harness-freshness && pnpm check:typescript-freshness && pnpm check:retrospective && pnpm check:staleness && pnpm check:logs-index && pnpm check:promotion-stamps && pnpm check:lefthook-shim && pnpm check:skill-evals && pnpm check:claude-cli-version && pnpm check:review-policy && pnpm check:hooks && pnpm check:skill-frontmatter && pnpm check:mcp
 
 # Fire after `git rebase` completes (including a no-op rebase with nothing to
 # replay) and after `git merge` completes. Regenerates the derived files the
