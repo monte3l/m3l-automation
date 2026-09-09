@@ -42,6 +42,20 @@ describe("LANES", () => {
       expect(lane.turbo).toBe(false);
     }
   });
+
+  // Regression test: `runLaneOnce` spawns each lane's command via
+  // `bash -lc "<command>"`, which does NOT source pnpm's shell environment
+  // (unlike `pnpm <script>` / `pnpm exec <bin>`, which resolve
+  // `node_modules/.bin` themselves) — so a bare `turbo run <task>` command
+  // fails with "bash: line 1: turbo: command not found" on any host without
+  // a globally-installed `turbo` binary. Every turbo-backed lane's command
+  // must go through `pnpm exec` instead.
+  test("every turbo-backed lane's command starts with 'pnpm exec turbo run ', never a bare 'turbo run'", () => {
+    for (const lane of Object.values(LANES)) {
+      if (!lane.turbo) continue;
+      expect(lane.command.startsWith("pnpm exec turbo run ")).toBe(true);
+    }
+  });
 });
 
 describe("parseArgs", () => {
@@ -161,6 +175,19 @@ describe("buildLaneCommand", () => {
         "cold",
       ),
     ).toBe("turbo run build --force --filter=foo");
+  });
+
+  // The `turbo run <task>` substring can now appear anywhere in the command
+  // (e.g. prefixed with "pnpm exec "), not only at position 0 — the real
+  // shape every LANES entry uses. This proves the unanchored regex still
+  // finds and augments it when it isn't at the start of the string.
+  test("finds and augments 'turbo run <task>' when it is not at the start of the command", () => {
+    expect(
+      buildLaneCommand(
+        { command: "pnpm exec turbo run build", turbo: true },
+        "cold",
+      ),
+    ).toBe("pnpm exec turbo run build --force");
   });
 });
 

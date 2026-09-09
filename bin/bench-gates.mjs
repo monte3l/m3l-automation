@@ -91,9 +91,9 @@ export const LANES = Object.freeze({
   format: { command: "pnpm format:check", turbo: false },
   "lint:library": { command: "pnpm lint:library", turbo: false },
   "lint:workspace": { command: "pnpm lint:workspace", turbo: false },
-  "turbo:typecheck": { command: "turbo run typecheck", turbo: true },
+  "turbo:typecheck": { command: "pnpm exec turbo run typecheck", turbo: true },
   "tsc:bin": { command: "pnpm exec tsc -p bin/tsconfig.json", turbo: false },
-  build: { command: "turbo run build", turbo: true },
+  build: { command: "pnpm exec turbo run build", turbo: true },
   "test:unit": { command: "pnpm exec vitest run", turbo: false },
   "test:bin": {
     command: "pnpm exec vitest run --config vitest.bin.config.ts",
@@ -179,7 +179,7 @@ export function parseArgs(argv) {
  */
 export function buildLaneCommand(lane, mode) {
   if (mode === "cold" && lane.turbo) {
-    return lane.command.replace(/^(turbo run \S+)/, "$1 --force");
+    return lane.command.replace(/(turbo run \S+)/, "$1 --force");
   }
   return lane.command;
 }
