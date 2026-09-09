@@ -72,6 +72,19 @@ describe("LANES", () => {
       "pnpm exec turbo run build --concurrency=$(node bin/print-concurrency.mjs)",
     );
   });
+
+  // Regression test: `format` is the first (and currently only) lane with a
+  // `cacheDir` — `--cold` needs it so the lane measures a true uncached
+  // Prettier run rather than silently reusing a previous invocation's cache.
+  test("format is the only lane with a cacheDir, and it points at Prettier's default cache location", () => {
+    expect(LANES["format"]?.cacheDir).toBe("node_modules/.cache/prettier");
+    expect(LANES["format"]?.command).toBe("pnpm format:check");
+    expect(LANES["format"]?.turbo).toBe(false);
+    for (const [name, lane] of Object.entries(LANES)) {
+      if (name === "format") continue;
+      expect(lane.cacheDir).toBeUndefined();
+    }
+  });
 });
 
 describe("parseArgs", () => {
@@ -235,6 +248,69 @@ describe("buildLaneCommand", () => {
         "cold",
       ),
     ).toBe("echo 'turbo run fake' && pnpm exec turbo run build --force");
+  });
+
+  // Regression tests for the `cacheDir` prefixing transform: `--cold` on a
+  // lane with a `cacheDir` (currently only `format`) must remove that
+  // directory before the lane's own command runs, so a stale Prettier cache
+  // from a previous invocation can't silently make a "cold" run behave like
+  // a warm one.
+  test("cold + cacheDir lane is prefixed with 'rm -rf <cacheDir> && ' followed by the original command verbatim", () => {
+    expect(
+      buildLaneCommand(
+        {
+          command: "pnpm format:check",
+          turbo: false,
+          cacheDir: "node_modules/.cache/prettier",
+        },
+        "cold",
+      ),
+    ).toBe("rm -rf node_modules/.cache/prettier && pnpm format:check");
+  });
+
+  test("warm + cacheDir lane is unchanged (no rm -rf prefix)", () => {
+    expect(
+      buildLaneCommand(
+        {
+          command: "pnpm format:check",
+          turbo: false,
+          cacheDir: "node_modules/.cache/prettier",
+        },
+        "warm",
+      ),
+    ).toBe("pnpm format:check");
+  });
+
+  // Regression guard: a lane with no `cacheDir` at all (every existing
+  // turbo-backed lane) must never gain an `rm -rf` prefix in cold mode — the
+  // new branch is guarded on `lane.cacheDir` being truthy, not merely on
+  // `mode === "cold"`.
+  test("cold + turbo lane with no cacheDir gets --force but never an rm -rf prefix", () => {
+    const result = buildLaneCommand(
+      { command: "pnpm exec turbo run build", turbo: true },
+      "cold",
+    );
+    expect(result).toBe("pnpm exec turbo run build --force");
+    expect(result.startsWith("rm -rf")).toBe(false);
+  });
+
+  // No real LANES entry is both turbo-backed and cacheDir-bearing today, but
+  // the source's own doc comment says both transforms can apply to the same
+  // lane and are independent — this proves that combination, using a
+  // synthetic fixture rather than inventing a new LANES entry.
+  test("cold lane with both turbo and cacheDir applies both transforms: --force append AND rm -rf prefix", () => {
+    expect(
+      buildLaneCommand(
+        {
+          command: "pnpm exec turbo run build",
+          turbo: true,
+          cacheDir: "node_modules/.cache/fake",
+        },
+        "cold",
+      ),
+    ).toBe(
+      "rm -rf node_modules/.cache/fake && pnpm exec turbo run build --force",
+    );
   });
 });
 

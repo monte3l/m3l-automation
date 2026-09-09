@@ -40,7 +40,8 @@
  * Flags:
  *   --lane=<name>        repeatable; defaults to every lane in LANES
  *   --warm | --cold      default warm; --cold forces turbo-backed lanes
- *                        (build, turbo:typecheck) to bypass their cache
+ *                        (build, turbo:typecheck) to bypass their cache,
+ *                        and removes the format lane's Prettier cache dir
  *   --isolated|--concurrent  default isolated (one lane at a time)
  *   --repeat=N           default 1; report the median across N runs
  *   --sessions=N         pins the session count in the printed profile/
@@ -76,7 +77,7 @@ import {
 } from "./lib/host-profile.mjs";
 
 /**
- * @typedef {{ command: string, turbo: boolean }} Lane
+ * @typedef {{ command: string, turbo: boolean, cacheDir?: string }} Lane
  */
 
 /**
@@ -85,10 +86,19 @@ import {
  * source both files read from today, so keep them in sync by hand if
  * either changes.
  *
+ * `format`'s `cacheDir` is Prettier's own default `--cache-location`
+ * (`node_modules/.cache/prettier/`, Phase 2 candidate #1) — `--cold` removes
+ * it first so the format lane measures a true uncached run instead of
+ * silently reusing whatever the previous invocation left behind.
+ *
  * @type {Readonly<Record<string, Lane>>}
  */
 export const LANES = Object.freeze({
-  format: { command: "pnpm format:check", turbo: false },
+  format: {
+    command: "pnpm format:check",
+    turbo: false,
+    cacheDir: "node_modules/.cache/prettier",
+  },
   "lint:library": { command: "pnpm lint:library", turbo: false },
   "lint:workspace": { command: "pnpm lint:workspace", turbo: false },
   "turbo:typecheck": {
@@ -177,23 +187,32 @@ export function parseArgs(argv) {
 /**
  * Apply `--cold` to a lane's command: a turbo-backed lane gets `--force`
  * appended to its `turbo run <task>` invocation so it bypasses turbo's
- * cache; a non-turbo lane is unaffected (this repo has no other cache to
- * invalidate yet — Phase 2 candidate #2, tsc `incremental`, will need this
- * function extended once its `.tsbuildinfo` output exists).
+ * cache; a lane with a `cacheDir` (currently only `format`) gets an `rm -rf
+ * <cacheDir> &&` prefix so it starts with no cache file at all, rather than
+ * silently reusing whatever a previous invocation left on disk. A lane with
+ * neither is unaffected — Phase 2 candidate #2, tsc `incremental`, will need
+ * a `cacheDir` of its own once its `.tsbuildinfo` output exists. Both
+ * transforms can apply to the same lane; today no lane is both, so order
+ * between them is untested but harmless (prefix vs. in-place replace act on
+ * disjoint parts of the string).
  *
  * @param {Lane} lane
  * @param {"warm" | "cold"} mode
  * @returns {string}
  */
 export function buildLaneCommand(lane, mode) {
+  let command = lane.command;
   if (mode === "cold" && lane.turbo) {
     // Anchored on the full "pnpm exec turbo run" prefix (every turbo-backed
     // lane's actual shape) rather than a bare "turbo run" — the bare form
     // could in principle match inside a quoted argument elsewhere in the
     // command string, which this anchor rules out.
-    return lane.command.replace(/(pnpm exec turbo run \S+)/, "$1 --force");
+    command = command.replace(/(pnpm exec turbo run \S+)/, "$1 --force");
   }
-  return lane.command;
+  if (mode === "cold" && lane.cacheDir) {
+    command = `rm -rf ${lane.cacheDir} && ${command}`;
+  }
+  return command;
 }
 
 /**
