@@ -356,7 +356,7 @@ function resolveTimeBinary(platform) {
  * @param {string} name
  * @param {Lane} lane
  * @param {{ mode: "warm" | "cold", cwd: string, timeBinary: ReturnType<typeof resolveTimeBinary>, tmpDir: string }} ctx
- * @returns {Promise<{ exitCode: number | null, wallSeconds: number, userSeconds: number | null, systemSeconds: number | null, peakRssKiB: number | null, cpuEfficiency: number | null, spawnError?: string }>}
+ * @returns {Promise<{ exitCode: number | null, wallSeconds: number, userSeconds: number | null, systemSeconds: number | null, peakRssKiB: number | null, cpuEfficiency: number | null, timingSource: "time" | "time-parse-failed" | "hrtime-only", parseError: string | null, spawnError?: string }>}
  */
 function runLaneOnce(name, lane, ctx) {
   const command = buildLaneCommand(lane, ctx.mode);
@@ -404,6 +404,8 @@ function runLaneOnce(name, lane, ctx) {
         systemSeconds: null,
         peakRssKiB: null,
         cpuEfficiency: null,
+        timingSource: "hrtime-only",
+        parseError: null,
         spawnError: err.message,
       });
     });
@@ -413,17 +415,32 @@ function runLaneOnce(name, lane, ctx) {
       const hrtimeWallSeconds =
         Number(process.hrtime.bigint() - wallStart) / 1e9;
       let parsed = null;
+      // Distinguish "no time binary was ever available" (hrtime-only is the
+      // expected, already-warned-once-globally degradation) from "a time
+      // binary ran but its report couldn't be read or parsed" (an
+      // unexpected per-lane degradation this harness's own contract — "a
+      // candidate is judged against a real number, never inferred" — says
+      // must not pass silently). `parseError` carries the reason so `main`
+      // can warn and the JSON payload can distinguish "not measured" from
+      // "measured as absent".
+      let parseError = null;
       if (reportPath) {
+        let reportText = null;
         try {
-          parsed =
-            ctx.timeBinary?.parse(readFileSync(reportPath, "utf8")) ?? null;
-        } catch {
-          parsed = null;
+          reportText = readFileSync(reportPath, "utf8");
+        } catch (err) {
+          parseError = `could not read time report: ${err.message}`;
         } finally {
           try {
             rmSync(reportPath, { force: true });
           } catch {
             // best-effort cleanup only
+          }
+        }
+        if (reportText !== null) {
+          parsed = ctx.timeBinary?.parse(reportText) ?? null;
+          if (parsed === null) {
+            parseError = "time report could not be parsed (unexpected format)";
           }
         }
       }
@@ -441,6 +458,12 @@ function runLaneOnce(name, lane, ctx) {
               wallSeconds,
             )
           : null,
+        timingSource: parsed
+          ? "time"
+          : reportPath
+            ? "time-parse-failed"
+            : "hrtime-only",
+        parseError,
       });
     });
   });
@@ -511,7 +534,8 @@ async function main() {
     return;
   }
 
-  const laneNames = opts.lanes.length > 0 ? opts.lanes : Object.keys(LANES);
+  const laneNames =
+    opts.lanes.length > 0 ? [...new Set(opts.lanes)] : Object.keys(LANES);
   const unknown = laneNames.filter((n) => !(n in LANES));
   if (unknown.length > 0) {
     reporter.error(
@@ -582,6 +606,16 @@ async function main() {
           const detail = sample.spawnError ? ` (${sample.spawnError})` : "";
           reporter.error(
             `Lane "${name}" exited ${sample.exitCode} on iteration ${iteration + 1}${detail}; its timing is not a valid measurement.`,
+          );
+        } else if (sample.timingSource === "time-parse-failed") {
+          // The lane itself ran fine, but the time-binary report that was
+          // supposed to back this measurement couldn't be read/parsed — the
+          // reported numbers silently fell back to hrtime-only (no CPU/
+          // memory data) rather than the real measurement this harness
+          // exists to produce. Warn per-occurrence rather than staying
+          // silent just because the command's own exit code was 0.
+          reporter.warn(
+            `Lane "${name}" iteration ${iteration + 1}: ${sample.parseError} — falling back to wall-clock-only timing (no CPU time / peak memory for this sample).`,
           );
         }
       }
@@ -655,5 +689,8 @@ async function main() {
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  main();
+  main().catch((cause) => {
+    console.error("bench-gates failed:", cause);
+    process.exit(1);
+  });
 }

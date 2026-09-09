@@ -5,6 +5,7 @@ import {
   resolveSessions,
   countClaudeProcesses,
   parseLscpuJson,
+  parseLscpuLogicalCores,
   parseCpuinfoCores,
   parseMeminfo,
   parseProcSwaps,
@@ -136,6 +137,56 @@ describe("parseLscpuJson", () => {
       lscpu: [{ field: "Architecture:", data: "aarch64" }],
     });
     expect(parseLscpuJson(fixture)).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// parseLscpuLogicalCores
+// ---------------------------------------------------------------------------
+
+describe("parseLscpuLogicalCores", () => {
+  test("extracts the 'CPU(s):' field alongside unrelated fields", () => {
+    const fixture = JSON.stringify({
+      lscpu: [
+        { field: "Architecture:", data: "x86_64" },
+        { field: "CPU(s):", data: "8" },
+        { field: "Thread(s) per core:", data: "2" },
+        { field: "Core(s) per socket:", data: "4" },
+        { field: "Socket(s):", data: "1" },
+      ],
+    });
+    expect(parseLscpuLogicalCores(fixture)).toBe(8);
+  });
+
+  test("returns null for null input", () => {
+    expect(parseLscpuLogicalCores(null)).toBeNull();
+  });
+
+  test("returns null for malformed JSON without throwing", () => {
+    expect(() => parseLscpuLogicalCores("{not json")).not.toThrow();
+    expect(parseLscpuLogicalCores("{not json")).toBeNull();
+  });
+
+  test("returns null when the 'CPU(s):' field is absent", () => {
+    const fixture = JSON.stringify({
+      lscpu: [{ field: "Architecture:", data: "x86_64" }],
+    });
+    expect(parseLscpuLogicalCores(fixture)).toBeNull();
+  });
+
+  test("returns null when 'CPU(s):' is non-numeric or zero/negative", () => {
+    const nonNumeric = JSON.stringify({
+      lscpu: [{ field: "CPU(s):", data: "not-a-number" }],
+    });
+    expect(parseLscpuLogicalCores(nonNumeric)).toBeNull();
+
+    const zero = JSON.stringify({ lscpu: [{ field: "CPU(s):", data: "0" }] });
+    expect(parseLscpuLogicalCores(zero)).toBeNull();
+
+    const negative = JSON.stringify({
+      lscpu: [{ field: "CPU(s):", data: "-1" }],
+    });
+    expect(parseLscpuLogicalCores(negative)).toBeNull();
   });
 });
 
@@ -272,6 +323,11 @@ describe("parsePressureFile", () => {
 
   test("returns null for null input", () => {
     expect(parsePressureFile(null)).toBeNull();
+  });
+
+  test("returns null when the 'some' line is missing avg60/avg300/total", () => {
+    const pressure = "some avg10=1.50\n";
+    expect(parsePressureFile(pressure)).toBeNull();
   });
 });
 
@@ -514,6 +570,38 @@ describe("detectHostProfile", () => {
     };
     const profile = detectHostProfile({ io: zeroClaudeIo });
     expect(profile.sessions).toBe(1);
+  });
+
+  // Regression for the bot-review fix: on an SMT host where lscpu succeeds
+  // but /proc/cpuinfo is unreadable, logicalCores must come from lscpu's own
+  // `CPU(s):` field (via parseLscpuLogicalCores), not silently fall back to
+  // the (smaller) physical core count.
+  test("logicalCores recovers from lscpu's CPU(s) field when /proc/cpuinfo is unreadable (SMT host)", () => {
+    const io = makeLinuxIo();
+    const smtLscpuJson = JSON.stringify({
+      lscpu: [
+        { field: "Architecture:", data: "x86_64" },
+        { field: "CPU(s):", data: "8" },
+        { field: "Thread(s) per core:", data: "2" },
+        { field: "Core(s) per socket:", data: "4" },
+        { field: "Socket(s):", data: "1" },
+      ],
+    });
+    const smtIoNoCpuinfo = {
+      ...io,
+      run(cmd: string, args: string[]): string | null {
+        if (cmd === "lscpu" && args.includes("-J")) return smtLscpuJson;
+        return io.run(cmd, args);
+      },
+      readFile(path: string): string | null {
+        if (path === "/proc/cpuinfo") return null;
+        return io.readFile(path);
+      },
+    };
+    const profile = detectHostProfile({ io: smtIoNoCpuinfo });
+    expect(profile.physicalCores).toBe(4);
+    expect(profile.logicalCores).toBe(8);
+    expect(profile.smt).toBe(true);
   });
 });
 

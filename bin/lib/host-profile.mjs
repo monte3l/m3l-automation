@@ -190,6 +190,36 @@ export function parseLscpuJson(lscpuJsonOutput) {
 }
 
 /**
+ * Parse the `CPU(s):` field from `lscpu -J` output — the total logical
+ * processor count `lscpu` reports directly, independent of the physical/SMT
+ * derivation {@link parseLscpuJson} performs from other fields. Kept as a
+ * separate function rather than folded into that one's return shape so its
+ * existing exact-match test assertions stay valid; this is the fix for a
+ * real gap `parseLscpuJson` had: on an SMT host where `lscpu` succeeds but
+ * `/proc/cpuinfo` is unreadable, there was no way to recover the logical
+ * count from `lscpu`'s own output, and `gatherLinuxProfile` silently fell
+ * back to reporting the (smaller) physical count instead.
+ *
+ * @param {string | null} lscpuJsonOutput
+ * @returns {number | null}
+ */
+export function parseLscpuLogicalCores(lscpuJsonOutput) {
+  if (!lscpuJsonOutput) return null;
+  try {
+    const parsed = JSON.parse(lscpuJsonOutput);
+    const entry = (parsed.lscpu ?? []).find(
+      (e) => String(e.field).replace(/:$/, "").trim() === "CPU(s)",
+    );
+    const logicalCores = entry ? Number(String(entry.data).trim()) : NaN;
+    return Number.isFinite(logicalCores) && logicalCores > 0
+      ? logicalCores
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Fallback physical-core count from `/proc/cpuinfo` when `lscpu` is
  * unavailable (minimal container images often omit `util-linux`). Counts
  * distinct `physical id`/`core id` pairs; when those fields are absent
@@ -290,7 +320,14 @@ export function parsePressureFile(pressureText) {
     for (const m of line.matchAll(/(\w+)=([\d.]+)/g)) {
       values[m[1]] = Number(m[2]);
     }
-    if (!Number.isFinite(values.avg10)) return null;
+    if (
+      !Number.isFinite(values.avg10) ||
+      !Number.isFinite(values.avg60) ||
+      !Number.isFinite(values.avg300) ||
+      !Number.isFinite(values.total)
+    ) {
+      return null;
+    }
     return {
       avg10: values.avg10,
       avg60: values.avg60,
@@ -423,9 +460,10 @@ export function parseDarwinSwapUsage(output) {
 function gatherLinuxProfile(io, common) {
   /** @type {string[]} */
   const warnings = [];
+  const lscpuJson = io.run("lscpu", ["-J"]);
   const cpuinfoCores = parseCpuinfoCores(io.readFile("/proc/cpuinfo"));
   const cpu =
-    parseLscpuJson(io.run("lscpu", ["-J"])) ??
+    parseLscpuJson(lscpuJson) ??
     (cpuinfoCores
       ? { physicalCores: cpuinfoCores.physicalCores, smt: cpuinfoCores.smt }
       : null);
@@ -448,7 +486,11 @@ function gatherLinuxProfile(io, common) {
     os: "linux",
     distro: parseOsReleasePrettyName(io.readFile("/etc/os-release")),
     arch: process.arch,
-    logicalCores: cpuinfoCores?.logicalCores ?? cpu?.physicalCores ?? 1,
+    logicalCores:
+      cpuinfoCores?.logicalCores ??
+      parseLscpuLogicalCores(lscpuJson) ??
+      cpu?.physicalCores ??
+      1,
     physicalCores: cpu?.physicalCores ?? cpuinfoCores?.logicalCores ?? 1,
     performanceCores: null,
     smt: cpu?.smt ?? false,
