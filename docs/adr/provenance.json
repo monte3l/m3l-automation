@@ -19,7 +19,7 @@
       },
       {
         "path": "CLAUDE.md",
-        "blob": "82ab71cfedc7445482de1ff8b8f8f5d98fc0ca34"
+        "blob": "5634be9a01afd3427350fbd98f940b9b098082de"
       },
       {
         "path": "docs/contributing/contributing.md",
@@ -34,7 +34,7 @@
         "blob": "c4ae7a2819c9f28a37c0ecdf2da0c6a03cee31f4"
       }
     ],
-    "verifiedAt": "2026-09-08"
+    "verifiedAt": "2026-09-09"
   },
   "0002": {
     "sourceFiles": [
@@ -240,7 +240,7 @@
       },
       {
         "path": "CLAUDE.md",
-        "blob": "82ab71cfedc7445482de1ff8b8f8f5d98fc0ca34"
+        "blob": "5634be9a01afd3427350fbd98f940b9b098082de"
       },
       {
         "path": "docs/adr/template.md",
@@ -251,7 +251,7 @@
         "blob": "3286492d33af9ed3a88f6469ea2af62569352221"
       }
     ],
-    "verifiedAt": "2026-09-08"
+    "verifiedAt": "2026-09-09"
   },
   "0011": {
     "sourceFiles": [
@@ -299,7 +299,7 @@
       },
       {
         "path": "CLAUDE.md",
-        "blob": "82ab71cfedc7445482de1ff8b8f8f5d98fc0ca34"
+        "blob": "5634be9a01afd3427350fbd98f940b9b098082de"
       },
       {
         "path": "docs/implementation-status.md",
@@ -310,7 +310,7 @@
         "blob": "3286492d33af9ed3a88f6469ea2af62569352221"
       }
     ],
-    "verifiedAt": "2026-09-08"
+    "verifiedAt": "2026-09-09"
   },
   "0014": {
     "sourceFiles": [
@@ -385,14 +385,14 @@
       },
       {
         "path": "CLAUDE.md",
-        "blob": "82ab71cfedc7445482de1ff8b8f8f5d98fc0ca34"
+        "blob": "5634be9a01afd3427350fbd98f940b9b098082de"
       },
       {
         "path": "docs/contributing/branch-protection.md",
         "blob": "43ec135cbe20f2a9aef990c189623d43e9a6ca43"
       }
     ],
-    "verifiedAt": "2026-09-08"
+    "verifiedAt": "2026-09-09"
   },
   "0016": {
     "sourceFiles": [
@@ -634,7 +634,7 @@
       },
       {
         "path": "CLAUDE.md",
-        "blob": "82ab71cfedc7445482de1ff8b8f8f5d98fc0ca34"
+        "blob": "5634be9a01afd3427350fbd98f940b9b098082de"
       },
       {
         "path": "docs/implementation-status.md",
@@ -691,14 +691,14 @@
       },
       {
         "path": "CLAUDE.md",
-        "blob": "82ab71cfedc7445482de1ff8b8f8f5d98fc0ca34"
+        "blob": "5634be9a01afd3427350fbd98f940b9b098082de"
       },
       {
         "path": "docs/contributing/model-selection.md",
-        "blob": "164378e4c05d7b82c4413c78fd5ba667583d8255"
+        "blob": "e53bebac09c85522feb17213b97a9d60d5245a92"
       }
     ],
-    "verifiedAt": "2026-09-08"
+    "verifiedAt": "2026-09-09"
   },
   "0026": {
     "sourceFiles": [
@@ -729,7 +729,7 @@
     "sourceFiles": [
       {
         "path": "CLAUDE.md",
-        "blob": "82ab71cfedc7445482de1ff8b8f8f5d98fc0ca34"
+        "blob": "5634be9a01afd3427350fbd98f940b9b098082de"
       },
       {
         "path": "docs/reference/aws/clients.md",
@@ -744,7 +744,7 @@
         "blob": "8de88ccbba9e75d387c88342faec1e394c3a057b"
       }
     ],
-    "verifiedAt": "2026-09-08"
+    "verifiedAt": "2026-09-09"
   },
   "0028": {
     "sourceFiles": [
@@ -853,7 +853,7 @@
     "sourceFiles": [
       {
         "path": "CLAUDE.md",
-        "blob": "82ab71cfedc7445482de1ff8b8f8f5d98fc0ca34"
+        "blob": "5634be9a01afd3427350fbd98f940b9b098082de"
       },
       {
         "path": "docs/adr/README.md",
@@ -884,7 +884,7 @@
         "blob": "8de88ccbba9e75d387c88342faec1e394c3a057b"
       }
     ],
-    "verifiedAt": "2026-09-08"
+    "verifiedAt": "2026-09-09"
   },
   "0032": {
     "sourceFiles": [
@@ -1121,10 +1121,10 @@
     "sourceFiles": [
       {
         "path": "CLAUDE.md",
-        "blob": "82ab71cfedc7445482de1ff8b8f8f5d98fc0ca34"
+        "blob": "5634be9a01afd3427350fbd98f940b9b098082de"
       }
     ],
-    "verifiedAt": "2026-09-08"
+    "verifiedAt": "2026-09-09"
   },
   "0040": {
     "sourceFiles": [
@@ -1307,14 +1307,14 @@
       },
       {
         "path": "CLAUDE.md",
-        "blob": "82ab71cfedc7445482de1ff8b8f8f5d98fc0ca34"
+        "blob": "5634be9a01afd3427350fbd98f940b9b098082de"
       },
       {
         "path": "docs/contributing/filing-work.md",
         "blob": "7a2156c9c0c9c8d0f902b8c3f6ba9df3fb85f646"
       }
     ],
-    "verifiedAt": "2026-09-08"
+    "verifiedAt": "2026-09-09"
   },
   "0051": {
     "sourceFiles": [
@@ -1661,7 +1661,7 @@
       },
       {
         "path": "CLAUDE.md",
-        "blob": "82ab71cfedc7445482de1ff8b8f8f5d98fc0ca34"
+        "blob": "5634be9a01afd3427350fbd98f940b9b098082de"
       },
       {
         "path": "docs/contributing/subagent-context-management.md",
@@ -1704,7 +1704,7 @@
         "blob": "3286492d33af9ed3a88f6469ea2af62569352221"
       }
     ],
-    "verifiedAt": "2026-09-08"
+    "verifiedAt": "2026-09-09"
   },
   "0073": {
     "sourceFiles": [
@@ -1839,11 +1839,11 @@
       },
       {
         "path": "CLAUDE.md",
-        "blob": "82ab71cfedc7445482de1ff8b8f8f5d98fc0ca34"
+        "blob": "5634be9a01afd3427350fbd98f940b9b098082de"
       },
       {
         "path": "docs/contributing/model-selection.md",
-        "blob": "164378e4c05d7b82c4413c78fd5ba667583d8255"
+        "blob": "e53bebac09c85522feb17213b97a9d60d5245a92"
       },
       {
         "path": "docs/contributing/subagent-context-management.md",
@@ -1858,7 +1858,7 @@
         "blob": "b0bebce5ab3010955e4cc10d2cef34c3903f591a"
       }
     ],
-    "verifiedAt": "2026-09-08"
+    "verifiedAt": "2026-09-09"
   },
   "0079": {
     "sourceFiles": [
@@ -1909,7 +1909,7 @@
       },
       {
         "path": "CLAUDE.md",
-        "blob": "82ab71cfedc7445482de1ff8b8f8f5d98fc0ca34"
+        "blob": "5634be9a01afd3427350fbd98f940b9b098082de"
       },
       {
         "path": "docs/contributing/host-resources.md",
@@ -1936,7 +1936,7 @@
         "blob": "c4ae7a2819c9f28a37c0ecdf2da0c6a03cee31f4"
       }
     ],
-    "verifiedAt": "2026-09-08"
+    "verifiedAt": "2026-09-09"
   },
   "0081": {
     "sourceFiles": [
@@ -1967,14 +1967,14 @@
       },
       {
         "path": "CLAUDE.md",
-        "blob": "82ab71cfedc7445482de1ff8b8f8f5d98fc0ca34"
+        "blob": "5634be9a01afd3427350fbd98f940b9b098082de"
       },
       {
         "path": "docs/research/harness-refresh.md",
         "blob": "b0bebce5ab3010955e4cc10d2cef34c3903f591a"
       }
     ],
-    "verifiedAt": "2026-09-08"
+    "verifiedAt": "2026-09-09"
   },
   "0083": {
     "sourceFiles": [
@@ -2013,20 +2013,20 @@
       },
       {
         "path": "CLAUDE.md",
-        "blob": "82ab71cfedc7445482de1ff8b8f8f5d98fc0ca34"
+        "blob": "5634be9a01afd3427350fbd98f940b9b098082de"
       },
       {
         "path": "docs/research/retrospective.md",
-        "blob": "cf88da2a4c81823f5f57bd112b301f010c70ce8a"
+        "blob": "203ed8da7f6cd8a9335c865a0ab33647f32505c2"
       }
     ],
-    "verifiedAt": "2026-09-08"
+    "verifiedAt": "2026-09-09"
   },
   "0085": {
     "sourceFiles": [
       {
         "path": "CLAUDE.md",
-        "blob": "82ab71cfedc7445482de1ff8b8f8f5d98fc0ca34"
+        "blob": "5634be9a01afd3427350fbd98f940b9b098082de"
       },
       {
         "path": "docs/plans/2026-08-20-agent-operator.md",
@@ -2053,7 +2053,7 @@
         "blob": "a554f625f8d023da5f84fa376e7d3853bb72b2e7"
       }
     ],
-    "verifiedAt": "2026-09-08"
+    "verifiedAt": "2026-09-09"
   },
   "0086": {
     "sourceFiles": [
@@ -2134,26 +2134,26 @@
       },
       {
         "path": "CLAUDE.md",
-        "blob": "82ab71cfedc7445482de1ff8b8f8f5d98fc0ca34"
+        "blob": "5634be9a01afd3427350fbd98f940b9b098082de"
       },
       {
         "path": "docs/contributing/agent-operating-model.md",
-        "blob": "a4444a805e654f8867b713b5ddb752d9073a1c83"
+        "blob": "b29157761b3032a2006bcc17e188d676796586af"
       },
       {
         "path": "docs/contributing/skill-routing.md",
-        "blob": "0bb9740814fae30ae550d4b39bf0067bc1e9d260"
+        "blob": "bdcd0c4faa725f52a9b8e531889005c7b3129a17"
       },
       {
         "path": "docs/contributing/skills-catalog.md",
-        "blob": "5e2436ecb3cc6aafe96a988f79aa6b60bb59e13c"
+        "blob": "d8c760ea4edb2c32148df21a7c1337bc612c1047"
       },
       {
         "path": "docs/plans/archive/2026-09-03-skill-invocation-and-listing-budget.md",
         "blob": "acfcda66e41569485f508ff3ff5b0cea825641ef"
       }
     ],
-    "verifiedAt": "2026-09-08"
+    "verifiedAt": "2026-09-09"
   },
   "0090": {
     "sourceFiles": [
@@ -2254,11 +2254,11 @@
       },
       {
         "path": "docs/contributing/agent-operating-model.md",
-        "blob": "a4444a805e654f8867b713b5ddb752d9073a1c83"
+        "blob": "b29157761b3032a2006bcc17e188d676796586af"
       },
       {
         "path": "docs/contributing/skills-catalog.md",
-        "blob": "5e2436ecb3cc6aafe96a988f79aa6b60bb59e13c"
+        "blob": "d8c760ea4edb2c32148df21a7c1337bc612c1047"
       },
       {
         "path": "docs/logs/2026-07-17-adr-0030-workflow-tooling-mcp.md",
@@ -2273,7 +2273,7 @@
         "blob": "40caafa3178dd40f2b22aa430eed9bfc0562df25"
       }
     ],
-    "verifiedAt": "2026-09-08"
+    "verifiedAt": "2026-09-09"
   },
   "0094": {
     "sourceFiles": [
@@ -2328,14 +2328,14 @@
       },
       {
         "path": "docs/decision-notes/README.md",
-        "blob": "5359352046f186596827b9682777069e2bf02195"
+        "blob": "871bf8e541efcc8c9da739f00084ab2af3bcbc31"
       },
       {
         "path": "docs/logs/2026-09-06-adr-corpus-audit.md",
         "blob": "0915d8bc8a00fb43f0c943b5ccf8019d094a65cc"
       }
     ],
-    "verifiedAt": "2026-09-08"
+    "verifiedAt": "2026-09-09"
   },
   "0096": {
     "sourceFiles": [
@@ -2423,10 +2423,10 @@
       },
       {
         "path": "docs/contributing/instruction-authoring.md",
-        "blob": "f3d6b1a1f5af32d5683d29682d27e397bc4ea67a"
+        "blob": "03b36f49c0e68f7c8b9baae69657944939e10849"
       }
     ],
-    "verifiedAt": "2026-09-08"
+    "verifiedAt": "2026-09-09"
   },
   "0099": {
     "sourceFiles": [
@@ -2436,7 +2436,7 @@
       },
       {
         "path": "CLAUDE.md",
-        "blob": "82ab71cfedc7445482de1ff8b8f8f5d98fc0ca34"
+        "blob": "5634be9a01afd3427350fbd98f940b9b098082de"
       },
       {
         "path": "docs/contributing/glossary.md",
@@ -2444,9 +2444,9 @@
       },
       {
         "path": "docs/logs/README.md",
-        "blob": "cb324e198c277478e9ce868f1a1636fdcf56aeae"
+        "blob": "e3bfd71a59c039dceafda84723a804dde886ef21"
       }
     ],
-    "verifiedAt": "2026-09-08"
+    "verifiedAt": "2026-09-09"
   }
 }
