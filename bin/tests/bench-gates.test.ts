@@ -1,8 +1,18 @@
-import { describe, expect, test } from "vitest";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, describe, expect, test, vi } from "vitest";
 import {
   LANES,
   parseArgs,
   buildLaneCommand,
+  clearLaneCacheDir,
   median,
   isHostBusy,
   parseGnuTimeVerbose,
@@ -11,6 +21,23 @@ import {
   computeCpuEfficiency,
   pressureDeltaMs,
 } from "../../bin/bench-gates.mjs";
+
+const tempDirs: string[] = [];
+
+function makeTempDir(): string {
+  const dir = mkdtempSync(join(tmpdir(), "bench-gates-test-"));
+  tempDirs.push(dir);
+  return dir;
+}
+
+afterEach(() => {
+  while (tempDirs.length > 0) {
+    const dir = tempDirs.pop();
+    if (dir !== undefined) {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }
+});
 
 describe("LANES", () => {
   test("is a plain object with exactly the expected lane names", () => {
@@ -249,68 +276,76 @@ describe("buildLaneCommand", () => {
       ),
     ).toBe("echo 'turbo run fake' && pnpm exec turbo run build --force");
   });
+});
 
-  // Regression tests for the `cacheDir` prefixing transform: `--cold` on a
-  // lane with a `cacheDir` (currently only `format`) must remove that
-  // directory before the lane's own command runs, so a stale Prettier cache
-  // from a previous invocation can't silently make a "cold" run behave like
-  // a warm one.
-  test("cold + cacheDir lane is prefixed with 'rm -rf <cacheDir> && ' followed by the original command verbatim", () => {
-    expect(
-      buildLaneCommand(
-        {
-          command: "pnpm format:check",
-          turbo: false,
-          cacheDir: "node_modules/.cache/prettier",
-        },
-        "cold",
-      ),
-    ).toBe("rm -rf node_modules/.cache/prettier && pnpm format:check");
+describe("clearLaneCacheDir", () => {
+  const lane = {
+    command: "pnpm format:check",
+    turbo: false,
+    cacheDir: "node_modules/.cache/prettier",
+  };
+
+  test("cold mode + a lane with cacheDir removes an existing, populated cache directory", () => {
+    const cwd = makeTempDir();
+    const absoluteCacheDir = join(cwd, lane.cacheDir);
+    mkdirSync(absoluteCacheDir, { recursive: true });
+    writeFileSync(join(absoluteCacheDir, "entry.json"), "{}");
+    expect(existsSync(absoluteCacheDir)).toBe(true);
+
+    clearLaneCacheDir(lane, "cold", cwd);
+
+    expect(existsSync(absoluteCacheDir)).toBe(false);
   });
 
-  test("warm + cacheDir lane is unchanged (no rm -rf prefix)", () => {
-    expect(
-      buildLaneCommand(
-        {
-          command: "pnpm format:check",
-          turbo: false,
-          cacheDir: "node_modules/.cache/prettier",
-        },
-        "warm",
-      ),
-    ).toBe("pnpm format:check");
+  test("warm mode + a lane with cacheDir leaves the directory and its contents untouched", () => {
+    const cwd = makeTempDir();
+    const absoluteCacheDir = join(cwd, lane.cacheDir);
+    mkdirSync(absoluteCacheDir, { recursive: true });
+    const entryPath = join(absoluteCacheDir, "entry.json");
+    writeFileSync(entryPath, "{}");
+
+    clearLaneCacheDir(lane, "warm", cwd);
+
+    expect(existsSync(absoluteCacheDir)).toBe(true);
+    expect(existsSync(entryPath)).toBe(true);
   });
 
-  // Regression guard: a lane with no `cacheDir` at all (every existing
-  // turbo-backed lane) must never gain an `rm -rf` prefix in cold mode — the
-  // new branch is guarded on `lane.cacheDir` being truthy, not merely on
-  // `mode === "cold"`.
-  test("cold + turbo lane with no cacheDir gets --force but never an rm -rf prefix", () => {
-    const result = buildLaneCommand(
-      { command: "pnpm exec turbo run build", turbo: true },
-      "cold",
-    );
-    expect(result).toBe("pnpm exec turbo run build --force");
-    expect(result.startsWith("rm -rf")).toBe(false);
+  test("cold mode + a lane with no cacheDir does not throw and does nothing", () => {
+    const cwd = makeTempDir();
+    const noCacheDirLane = {
+      command: "pnpm exec turbo run build",
+      turbo: true,
+    };
+
+    expect(() => clearLaneCacheDir(noCacheDirLane, "cold", cwd)).not.toThrow();
   });
 
-  // No real LANES entry is both turbo-backed and cacheDir-bearing today, but
-  // the source's own doc comment says both transforms can apply to the same
-  // lane and are independent — this proves that combination, using a
-  // synthetic fixture rather than inventing a new LANES entry.
-  test("cold lane with both turbo and cacheDir applies both transforms: --force append AND rm -rf prefix", () => {
-    expect(
-      buildLaneCommand(
-        {
-          command: "pnpm exec turbo run build",
-          turbo: true,
-          cacheDir: "node_modules/.cache/fake",
-        },
-        "cold",
-      ),
-    ).toBe(
-      "rm -rf node_modules/.cache/fake && pnpm exec turbo run build --force",
-    );
+  test("cold mode + a lane whose cacheDir does not yet exist on disk does not throw", () => {
+    const cwd = makeTempDir();
+    const absoluteCacheDir = join(cwd, lane.cacheDir);
+    expect(existsSync(absoluteCacheDir)).toBe(false);
+
+    expect(() => clearLaneCacheDir(lane, "cold", cwd)).not.toThrow();
+    expect(existsSync(absoluteCacheDir)).toBe(false);
+  });
+
+  test("cold mode + an injected remove that throws (e.g. EACCES) is swallowed, not propagated", () => {
+    const cwd = makeTempDir();
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const remove = vi.fn(() => {
+      throw new Error("EACCES: permission denied");
+    });
+
+    expect(() => clearLaneCacheDir(lane, "cold", cwd, remove)).not.toThrow();
+
+    expect(remove).toHaveBeenCalledTimes(1);
+    expect(remove).toHaveBeenCalledWith(join(cwd, lane.cacheDir), {
+      recursive: true,
+      force: true,
+    });
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+
+    warnSpy.mockRestore();
   });
 });
 

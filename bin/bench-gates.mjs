@@ -87,9 +87,10 @@ import {
  * either changes.
  *
  * `format`'s `cacheDir` is Prettier's own default `--cache-location`
- * (`node_modules/.cache/prettier/`, Phase 2 candidate #1) — `--cold` removes
- * it first so the format lane measures a true uncached run instead of
- * silently reusing whatever the previous invocation left behind.
+ * (`node_modules/.cache/prettier/`, Phase 2 candidate #1) — `clearLaneCacheDir`
+ * removes it before a `--cold` run, outside the timed window, so the format
+ * lane measures a true uncached run instead of silently reusing whatever the
+ * previous invocation left behind.
  *
  * @type {Readonly<Record<string, Lane>>}
  */
@@ -187,32 +188,66 @@ export function parseArgs(argv) {
 /**
  * Apply `--cold` to a lane's command: a turbo-backed lane gets `--force`
  * appended to its `turbo run <task>` invocation so it bypasses turbo's
- * cache; a lane with a `cacheDir` (currently only `format`) gets an `rm -rf
- * <cacheDir> &&` prefix so it starts with no cache file at all, rather than
- * silently reusing whatever a previous invocation left on disk. A lane with
- * neither is unaffected — Phase 2 candidate #2, tsc `incremental`, will need
- * a `cacheDir` of its own once its `.tsbuildinfo` output exists. Both
- * transforms can apply to the same lane; today no lane is both, so order
- * between them is untested but harmless (prefix vs. in-place replace act on
- * disjoint parts of the string).
+ * cache. A lane with no such flag of its own (e.g. `format`'s `cacheDir`,
+ * see `clearLaneCacheDir`) is unaffected here — its cache is cleared as a
+ * separate, untimed pre-step instead of being folded into the measured
+ * command, so the removal itself never counts toward the lane's reported
+ * `wallSeconds`/`userSeconds`/`peakRssKiB`.
  *
  * @param {Lane} lane
  * @param {"warm" | "cold"} mode
  * @returns {string}
  */
 export function buildLaneCommand(lane, mode) {
-  let command = lane.command;
   if (mode === "cold" && lane.turbo) {
     // Anchored on the full "pnpm exec turbo run" prefix (every turbo-backed
     // lane's actual shape) rather than a bare "turbo run" — the bare form
     // could in principle match inside a quoted argument elsewhere in the
     // command string, which this anchor rules out.
-    command = command.replace(/(pnpm exec turbo run \S+)/, "$1 --force");
+    return lane.command.replace(/(pnpm exec turbo run \S+)/, "$1 --force");
   }
-  if (mode === "cold" && lane.cacheDir) {
-    command = `rm -rf ${lane.cacheDir} && ${command}`;
+  return lane.command;
+}
+
+/**
+ * Remove a lane's cache directory before a cold run. This is a plain `fs`
+ * call the harness performs as an un-timed pre-step, not a shell command
+ * folded into what `runLaneOnce` measures — unlike turbo's `--force` (a
+ * flag on the invocation itself, correctly counted as part of the timed
+ * work), Prettier has no such flag, so composing an `rm -rf` prefix into
+ * the timed command would have counted cache teardown as measured work.
+ * `{ force: true }` already makes a missing directory a no-op (no ENOENT);
+ * the try/catch here is for everything else (e.g. `EACCES`/`EPERM`) — a
+ * synchronous throw here would otherwise propagate out of `runLaneOnce`
+ * itself (not a rejected promise, since it runs before that function's
+ * `Promise` executor), breaking that function's documented "always
+ * resolves, never rejects" contract. Degrading to a warning and letting the
+ * lane run anyway (possibly against a stale cache) is preferable to
+ * crashing the whole benchmark batch over one lane's cache teardown.
+ *
+ * `remove` is injectable (defaults to `rmSync`) purely so a test can force
+ * the catch branch without needing a real permission-denied directory,
+ * which isn't portably reproducible in a sandboxed test run.
+ *
+ * `format` is the only lane with a `cacheDir` today; Phase 2 candidate #2
+ * (tsc `incremental`) will need one of its own once its `.tsbuildinfo`
+ * output exists.
+ *
+ * @param {Lane} lane
+ * @param {"warm" | "cold"} mode
+ * @param {string} cwd
+ * @param {typeof rmSync} [remove]
+ * @returns {void}
+ */
+export function clearLaneCacheDir(lane, mode, cwd, remove = rmSync) {
+  if (mode !== "cold" || !lane.cacheDir) return;
+  try {
+    remove(join(cwd, lane.cacheDir), { recursive: true, force: true });
+  } catch (err) {
+    console.warn(
+      `bench-gates: could not clear cache dir "${lane.cacheDir}": ${err instanceof Error ? err.message : String(err)}`,
+    );
   }
-  return command;
 }
 
 /**
@@ -390,6 +425,7 @@ function resolveTimeBinary(platform) {
  * @returns {Promise<{ exitCode: number | null, wallSeconds: number, userSeconds: number | null, systemSeconds: number | null, peakRssKiB: number | null, cpuEfficiency: number | null, timingSource: "time" | "time-parse-failed" | "hrtime-only", parseError: string | null, spawnError?: string }>}
  */
 function runLaneOnce(name, lane, ctx) {
+  clearLaneCacheDir(lane, ctx.mode, ctx.cwd);
   const command = buildLaneCommand(lane, ctx.mode);
   const reportPath = ctx.timeBinary
     ? join(
