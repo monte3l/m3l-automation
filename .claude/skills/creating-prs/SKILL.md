@@ -88,6 +88,15 @@ reconcile doc metadata` commit (this repo's standard pattern) before
   `/resolving-merge-conflicts` Step 3 describes. Still hand back on any
   conflict in real `src/`/test logic, or a same-row/same-module collision.
 
+  **`docs/adr/provenance.json` is not driver-covered either** — it's a
+  blob-SHA stamp file, not tagged `merge=m3l-generated`, so a rebase that
+  touches a commonly-cited source file on both sides conflicts textually
+  there too. Picking either side by hand can look plausible and still be
+  wrong (a real instance left 37 stale stamps a manual pick had gotten
+  wrong): resolve the conflict, then always run `pnpm gen:adr-provenance`
+  immediately after — never trust the hand-picked side as final
+  (`docs/logs/2026-09-09-lessons-to-insights-vocabulary.md`).
+
 - **Signing:** pushes are signature-gated, so rebased commits must stay signed.
   If the user's `commit.gpgsign` is unset, use the same recovery pattern
   `verify-signed-range` documents:
