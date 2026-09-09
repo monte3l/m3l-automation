@@ -86,10 +86,10 @@
         {
           "file": "packages/m3l-common/src/internal/files/atomicWrite.ts",
           "symbol": "writeFileAtomic",
-          "blob": "04be9af7de242e00f6762ed233e6fac46c5debc3"
+          "blob": "d25b54f67562d77e2e8eb06878591154c5e64e77"
         }
       ],
-      "retrieved": "2026-08-19"
+      "retrieved": "2026-09-09"
     }
   ]
 }

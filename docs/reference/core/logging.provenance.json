@@ -33,12 +33,12 @@
         {
           "file": "packages/m3l-common/src/core/logging/M3LFileLoggerHandler.ts",
           "symbol": "M3LFileLoggerHandler",
-          "blob": "7eb29005e3ad4f7ee05ee3f19e3ca4bfcd57e208"
+          "blob": "b38d6037ab82a78f3344c6554ebdebbbc025684e"
         },
         {
           "file": "packages/m3l-common/src/core/logging/M3LFileLoggerHandler.ts",
           "symbol": "M3LFileLoggerHandlerOptions",
-          "blob": "7eb29005e3ad4f7ee05ee3f19e3ca4bfcd57e208"
+          "blob": "b38d6037ab82a78f3344c6554ebdebbbc025684e"
         },
         {
           "file": "packages/m3l-common/src/core/logging/M3LJsonLoggerHandler.ts",
@@ -106,7 +106,7 @@
           "blob": "8715a829a731e9b3db18a5cc6e00f70cc406ed07"
         }
       ],
-      "retrieved": "2026-08-25"
+      "retrieved": "2026-09-09"
     },
     {
       "heading": "`M3LLogger` methods",
@@ -188,7 +188,7 @@
         {
           "file": "packages/m3l-common/src/core/logging/M3LFileLoggerHandler.ts",
           "symbol": "M3LFileLoggerHandler",
-          "blob": "7eb29005e3ad4f7ee05ee3f19e3ca4bfcd57e208"
+          "blob": "b38d6037ab82a78f3344c6554ebdebbbc025684e"
         },
         {
           "file": "packages/m3l-common/src/core/logging/M3LJsonLoggerHandler.ts",
@@ -196,7 +196,7 @@
           "blob": "d05ccc572611902498e5194c1ff8c7a2b655fee7"
         }
       ],
-      "retrieved": "2026-08-25"
+      "retrieved": "2026-09-09"
     },
     {
       "heading": "Rendering a table",
@@ -261,7 +261,7 @@
         {
           "file": "packages/m3l-common/src/core/logging/M3LFileLoggerHandler.ts",
           "symbol": "M3LFileLoggerHandler",
-          "blob": "7eb29005e3ad4f7ee05ee3f19e3ca4bfcd57e208"
+          "blob": "b38d6037ab82a78f3344c6554ebdebbbc025684e"
         },
         {
           "file": "packages/m3l-common/src/core/logging/M3LJsonLoggerHandler.ts",
@@ -274,7 +274,7 @@
           "blob": "36797049c6dff3fe30eea8d24d5071e6b00ceff9"
         }
       ],
-      "retrieved": "2026-08-25"
+      "retrieved": "2026-09-09"
     }
   ]
 }

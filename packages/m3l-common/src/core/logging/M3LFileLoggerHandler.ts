@@ -47,8 +47,8 @@ export interface M3LFileLoggerHandlerOptions {
  * in emit order.
  *
  * `handle()` is synchronous and returns before the queued write settles;
- * callers that need the write to have landed should poll the file (as the
- * test suite does with `vi.waitFor`).
+ * callers that need the write to have landed should `await`
+ * {@link M3LFileLoggerHandler.flush}.
  *
  * `reset()` is intentionally a no-op — logs must survive a script reset
  * rather than being silently discarded.
@@ -120,11 +120,54 @@ export class M3LFileLoggerHandler implements M3LLoggerHandler {
   }
 
   /**
+   * Waits for every write enqueued so far — including one enqueued by a
+   * `handle()` call made while this `flush()` is itself in flight — to have
+   * settled. A loop-until-stable read of the private write queue, not a
+   * single `await`: a single `await this.#writeQueue` would capture a stale
+   * reference if `handle()` re-chains the queue during the await, and could
+   * resolve before a write queued in that window actually lands.
+   *
+   * Never rejects: `#writeSnapshot` already catches and reports every export
+   * failure to `process.stderr` rather than letting it propagate, so a
+   * queued write failing does not make `flush()` reject.
+   *
+   * `flush()` is intended to be called once emission has stopped (e.g.
+   * immediately before process exit). The wait loop has no bound: if
+   * `handle()` keeps being invoked at least once per settled write, the
+   * queue keeps re-chaining and this promise can be delayed indefinitely.
+   *
+   * @returns A promise that resolves once every currently-queued (and any
+   *   write enqueued while waiting) write has settled.
+   *
+   * @example
+   * ```ts
+   * import { Core } from "@m3l-automation/m3l-common";
+   *
+   * const handler = new Core.M3LFileLoggerHandler({ filePath: "run.log" });
+   * handler.handle({ category: Core.M3LLogEventCategory.INFO, message: "done" });
+   * await handler.flush();
+   * // the file on disk now reflects the "done" event, unless the write
+   * // failed (see the process.stderr diagnostic in that case).
+   * ```
+   */
+  async flush(): Promise<void> {
+    let previous: Promise<void>;
+    do {
+      previous = this.#writeQueue;
+      await previous;
+    } while (previous !== this.#writeQueue);
+  }
+
+  /**
    * Exports `snapshot`, reporting (never throwing) a failure. A rejection
    * here must not become an unhandled promise rejection and must not break
    * the sequential queue for subsequent writes, so it is caught and
    * reported to `process.stderr` as a best-effort diagnostic — `handle()`
-   * is synchronous and gives the caller no promise to await or catch.
+   * is synchronous and gives the caller no promise to await or catch. The
+   * diagnostic write itself is also guarded, so a stderr stream that
+   * synchronously throws on write (e.g. after it has already ended or been
+   * destroyed) can never make this method — or the write queue it's chained
+   * onto — reject.
    */
   async #writeSnapshot(snapshot: readonly M3LLogEvent[]): Promise<void> {
     try {
@@ -138,9 +181,17 @@ export class M3LFileLoggerHandler implements M3LLoggerHandler {
         cause instanceof M3LError
           ? `[${cause.code}] ${cause.message}`
           : String(cause);
-      process.stderr.write(
-        `m3l-logging: M3LFileLoggerHandler failed to write log file: ${detail}\n`,
-      );
+      try {
+        process.stderr.write(
+          `m3l-logging: M3LFileLoggerHandler failed to write log file: ${detail}\n`,
+        );
+      } catch {
+        // Intentionally silent: a stderr stream that synchronously throws
+        // on write (e.g. after it has already ended or been destroyed)
+        // must not mask the original write failure this diagnostic was
+        // reporting, and re-reporting through another channel would just
+        // relocate the same hazard.
+      }
     }
   }
 

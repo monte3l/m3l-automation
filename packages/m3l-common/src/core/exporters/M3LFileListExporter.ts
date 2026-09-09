@@ -4,8 +4,7 @@
  * @packageDocumentation
  */
 
-import * as fsp from "node:fs/promises";
-
+import { writeFileAtomic } from "../../internal/files/atomicWrite.js";
 import { M3LError } from "../errors/index.js";
 
 /**
@@ -22,7 +21,11 @@ export interface M3LFileListExporterOptions {
  * Writes an entire list of items to a single file in one call, as a JSON
  * array. Unlike {@link M3LJSONListExporter}, this exporter does not extend
  * the event emitter base, has no `exportStream()`, and never streams — the
- * whole list is serialized and written in a single `fsp.writeFile` call.
+ * whole list is serialized once, written to a temporary sibling file, and
+ * then atomically renamed onto `filePath` (on POSIX filesystems, where a
+ * same-directory `rename(2)` is atomic), so a concurrent reader always
+ * observes either the complete previous file or the complete new one, never
+ * a truncated or partially-written one.
  *
  * @typeParam TItem - The shape of each exported item.
  * @example
@@ -49,7 +52,10 @@ export class M3LFileListExporter<TItem> {
 
   /**
    * Serializes `items` as a JSON array and writes it to the configured
-   * `filePath`, overwriting any existing file.
+   * `filePath`, overwriting any existing file. Writes are atomic on POSIX
+   * filesystems, where a same-directory `rename(2)` is atomic: a concurrent
+   * reader of `filePath` will never observe a partially-written or
+   * truncated file.
    *
    * @param items - The items to export.
    * @returns A promise that resolves once the write completes.
@@ -74,7 +80,7 @@ export class M3LFileListExporter<TItem> {
   async export(items: readonly TItem[]): Promise<void> {
     try {
       const content = JSON.stringify(items);
-      await fsp.writeFile(this.#filePath, content);
+      await writeFileAtomic(this.#filePath, content);
     } catch (cause) {
       if (cause instanceof M3LError) throw cause;
       throw new M3LError(`failed to write file list: ${this.#filePath}`, {

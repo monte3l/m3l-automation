@@ -416,9 +416,11 @@ await store.delete();
   `packages/m3l-common/src` before this submodule (the archived
   consumer-scripts plan's §1.2 describes the guarantee as "via `core/files`
   guards", but `core/files` has no atomic writer — only
-  `M3LFileCopier`/`M3LFileCopyError`). It stays `internal/` and unexported
-  rather than promoted into `core/files` until a second caller justifies the
-  public surface.
+  `M3LFileCopier`/`M3LFileCopyError`). `core/exporters/M3LFileListExporter`
+  became a second consumer (issue #1146), but it stays `internal/` and
+  unexported rather than promoted into `core/files` — promotion would still
+  require deciding a public error contract first, since `writeFileAtomic`
+  deliberately throws raw errno errors rather than a typed `M3LError`.
 - **`cause` chaining is resolved by error kind and content risk, not by
   caller option.** Four codes never chain, for **two different reasons** that
   are worth keeping distinct. `ERR_CHECKPOINT_PARSE` and

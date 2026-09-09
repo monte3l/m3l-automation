@@ -9,24 +9,19 @@
  *   M3LBinaryFileExporter, M3LFileListExporter (9+ surfaced symbols).
  *
  * Key behavioral contracts:
- *  - M3LListExporter<TItem>: { export(items): Promise<void>; exportStream(): M3LListExporterStreamWriter<TItem> }.
- *    exportStream() is SYNCHRONOUS — no await. The writer exposes
- *    append(item): Promise<void> and close(): Promise<void>.
- *  - export(items) returns Promise<void> — no result object.
- *  - CSV/JSON/HTML list exporters extend M3LEventEmitterBase (on/off only,
- *    emit is protected); event map export:started / export:completed /
- *    export:error fires at the right lifecycle points; handler isolation is
- *    inherited (a throwing handler must not block a second handler).
+ *  - M3LListExporter<TItem>: export(items): Promise<void>; exportStream() is
+ *    SYNCHRONOUS, returning a writer with append(item)/close(): Promise<void>.
+ *  - CSV/JSON/HTML list exporters extend M3LEventEmitterBase (on/off only);
+ *    export:started/completed/error fire at the right points; a throwing
+ *    handler does not block a second handler.
  *  - JSON mode is inferred from extension (.jsonl => JSONL, else array),
- *    overridable via options.format.
- *  - HTML substitutes {{count}} / {{items}} / {{date}}.
+ *    overridable via options.format. HTML substitutes {{count}}/{{items}}/{{date}}.
  *  - Whole-file exporters (M3LFileExporter, M3LJSONFileExporter,
- *    M3LBinaryFileExporter, M3LFileListExporter) take { filePath } at
- *    construction, expose async export(content): Promise<void>, do NOT emit
- *    export:* events, and do NOT have exportStream().
+ *    M3LBinaryFileExporter, M3LFileListExporter) take { filePath }, expose
+ *    async export(content): Promise<void>, and do NOT emit export:* events
+ *    or have exportStream().
  *  - Error channel: a list exporter write/serialization failure emits
- *    export:error carrying an M3LError AND rejects the in-flight promise
- *    with that same M3LError, cause chained to the underlying failure.
+ *    export:error AND rejects with the same M3LError, cause chained.
  */
 
 import type { WriteStream } from "node:fs";
@@ -123,10 +118,9 @@ class FakeWriteStream extends EventEmitter {
     }
     this.chunks.push(chunk.toString());
     this.bytesWritten += Buffer.byteLength(chunk.toString());
-    // The FIRST write, when backpressure is enabled, reports the internal
-    // buffer as full (returns false per the real fs.WriteStream contract)
-    // and defers 'drain' to a later microtask; every subsequent write
-    // accepts immediately, matching a stream that has caught up.
+    // First write, with backpressure enabled, reports the buffer full
+    // (returns false, per the real fs.WriteStream contract) and defers
+    // 'drain' to a later microtask; later writes accept immediately.
     if (this.#backpressure && !this.#backpressureConsumed) {
       this.#backpressureConsumed = true;
       queueMicrotask(() => {
@@ -621,10 +615,9 @@ describe("M3LCSVListExporter", () => {
     const writer = exporter.exportStream();
 
     await writer.append({ id: "1", name: "Ada" }).catch(() => undefined);
-    // A caller's finally-style cleanup calling close() after an append()
-    // failure must not cause a second export:error emission for the same
-    // underlying failure — the lifecycle's cached pending-error fast-path
-    // would otherwise let close() independently observe and re-report it.
+    // close() after a failed append() (a finally-style cleanup) must not
+    // re-emit export:error for the same failure via the cached
+    // pending-error fast path.
     await writer.close().catch(() => undefined);
 
     expect(errorHandler).toHaveBeenCalledTimes(1);
@@ -727,8 +720,7 @@ describe("M3LCSVListExporter", () => {
       writer.append({ id: "1", name: "Ada" }),
     ).rejects.toBeInstanceOf(M3LError);
 
-    // A second append() must also reject via the pending-error fast path,
-    // not hang waiting on a stream that never opened.
+    // Second append() rejects via the pending-error fast path too.
     await expect(
       writer.append({ id: "2", name: "Linus" }),
     ).rejects.toBeInstanceOf(M3LError);
@@ -741,9 +733,8 @@ describe("M3LCSVListExporter", () => {
     });
     const writer = exporter.exportStream();
 
-    // A test-owned 'drain' listener (independent of the lifecycle's own)
-    // records the moment drain fires, so we can compare it against when
-    // append() actually resolves.
+    // A test-owned 'drain' listener records when drain fires, to compare
+    // against when append() resolves.
     let drainFiredAt = -1;
     let tick = 0;
     stream.on("drain", () => {
@@ -753,9 +744,8 @@ describe("M3LCSVListExporter", () => {
     await writer.append({ id: "1", name: "Ada" });
     const appendResolvedAt = tick++;
 
-    // append() must not resolve before 'drain' fires — proving the promise
-    // genuinely waited on backpressure rather than resolving eagerly off the
-    // write() callback alone.
+    // append() must not resolve before 'drain' fires — proves it waited
+    // on backpressure, not the write() callback alone.
     expect(drainFiredAt).toBeGreaterThanOrEqual(0);
     expect(drainFiredAt).toBeLessThan(appendResolvedAt);
     expect(stream.content()).toContain("Ada");
@@ -1893,7 +1883,7 @@ describe("M3LFileListExporter", () => {
     id: string;
   }
 
-  test("export(items) writes the whole list to the configured filePath in one call", async () => {
+  test("export(items) writes the whole list to the configured filePath's contents, exactly", async () => {
     let written = "";
     vi.spyOn(fsp, "writeFile").mockImplementation((_path, data) => {
       if (typeof data === "string") {
@@ -1908,13 +1898,16 @@ describe("M3LFileListExporter", () => {
       }
       return Promise.resolve();
     });
+    vi.spyOn(fsp, "rename").mockResolvedValue(undefined);
     const exporter = new M3LFileListExporter<Row>({
       filePath: "/exports/list.json",
     });
 
     await exporter.export([{ id: "1" }, { id: "2" }]);
 
-    expect(written.length).toBeGreaterThan(0);
+    // writeFileAtomic writes to a temp sibling of `filePath`, not
+    // `filePath` itself; see exporters-atomic-write.test.ts.
+    expect(JSON.parse(written)).toEqual([{ id: "1" }, { id: "2" }]);
   });
 
   test("rejects with an M3LError chaining the underlying cause when the write fails", async () => {
@@ -1922,6 +1915,8 @@ describe("M3LFileListExporter", () => {
       code: "EISDIR",
     });
     vi.spyOn(fsp, "writeFile").mockRejectedValue(writeError);
+    // Mock fsp.rm: writeFileAtomic's failure path best-effort cleans the temp file.
+    const rmSpy = vi.spyOn(fsp, "rm").mockResolvedValue(undefined);
     const exporter = new M3LFileListExporter<Row>({
       filePath: "/exports/is-a-directory",
     });
@@ -1934,10 +1929,12 @@ describe("M3LFileListExporter", () => {
     }
 
     expect(thrown).toBeInstanceOf(M3LError);
+    expect((thrown as M3LError).code).toBe("ERR_FILE_LIST_EXPORT");
     expect((thrown as M3LError).cause).toBe(writeError);
     expect((thrown as M3LError).context).toMatchObject({
       filePath: "/exports/is-a-directory",
     });
+    expect(rmSpy).toHaveBeenCalledTimes(1);
   });
 
   test("re-throws an M3LError from the write path unwrapped, without double-wrapping", async () => {
@@ -1945,6 +1942,8 @@ describe("M3LFileListExporter", () => {
       code: "ERR_UNDERLYING",
     });
     vi.spyOn(fsp, "writeFile").mockRejectedValue(original);
+    // Same cleanup path as above — mock fsp.rm to avoid a real fs call.
+    vi.spyOn(fsp, "rm").mockResolvedValue(undefined);
     const exporter = new M3LFileListExporter<Row>({
       filePath: "/exports/list.json",
     });
