@@ -64,28 +64,29 @@ target was renamed is repaired via `RENAMED_TARGETS` in
 
 ## Library — Core & AWS submodules (v1.0 → v1.1)
 
-| Date       | Module             | Log                                             |
-| ---------- | ------------------ | ----------------------------------------------- |
-| 2026-06-29 | `core/errors`      | [errors](./2026-06-29-core-errors.md)           |
-| 2026-06-29 | `core/events`      | [events](./2026-06-29-core-events.md)           |
-| 2026-06-30 | `core/environment` | [environment](./2026-06-30-core-environment.md) |
-| 2026-06-30 | `core/security`    | [security](./2026-06-30-core-security.md)       |
-| 2026-06-30 | `core/utils`       | [utils](./2026-06-30-core-utils.md)             |
-| 2026-07-01 | `core/analysis`    | [analysis](./2026-07-01-core-analysis.md)       |
-| 2026-07-01 | `core/json`        | [json](./2026-07-01-core-json.md)               |
-| 2026-07-02 | `core/config`      | [config](./2026-07-02-core-config.md)           |
-| 2026-07-02 | `core/messaging`   | [messaging](./2026-07-02-core-messaging.md)     |
-| 2026-07-02 | `core/network`     | [network](./2026-07-02-core-network.md)         |
-| 2026-07-02 | `core/polling`     | [polling](./2026-07-02-core-polling.md)         |
-| 2026-07-02 | `core/prompt`      | [prompt](./2026-07-02-core-prompt.md)           |
-| 2026-07-02 | `core/storage`     | [storage](./2026-07-02-core-storage.md)         |
-| 2026-07-02 | `core/text`        | [text](./2026-07-02-core-text.md)               |
-| 2026-07-03 | `aws/models`       | [aws-models](./2026-07-03-aws-models.md)        |
-| 2026-07-03 | `core/exporters`   | [exporters](./2026-07-03-core-exporters.md)     |
-| 2026-07-03 | `core/files`       | [files](./2026-07-03-core-files.md)             |
-| 2026-07-03 | `core/importers`   | [importers](./2026-07-03-core-importers.md)     |
-| 2026-07-03 | `core/logging`     | [logging](./2026-07-03-core-logging.md)         |
-| 2026-07-03 | `core/script`      | [script](./2026-07-03-core-script.md)           |
+| Date       | Module                                                   | Log                                                                                  |
+| ---------- | -------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| 2026-06-29 | `core/errors`                                            | [errors](./2026-06-29-core-errors.md)                                                |
+| 2026-06-29 | `core/events`                                            | [events](./2026-06-29-core-events.md)                                                |
+| 2026-06-30 | `core/environment`                                       | [environment](./2026-06-30-core-environment.md)                                      |
+| 2026-06-30 | `core/security`                                          | [security](./2026-06-30-core-security.md)                                            |
+| 2026-06-30 | `core/utils`                                             | [utils](./2026-06-30-core-utils.md)                                                  |
+| 2026-07-01 | `core/analysis`                                          | [analysis](./2026-07-01-core-analysis.md)                                            |
+| 2026-07-01 | `core/json`                                              | [json](./2026-07-01-core-json.md)                                                    |
+| 2026-07-02 | `core/config`                                            | [config](./2026-07-02-core-config.md)                                                |
+| 2026-07-02 | `core/messaging`                                         | [messaging](./2026-07-02-core-messaging.md)                                          |
+| 2026-07-02 | `core/network`                                           | [network](./2026-07-02-core-network.md)                                              |
+| 2026-07-02 | `core/polling`                                           | [polling](./2026-07-02-core-polling.md)                                              |
+| 2026-07-02 | `core/prompt`                                            | [prompt](./2026-07-02-core-prompt.md)                                                |
+| 2026-07-02 | `core/storage`                                           | [storage](./2026-07-02-core-storage.md)                                              |
+| 2026-07-02 | `core/text`                                              | [text](./2026-07-02-core-text.md)                                                    |
+| 2026-07-03 | `aws/models`                                             | [aws-models](./2026-07-03-aws-models.md)                                             |
+| 2026-07-03 | `core/exporters`                                         | [exporters](./2026-07-03-core-exporters.md)                                          |
+| 2026-07-03 | `core/files`                                             | [files](./2026-07-03-core-files.md)                                                  |
+| 2026-07-03 | `core/importers`                                         | [importers](./2026-07-03-core-importers.md)                                          |
+| 2026-07-03 | `core/logging`                                           | [logging](./2026-07-03-core-logging.md)                                              |
+| 2026-07-03 | `core/script`                                            | [script](./2026-07-03-core-script.md)                                                |
+| 2026-09-09 | `core/exporters`, `core/logging` (issue #1146, PR #1151) | [issue-1146-exporter-atomic-write](./2026-09-09-issue-1146-exporter-atomic-write.md) |
 
 ## Consumer-fleet program (ADR-0021 Phase 5 / ADR-0022)
 
