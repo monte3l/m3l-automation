@@ -27,11 +27,11 @@
       },
       {
         "path": "lefthook.yml",
-        "blob": "d4347be41862616f5609b64a36214d0263b6a7d5"
+        "blob": "7532ef55ea0f88969685d01c544d2edc61c9491e"
       },
       {
         "path": "turbo.json",
-        "blob": "c4ae7a2819c9f28a37c0ecdf2da0c6a03cee31f4"
+        "blob": "d2b88dbb4423408a33153335c055b088c6fd628a"
       }
     ],
     "verifiedAt": "2026-09-09"
@@ -40,7 +40,7 @@
     "sourceFiles": [
       {
         "path": "package.json",
-        "blob": "3286492d33af9ed3a88f6469ea2af62569352221"
+        "blob": "2651b6ce76505454b5dee829d91afca4331d9ba5"
       },
       {
         "path": "packages/m3l-common/package.json",
@@ -93,11 +93,11 @@
       },
       {
         "path": "lefthook.yml",
-        "blob": "d4347be41862616f5609b64a36214d0263b6a7d5"
+        "blob": "7532ef55ea0f88969685d01c544d2edc61c9491e"
       },
       {
         "path": "package.json",
-        "blob": "3286492d33af9ed3a88f6469ea2af62569352221"
+        "blob": "2651b6ce76505454b5dee829d91afca4331d9ba5"
       },
       {
         "path": "packages/m3l-common/package.json",
@@ -130,7 +130,7 @@
       },
       {
         "path": "package.json",
-        "blob": "3286492d33af9ed3a88f6469ea2af62569352221"
+        "blob": "2651b6ce76505454b5dee829d91afca4331d9ba5"
       },
       {
         "path": "packages/m3l-common/package.json",
@@ -172,7 +172,7 @@
     "sourceFiles": [
       {
         "path": "package.json",
-        "blob": "3286492d33af9ed3a88f6469ea2af62569352221"
+        "blob": "2651b6ce76505454b5dee829d91afca4331d9ba5"
       },
       {
         "path": "packages/m3l-common/package.json",
@@ -210,10 +210,10 @@
       },
       {
         "path": "lefthook.yml",
-        "blob": "d4347be41862616f5609b64a36214d0263b6a7d5"
+        "blob": "7532ef55ea0f88969685d01c544d2edc61c9491e"
       }
     ],
-    "verifiedAt": "2026-09-08"
+    "verifiedAt": "2026-09-09"
   },
   "0009": {
     "sourceFiles": [
@@ -248,7 +248,7 @@
       },
       {
         "path": "package.json",
-        "blob": "3286492d33af9ed3a88f6469ea2af62569352221"
+        "blob": "2651b6ce76505454b5dee829d91afca4331d9ba5"
       }
     ],
     "verifiedAt": "2026-09-09"
@@ -257,10 +257,10 @@
     "sourceFiles": [
       {
         "path": "package.json",
-        "blob": "3286492d33af9ed3a88f6469ea2af62569352221"
+        "blob": "2651b6ce76505454b5dee829d91afca4331d9ba5"
       }
     ],
-    "verifiedAt": "2026-09-08"
+    "verifiedAt": "2026-09-09"
   },
   "0012": {
     "sourceFiles": [
@@ -307,7 +307,7 @@
       },
       {
         "path": "package.json",
-        "blob": "3286492d33af9ed3a88f6469ea2af62569352221"
+        "blob": "2651b6ce76505454b5dee829d91afca4331d9ba5"
       }
     ],
     "verifiedAt": "2026-09-09"
@@ -360,10 +360,10 @@
       },
       {
         "path": "package.json",
-        "blob": "3286492d33af9ed3a88f6469ea2af62569352221"
+        "blob": "2651b6ce76505454b5dee829d91afca4331d9ba5"
       }
     ],
-    "verifiedAt": "2026-09-08"
+    "verifiedAt": "2026-09-09"
   },
   "0015": {
     "sourceFiles": [
@@ -506,10 +506,10 @@
       },
       {
         "path": "package.json",
-        "blob": "3286492d33af9ed3a88f6469ea2af62569352221"
+        "blob": "2651b6ce76505454b5dee829d91afca4331d9ba5"
       }
     ],
-    "verifiedAt": "2026-09-08"
+    "verifiedAt": "2026-09-09"
   },
   "0021": {
     "sourceFiles": [
@@ -548,11 +548,11 @@
       },
       {
         "path": "lefthook.yml",
-        "blob": "d4347be41862616f5609b64a36214d0263b6a7d5"
+        "blob": "7532ef55ea0f88969685d01c544d2edc61c9491e"
       },
       {
         "path": "package.json",
-        "blob": "3286492d33af9ed3a88f6469ea2af62569352221"
+        "blob": "2651b6ce76505454b5dee829d91afca4331d9ba5"
       },
       {
         "path": "pnpm-workspace.yaml",
@@ -564,7 +564,7 @@
       },
       {
         "path": "turbo.json",
-        "blob": "c4ae7a2819c9f28a37c0ecdf2da0c6a03cee31f4"
+        "blob": "d2b88dbb4423408a33153335c055b088c6fd628a"
       }
     ],
     "verifiedAt": "2026-09-09"
@@ -783,10 +783,10 @@
       },
       {
         "path": "package.json",
-        "blob": "3286492d33af9ed3a88f6469ea2af62569352221"
+        "blob": "2651b6ce76505454b5dee829d91afca4331d9ba5"
       }
     ],
-    "verifiedAt": "2026-09-08"
+    "verifiedAt": "2026-09-09"
   },
   "0030": {
     "sourceFiles": [
@@ -877,7 +877,7 @@
       },
       {
         "path": "package.json",
-        "blob": "3286492d33af9ed3a88f6469ea2af62569352221"
+        "blob": "2651b6ce76505454b5dee829d91afca4331d9ba5"
       },
       {
         "path": "packages/m3l-common/src/aws/clients/provider.ts",
@@ -922,7 +922,7 @@
       },
       {
         "path": "bin/lib/command-catalog.mjs",
-        "blob": "7c66aa9fb2c72a2e29e159b5c0b045459f642056"
+        "blob": "a2ec17b00fbd32bcb5aaa1572339faa362db0c12"
       },
       {
         "path": "bin/lib/hub-sync.mjs",
@@ -974,7 +974,7 @@
       },
       {
         "path": "docs/logs/README.md",
-        "blob": "ceb78280865e8268be387335ef137fb0de1fd3cd"
+        "blob": "3b5ddf383c5541ee03f81ba42ef18a3384cb45fd"
       },
       {
         "path": "docs/plans/IMPLEMENTATION.md",
@@ -986,7 +986,7 @@
       },
       {
         "path": "package.json",
-        "blob": "3286492d33af9ed3a88f6469ea2af62569352221"
+        "blob": "2651b6ce76505454b5dee829d91afca4331d9ba5"
       }
     ],
     "verifiedAt": "2026-09-09"
@@ -1062,7 +1062,7 @@
       },
       {
         "path": "package.json",
-        "blob": "3286492d33af9ed3a88f6469ea2af62569352221"
+        "blob": "2651b6ce76505454b5dee829d91afca4331d9ba5"
       },
       {
         "path": "packages/m3l-common/package.json",
@@ -1222,7 +1222,7 @@
       },
       {
         "path": "package.json",
-        "blob": "3286492d33af9ed3a88f6469ea2af62569352221"
+        "blob": "2651b6ce76505454b5dee829d91afca4331d9ba5"
       },
       {
         "path": "packages/m3l-common/src/aws/clients/provider.ts",
@@ -1233,7 +1233,7 @@
         "blob": "525749955c204dae2c1d0a1cd4f363afff408894"
       }
     ],
-    "verifiedAt": "2026-09-08"
+    "verifiedAt": "2026-09-09"
   },
   "0045": {
     "sourceFiles": [
@@ -1277,10 +1277,10 @@
     "sourceFiles": [
       {
         "path": "package.json",
-        "blob": "3286492d33af9ed3a88f6469ea2af62569352221"
+        "blob": "2651b6ce76505454b5dee829d91afca4331d9ba5"
       }
     ],
-    "verifiedAt": "2026-09-08"
+    "verifiedAt": "2026-09-09"
   },
   "0049": {
     "sourceFiles": [
@@ -1697,11 +1697,11 @@
       },
       {
         "path": "lefthook.yml",
-        "blob": "d4347be41862616f5609b64a36214d0263b6a7d5"
+        "blob": "7532ef55ea0f88969685d01c544d2edc61c9491e"
       },
       {
         "path": "package.json",
-        "blob": "3286492d33af9ed3a88f6469ea2af62569352221"
+        "blob": "2651b6ce76505454b5dee829d91afca4331d9ba5"
       }
     ],
     "verifiedAt": "2026-09-09"
@@ -1925,15 +1925,15 @@
       },
       {
         "path": "docs/plans/2026-09-08-adaptive-host-budgeting.md",
-        "blob": "0b8b73aa9a3c35ae1bc232ac157684c2f2e7d959"
+        "blob": "ba0b8cd5a7278ff00c51e7ae9882c94348794ad1"
       },
       {
         "path": "package.json",
-        "blob": "3286492d33af9ed3a88f6469ea2af62569352221"
+        "blob": "2651b6ce76505454b5dee829d91afca4331d9ba5"
       },
       {
         "path": "turbo.json",
-        "blob": "c4ae7a2819c9f28a37c0ecdf2da0c6a03cee31f4"
+        "blob": "d2b88dbb4423408a33153335c055b088c6fd628a"
       }
     ],
     "verifiedAt": "2026-09-09"
@@ -2444,7 +2444,7 @@
       },
       {
         "path": "docs/logs/README.md",
-        "blob": "e3bfd71a59c039dceafda84723a804dde886ef21"
+        "blob": "3b5ddf383c5541ee03f81ba42ef18a3384cb45fd"
       }
     ],
     "verifiedAt": "2026-09-09"
