@@ -1,13 +1,5 @@
-import {
-  existsSync,
-  mkdirSync,
-  mkdtempSync,
-  rmSync,
-  writeFileSync,
-} from "node:fs";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, test, vi } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import {
   LANES,
   parseArgs,
@@ -21,23 +13,6 @@ import {
   computeCpuEfficiency,
   pressureDeltaMs,
 } from "../../bin/bench-gates.mjs";
-
-const tempDirs: string[] = [];
-
-function makeTempDir(): string {
-  const dir = mkdtempSync(join(tmpdir(), "bench-gates-test-"));
-  tempDirs.push(dir);
-  return dir;
-}
-
-afterEach(() => {
-  while (tempDirs.length > 0) {
-    const dir = tempDirs.pop();
-    if (dir !== undefined) {
-      rmSync(dir, { recursive: true, force: true });
-    }
-  }
-});
 
 describe("LANES", () => {
   test("is a plain object with exactly the expected lane names", () => {
@@ -279,58 +254,47 @@ describe("buildLaneCommand", () => {
 });
 
 describe("clearLaneCacheDir", () => {
+  const cwd = "/repo";
   const lane = {
     command: "pnpm format:check",
     turbo: false,
     cacheDir: "node_modules/.cache/prettier",
   };
 
-  test("cold mode + a lane with cacheDir removes an existing, populated cache directory", () => {
-    const cwd = makeTempDir();
-    const absoluteCacheDir = join(cwd, lane.cacheDir);
-    mkdirSync(absoluteCacheDir, { recursive: true });
-    writeFileSync(join(absoluteCacheDir, "entry.json"), "{}");
-    expect(existsSync(absoluteCacheDir)).toBe(true);
+  test("cold mode + a lane with cacheDir calls remove with the joined cache path and force+recursive options", () => {
+    const remove = vi.fn();
 
-    clearLaneCacheDir(lane, "cold", cwd);
+    clearLaneCacheDir(lane, "cold", cwd, remove);
 
-    expect(existsSync(absoluteCacheDir)).toBe(false);
+    expect(remove).toHaveBeenCalledTimes(1);
+    expect(remove).toHaveBeenCalledWith(join(cwd, lane.cacheDir), {
+      recursive: true,
+      force: true,
+    });
   });
 
-  test("warm mode + a lane with cacheDir leaves the directory and its contents untouched", () => {
-    const cwd = makeTempDir();
-    const absoluteCacheDir = join(cwd, lane.cacheDir);
-    mkdirSync(absoluteCacheDir, { recursive: true });
-    const entryPath = join(absoluteCacheDir, "entry.json");
-    writeFileSync(entryPath, "{}");
+  test("warm mode + a lane with cacheDir never calls remove", () => {
+    const remove = vi.fn();
 
-    clearLaneCacheDir(lane, "warm", cwd);
+    clearLaneCacheDir(lane, "warm", cwd, remove);
 
-    expect(existsSync(absoluteCacheDir)).toBe(true);
-    expect(existsSync(entryPath)).toBe(true);
+    expect(remove).not.toHaveBeenCalled();
   });
 
-  test("cold mode + a lane with no cacheDir does not throw and does nothing", () => {
-    const cwd = makeTempDir();
+  test("cold mode + a lane with no cacheDir never calls remove and does not throw", () => {
     const noCacheDirLane = {
       command: "pnpm exec turbo run build",
       turbo: true,
     };
+    const remove = vi.fn();
 
-    expect(() => clearLaneCacheDir(noCacheDirLane, "cold", cwd)).not.toThrow();
-  });
-
-  test("cold mode + a lane whose cacheDir does not yet exist on disk does not throw", () => {
-    const cwd = makeTempDir();
-    const absoluteCacheDir = join(cwd, lane.cacheDir);
-    expect(existsSync(absoluteCacheDir)).toBe(false);
-
-    expect(() => clearLaneCacheDir(lane, "cold", cwd)).not.toThrow();
-    expect(existsSync(absoluteCacheDir)).toBe(false);
+    expect(() =>
+      clearLaneCacheDir(noCacheDirLane, "cold", cwd, remove),
+    ).not.toThrow();
+    expect(remove).not.toHaveBeenCalled();
   });
 
   test("cold mode + an injected remove that throws (e.g. EACCES) is swallowed, not propagated", () => {
-    const cwd = makeTempDir();
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     const remove = vi.fn(() => {
       throw new Error("EACCES: permission denied");
