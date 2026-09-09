@@ -10,6 +10,7 @@ import {
   shouldSerializePrePush,
   buildLefthookLocalOverride,
 } from "../../bin/setup-host-resources.mjs";
+import { recommendToolMemoryLimitGiB } from "../../bin/check-host-resources.mjs";
 
 describe("parseSessionsFlag", () => {
   test("parses a valid --sessions=N flag", () => {
@@ -165,11 +166,43 @@ describe("buildUserSliceOverride", () => {
 });
 
 describe("buildClaudeRcOverride", () => {
-  test("produces the fixed MemoryMax + OOMPolicy drop-in", () => {
-    expect(buildClaudeRcOverride()).toBe(
-      "[Service]\nMemoryMax=6G\nOOMPolicy=kill\n",
+  test("derives MemoryMax from the tool memory limit plus a 2 GiB margin (23 GiB / 2 sessions)", () => {
+    // recommendToolMemoryLimitGiB(23, 2) = floor((23-2)/2 - 1) = floor(9.5) = 9
+    // MemoryMax = 9 + 2 = 11
+    expect(buildClaudeRcOverride(23, 2)).toBe(
+      "[Service]\nMemoryMax=11G\nOOMPolicy=kill\n",
     );
   });
+
+  test("derives MemoryMax from the tool memory limit plus a 2 GiB margin (24 GiB / 2 sessions)", () => {
+    // recommendToolMemoryLimitGiB(24, 2) = floor((24-2)/2 - 1) = floor(10) = 10
+    // MemoryMax = 10 + 2 = 12
+    expect(buildClaudeRcOverride(24, 2)).toBe(
+      "[Service]\nMemoryMax=12G\nOOMPolicy=kill\n",
+    );
+  });
+});
+
+describe("buildClaudeRcOverride — invariant", () => {
+  test.each([
+    [16, 1],
+    [23, 2],
+    [24, 2],
+    [32, 2],
+    [64, 4],
+    // Hits recommendToolMemoryLimitGiB's Math.max(2, ...) clamp: raw =
+    // floor((4-2)/1 - 1) = floor(1) = 1, which is < 2 and clamps to 2.
+    [4, 1],
+  ])(
+    "MemoryMax stays above the tool memory limit for %i GiB / %i session(s)",
+    (totalMemGiB, sessions) => {
+      const toolLimitGiB = recommendToolMemoryLimitGiB(totalMemGiB, sessions);
+      const rcMemoryMaxGiB = extractMemoryMaxGiB(
+        buildClaudeRcOverride(totalMemGiB, sessions),
+      );
+      expect(rcMemoryMaxGiB).toBeGreaterThan(toolLimitGiB);
+    },
+  );
 });
 
 describe("extractMemoryMaxGiB", () => {
