@@ -118,10 +118,9 @@ class FakeWriteStream extends EventEmitter {
     }
     this.chunks.push(chunk.toString());
     this.bytesWritten += Buffer.byteLength(chunk.toString());
-    // The FIRST write, when backpressure is enabled, reports the internal
-    // buffer as full (returns false per the real fs.WriteStream contract)
-    // and defers 'drain' to a later microtask; every subsequent write
-    // accepts immediately, matching a stream that has caught up.
+    // First write, with backpressure enabled, reports the buffer full
+    // (returns false, per the real fs.WriteStream contract) and defers
+    // 'drain' to a later microtask; later writes accept immediately.
     if (this.#backpressure && !this.#backpressureConsumed) {
       this.#backpressureConsumed = true;
       queueMicrotask(() => {
@@ -616,10 +615,9 @@ describe("M3LCSVListExporter", () => {
     const writer = exporter.exportStream();
 
     await writer.append({ id: "1", name: "Ada" }).catch(() => undefined);
-    // A caller's finally-style cleanup calling close() after an append()
-    // failure must not cause a second export:error emission for the same
-    // underlying failure — the lifecycle's cached pending-error fast-path
-    // would otherwise let close() independently observe and re-report it.
+    // close() after a failed append() (a finally-style cleanup) must not
+    // re-emit export:error for the same failure via the cached
+    // pending-error fast path.
     await writer.close().catch(() => undefined);
 
     expect(errorHandler).toHaveBeenCalledTimes(1);
@@ -722,8 +720,7 @@ describe("M3LCSVListExporter", () => {
       writer.append({ id: "1", name: "Ada" }),
     ).rejects.toBeInstanceOf(M3LError);
 
-    // A second append() must also reject via the pending-error fast path,
-    // not hang waiting on a stream that never opened.
+    // Second append() rejects via the pending-error fast path too.
     await expect(
       writer.append({ id: "2", name: "Linus" }),
     ).rejects.toBeInstanceOf(M3LError);
@@ -736,9 +733,8 @@ describe("M3LCSVListExporter", () => {
     });
     const writer = exporter.exportStream();
 
-    // A test-owned 'drain' listener (independent of the lifecycle's own)
-    // records the moment drain fires, so we can compare it against when
-    // append() actually resolves.
+    // A test-owned 'drain' listener records when drain fires, to compare
+    // against when append() resolves.
     let drainFiredAt = -1;
     let tick = 0;
     stream.on("drain", () => {
@@ -748,9 +744,8 @@ describe("M3LCSVListExporter", () => {
     await writer.append({ id: "1", name: "Ada" });
     const appendResolvedAt = tick++;
 
-    // append() must not resolve before 'drain' fires — proving the promise
-    // genuinely waited on backpressure rather than resolving eagerly off the
-    // write() callback alone.
+    // append() must not resolve before 'drain' fires — proves it waited
+    // on backpressure, not the write() callback alone.
     expect(drainFiredAt).toBeGreaterThanOrEqual(0);
     expect(drainFiredAt).toBeLessThan(appendResolvedAt);
     expect(stream.content()).toContain("Ada");
@@ -1920,9 +1915,7 @@ describe("M3LFileListExporter", () => {
       code: "EISDIR",
     });
     vi.spyOn(fsp, "writeFile").mockRejectedValue(writeError);
-    // writeFileAtomic's failure path does best-effort temp-file cleanup via
-    // fsp.rm(tempPath, { force: true }); mock it so the failure path never
-    // touches the real filesystem.
+    // Mock fsp.rm: writeFileAtomic's failure path best-effort cleans the temp file.
     const rmSpy = vi.spyOn(fsp, "rm").mockResolvedValue(undefined);
     const exporter = new M3LFileListExporter<Row>({
       filePath: "/exports/is-a-directory",
@@ -1949,8 +1942,7 @@ describe("M3LFileListExporter", () => {
       code: "ERR_UNDERLYING",
     });
     vi.spyOn(fsp, "writeFile").mockRejectedValue(original);
-    // Same best-effort cleanup path as above — mock fsp.rm to avoid a real,
-    // unmocked filesystem call.
+    // Same cleanup path as above — mock fsp.rm to avoid a real fs call.
     vi.spyOn(fsp, "rm").mockResolvedValue(undefined);
     const exporter = new M3LFileListExporter<Row>({
       filePath: "/exports/list.json",
