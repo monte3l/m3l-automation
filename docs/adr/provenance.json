@@ -126,7 +126,7 @@
       },
       {
         "path": "docs/plans/IMPLEMENTATION.md",
-        "blob": "83aa6cb4f42e15b53530976cef14808552fdd34a"
+        "blob": "8c567d261f5573dcf9e952626646dfec293062b1"
       },
       {
         "path": "package.json",
@@ -159,7 +159,7 @@
       },
       {
         "path": "docs/plans/IMPLEMENTATION.md",
-        "blob": "83aa6cb4f42e15b53530976cef14808552fdd34a"
+        "blob": "8c567d261f5573dcf9e952626646dfec293062b1"
       },
       {
         "path": "docs/reference/core/errors.md",
@@ -577,7 +577,7 @@
       },
       {
         "path": "docs/plans/IMPLEMENTATION.md",
-        "blob": "83aa6cb4f42e15b53530976cef14808552fdd34a"
+        "blob": "8c567d261f5573dcf9e952626646dfec293062b1"
       },
       {
         "path": "docs/reference/catalog.json",
@@ -588,7 +588,7 @@
         "blob": "c56222f25b6a5584008eb2ec8fb39ac62dfcc297"
       }
     ],
-    "verifiedAt": "2026-09-08"
+    "verifiedAt": "2026-09-09"
   },
   "0024": {
     "sourceFiles": [
@@ -642,7 +642,7 @@
       },
       {
         "path": "docs/plans/IMPLEMENTATION.md",
-        "blob": "83aa6cb4f42e15b53530976cef14808552fdd34a"
+        "blob": "8c567d261f5573dcf9e952626646dfec293062b1"
       },
       {
         "path": "docs/reference/catalog.json",
@@ -704,7 +704,7 @@
     "sourceFiles": [
       {
         "path": "docs/plans/IMPLEMENTATION.md",
-        "blob": "83aa6cb4f42e15b53530976cef14808552fdd34a"
+        "blob": "8c567d261f5573dcf9e952626646dfec293062b1"
       },
       {
         "path": "docs/reference/aws/clients.md",
@@ -723,7 +723,7 @@
         "blob": "bbc9ff87d5fdff9032a356ae09ef5185b7ec6b9e"
       }
     ],
-    "verifiedAt": "2026-09-07"
+    "verifiedAt": "2026-09-09"
   },
   "0027": {
     "sourceFiles": [
@@ -840,14 +840,14 @@
       },
       {
         "path": "docs/plans/IMPLEMENTATION.md",
-        "blob": "83aa6cb4f42e15b53530976cef14808552fdd34a"
+        "blob": "8c567d261f5573dcf9e952626646dfec293062b1"
       },
       {
         "path": "docs/research/writing-custom-tools-and-mcp.md",
         "blob": "b8783951f68fb653a4235dd99daefa6c39653a41"
       }
     ],
-    "verifiedAt": "2026-09-07"
+    "verifiedAt": "2026-09-09"
   },
   "0031": {
     "sourceFiles": [
@@ -869,7 +869,7 @@
       },
       {
         "path": "docs/plans/IMPLEMENTATION.md",
-        "blob": "83aa6cb4f42e15b53530976cef14808552fdd34a"
+        "blob": "8c567d261f5573dcf9e952626646dfec293062b1"
       },
       {
         "path": "docs/ROADMAP.md",
@@ -978,7 +978,7 @@
       },
       {
         "path": "docs/plans/IMPLEMENTATION.md",
-        "blob": "83aa6cb4f42e15b53530976cef14808552fdd34a"
+        "blob": "8c567d261f5573dcf9e952626646dfec293062b1"
       },
       {
         "path": "docs/ROADMAP.md",
@@ -995,7 +995,7 @@
     "sourceFiles": [
       {
         "path": "docs/plans/IMPLEMENTATION.md",
-        "blob": "83aa6cb4f42e15b53530976cef14808552fdd34a"
+        "blob": "8c567d261f5573dcf9e952626646dfec293062b1"
       },
       {
         "path": "docs/ROADMAP.md",
@@ -1024,7 +1024,7 @@
       },
       {
         "path": "docs/plans/IMPLEMENTATION.md",
-        "blob": "83aa6cb4f42e15b53530976cef14808552fdd34a"
+        "blob": "8c567d261f5573dcf9e952626646dfec293062b1"
       },
       {
         "path": "packages/m3l-common/src/aws/credentials/manager.ts",
@@ -1172,7 +1172,7 @@
       },
       {
         "path": "docs/plans/IMPLEMENTATION.md",
-        "blob": "83aa6cb4f42e15b53530976cef14808552fdd34a"
+        "blob": "8c567d261f5573dcf9e952626646dfec293062b1"
       },
       {
         "path": "docs/reference/cli.md",
@@ -1214,7 +1214,7 @@
       },
       {
         "path": "docs/plans/IMPLEMENTATION.md",
-        "blob": "83aa6cb4f42e15b53530976cef14808552fdd34a"
+        "blob": "8c567d261f5573dcf9e952626646dfec293062b1"
       },
       {
         "path": "docs/reference/aws/clients.md",
@@ -1243,11 +1243,11 @@
       },
       {
         "path": "docs/plans/IMPLEMENTATION.md",
-        "blob": "83aa6cb4f42e15b53530976cef14808552fdd34a"
+        "blob": "8c567d261f5573dcf9e952626646dfec293062b1"
       },
       {
         "path": "docs/reference/core/checkpoint.md",
-        "blob": "3e9b743d77a88d45ef9eb4e05ac2c38bf8a2fb1d"
+        "blob": "ac6bc68047537ec1e65bb0d1828dfaf4412327cb"
       },
       {
         "path": "docs/reference/core/exporters.md",
@@ -1352,14 +1352,14 @@
       },
       {
         "path": "docs/plans/IMPLEMENTATION.md",
-        "blob": "83aa6cb4f42e15b53530976cef14808552fdd34a"
+        "blob": "8c567d261f5573dcf9e952626646dfec293062b1"
       },
       {
         "path": "docs/ROADMAP.md",
         "blob": "290eff3616805df4c50d647e8ca37fa9060caa05"
       }
     ],
-    "verifiedAt": "2026-09-08"
+    "verifiedAt": "2026-09-09"
   },
   "0052": {
     "sourceFiles": [
@@ -1410,7 +1410,7 @@
       },
       {
         "path": "docs/plans/IMPLEMENTATION.md",
-        "blob": "83aa6cb4f42e15b53530976cef14808552fdd34a"
+        "blob": "8c567d261f5573dcf9e952626646dfec293062b1"
       },
       {
         "path": "docs/reference/cli.md",
@@ -1421,7 +1421,7 @@
         "blob": "290eff3616805df4c50d647e8ca37fa9060caa05"
       }
     ],
-    "verifiedAt": "2026-09-08"
+    "verifiedAt": "2026-09-09"
   },
   "0054": {
     "sourceFiles": [
@@ -1457,14 +1457,14 @@
       },
       {
         "path": "docs/plans/IMPLEMENTATION.md",
-        "blob": "83aa6cb4f42e15b53530976cef14808552fdd34a"
+        "blob": "8c567d261f5573dcf9e952626646dfec293062b1"
       },
       {
         "path": "docs/research/agent-cli-integration.md",
         "blob": "b11e9abc25e2106e8ceaf2099c9d65d55b1c2cd4"
       }
     ],
-    "verifiedAt": "2026-09-07"
+    "verifiedAt": "2026-09-09"
   },
   "0059": {
     "sourceFiles": [
@@ -1527,10 +1527,10 @@
       },
       {
         "path": "docs/plans/IMPLEMENTATION.md",
-        "blob": "83aa6cb4f42e15b53530976cef14808552fdd34a"
+        "blob": "8c567d261f5573dcf9e952626646dfec293062b1"
       }
     ],
-    "verifiedAt": "2026-09-07"
+    "verifiedAt": "2026-09-09"
   },
   "0066": {
     "sourceFiles": [
@@ -1562,14 +1562,14 @@
     "sourceFiles": [
       {
         "path": "docs/plans/IMPLEMENTATION.md",
-        "blob": "83aa6cb4f42e15b53530976cef14808552fdd34a"
+        "blob": "8c567d261f5573dcf9e952626646dfec293062b1"
       },
       {
         "path": "docs/reference/console.md",
         "blob": "befbe839563b4a0ea65af1cab16de821db88c43f"
       }
     ],
-    "verifiedAt": "2026-09-07"
+    "verifiedAt": "2026-09-09"
   },
   "0070": {
     "sourceFiles": [
@@ -1579,7 +1579,7 @@
       },
       {
         "path": "docs/plans/IMPLEMENTATION.md",
-        "blob": "83aa6cb4f42e15b53530976cef14808552fdd34a"
+        "blob": "8c567d261f5573dcf9e952626646dfec293062b1"
       },
       {
         "path": "docs/reference/console.md",
@@ -1681,7 +1681,7 @@
       },
       {
         "path": "docs/plans/IMPLEMENTATION.md",
-        "blob": "83aa6cb4f42e15b53530976cef14808552fdd34a"
+        "blob": "8c567d261f5573dcf9e952626646dfec293062b1"
       },
       {
         "path": "docs/reference/catalog.json",
@@ -1734,14 +1734,14 @@
       },
       {
         "path": "docs/plans/IMPLEMENTATION.md",
-        "blob": "83aa6cb4f42e15b53530976cef14808552fdd34a"
+        "blob": "8c567d261f5573dcf9e952626646dfec293062b1"
       },
       {
         "path": "docs/ROADMAP.md",
         "blob": "290eff3616805df4c50d647e8ca37fa9060caa05"
       }
     ],
-    "verifiedAt": "2026-09-08"
+    "verifiedAt": "2026-09-09"
   },
   "0074": {
     "sourceFiles": [
@@ -1782,7 +1782,7 @@
       },
       {
         "path": "docs/plans/IMPLEMENTATION.md",
-        "blob": "83aa6cb4f42e15b53530976cef14808552fdd34a"
+        "blob": "8c567d261f5573dcf9e952626646dfec293062b1"
       },
       {
         "path": "docs/ROADMAP.md",
@@ -1801,7 +1801,7 @@
         "blob": "1f8b2f101cc806781a03fed5fcde4f4d90374095"
       }
     ],
-    "verifiedAt": "2026-09-08"
+    "verifiedAt": "2026-09-09"
   },
   "0078": {
     "sourceFiles": [
@@ -1876,7 +1876,7 @@
       },
       {
         "path": "docs/plans/IMPLEMENTATION.md",
-        "blob": "83aa6cb4f42e15b53530976cef14808552fdd34a"
+        "blob": "8c567d261f5573dcf9e952626646dfec293062b1"
       },
       {
         "path": "docs/ROADMAP.md",
@@ -2034,7 +2034,7 @@
       },
       {
         "path": "docs/plans/IMPLEMENTATION.md",
-        "blob": "83aa6cb4f42e15b53530976cef14808552fdd34a"
+        "blob": "8c567d261f5573dcf9e952626646dfec293062b1"
       },
       {
         "path": "docs/reference/cli.md",

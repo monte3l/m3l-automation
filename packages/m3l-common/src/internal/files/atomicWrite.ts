@@ -5,9 +5,10 @@
  * Not re-exported from any public barrel: this is a low-level filesystem
  * primitive, error-hierarchy-agnostic on purpose (it throws whatever
  * `fsp.writeFile`/`fsp.rename` throw, unwrapped) so a caller maps the failure
- * into its own typed `M3LError` subclass. `M3LCheckpointStore.write()` is the
- * first consumer; the checkpoint contract doc notes this could eventually be
- * promoted into a public `core/files` guard if a second caller emerges.
+ * into its own typed `M3LError` subclass. Now consumed by both
+ * `M3LCheckpointStore.write()` and `M3LFileListExporter.export()`; still
+ * deliberately kept internal rather than promoted — see the module's own
+ * privacy rationale above.
  *
  * @packageDocumentation
  */

@@ -158,7 +158,10 @@ export class M3LFileLoggerHandler implements M3LLoggerHandler {
    * here must not become an unhandled promise rejection and must not break
    * the sequential queue for subsequent writes, so it is caught and
    * reported to `process.stderr` as a best-effort diagnostic — `handle()`
-   * is synchronous and gives the caller no promise to await or catch.
+   * is synchronous and gives the caller no promise to await or catch. The
+   * diagnostic write itself is also guarded, so a broken/closed stderr
+   * stream (e.g. `EPIPE`) can never make this method — or the write queue
+   * it's chained onto — reject.
    */
   async #writeSnapshot(snapshot: readonly M3LLogEvent[]): Promise<void> {
     try {
@@ -172,9 +175,16 @@ export class M3LFileLoggerHandler implements M3LLoggerHandler {
         cause instanceof M3LError
           ? `[${cause.code}] ${cause.message}`
           : String(cause);
-      process.stderr.write(
-        `m3l-logging: M3LFileLoggerHandler failed to write log file: ${detail}\n`,
-      );
+      try {
+        process.stderr.write(
+          `m3l-logging: M3LFileLoggerHandler failed to write log file: ${detail}\n`,
+        );
+      } catch {
+        // Intentionally silent: a broken/closed stderr stream (e.g. EPIPE)
+        // must not mask the original write failure this diagnostic was
+        // reporting, and re-reporting through another channel would just
+        // relocate the same hazard.
+      }
     }
   }
 
