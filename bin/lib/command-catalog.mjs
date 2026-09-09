@@ -471,6 +471,11 @@ export const COMMAND_CATALOG = [
       "Warn-only preflight (ADR-0080) reporting missing OOM-livelock mitigations on this host — earlyoom/systemd-oomd inactive, no zram swap, no user-.slice MemoryMax, CLAUDE_CODE_TOOL_MEMORY_LIMIT unset, another claude process already running. Never exits non-zero; runs automatically once per session via a SessionStart hook. Run setup:host-resources to apply the fixes it reports.",
   },
   {
+    name: "bench:gates",
+    description:
+      "Adaptive-host-budgeting measurement harness (docs/plans/2026-09-08-adaptive-host-budgeting.md): times one or more heavy gates (lint, typecheck, build, test, the checks chain), reporting wall-clock, CPU efficiency, peak memory, and PSI deltas. `--print-budget` prints the detected host profile + derived budget without running anything. Measurement only — no consumer of its numbers exists yet.",
+  },
+  {
     name: "check:claude-cli-version",
     description:
       "Makes .claude-code-version the single authority for the Claude Code CLI that skill-evals.yml and maintain-scan.yml install with `npm install -g` (Scorecard alert #17, PinnedDependenciesID). Asserts every install site names the exact pinned version, rejecting an unpinned install, a shell-substituted version (Scorecard parses the command text, so `@$(cat ...)` still reads as unpinned), a version disagreeing with the file, and a pin no workflow reads at all. The deliberate inverse of check:node-version, which forbids a literal because setup-node can read a file; a `run:` step cannot, so here the literal is required and this gate keeps it honest. Dependabot does not bump versions inside `run:` steps, so this is the only drift detector.",
