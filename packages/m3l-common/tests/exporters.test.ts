@@ -9,24 +9,19 @@
  *   M3LBinaryFileExporter, M3LFileListExporter (9+ surfaced symbols).
  *
  * Key behavioral contracts:
- *  - M3LListExporter<TItem>: { export(items): Promise<void>; exportStream(): M3LListExporterStreamWriter<TItem> }.
- *    exportStream() is SYNCHRONOUS — no await. The writer exposes
- *    append(item): Promise<void> and close(): Promise<void>.
- *  - export(items) returns Promise<void> — no result object.
- *  - CSV/JSON/HTML list exporters extend M3LEventEmitterBase (on/off only,
- *    emit is protected); event map export:started / export:completed /
- *    export:error fires at the right lifecycle points; handler isolation is
- *    inherited (a throwing handler must not block a second handler).
+ *  - M3LListExporter<TItem>: export(items): Promise<void>; exportStream() is
+ *    SYNCHRONOUS, returning a writer with append(item)/close(): Promise<void>.
+ *  - CSV/JSON/HTML list exporters extend M3LEventEmitterBase (on/off only);
+ *    export:started/completed/error fire at the right points; a throwing
+ *    handler does not block a second handler.
  *  - JSON mode is inferred from extension (.jsonl => JSONL, else array),
- *    overridable via options.format.
- *  - HTML substitutes {{count}} / {{items}} / {{date}}.
+ *    overridable via options.format. HTML substitutes {{count}}/{{items}}/{{date}}.
  *  - Whole-file exporters (M3LFileExporter, M3LJSONFileExporter,
- *    M3LBinaryFileExporter, M3LFileListExporter) take { filePath } at
- *    construction, expose async export(content): Promise<void>, do NOT emit
- *    export:* events, and do NOT have exportStream().
+ *    M3LBinaryFileExporter, M3LFileListExporter) take { filePath }, expose
+ *    async export(content): Promise<void>, and do NOT emit export:* events
+ *    or have exportStream().
  *  - Error channel: a list exporter write/serialization failure emits
- *    export:error carrying an M3LError AND rejects the in-flight promise
- *    with that same M3LError, cause chained to the underlying failure.
+ *    export:error AND rejects with the same M3LError, cause chained.
  */
 
 import type { WriteStream } from "node:fs";
@@ -1893,7 +1888,7 @@ describe("M3LFileListExporter", () => {
     id: string;
   }
 
-  test("export(items) writes the whole list to the configured filePath in one call", async () => {
+  test("export(items) writes the whole list to the configured filePath's contents, exactly", async () => {
     let written = "";
     vi.spyOn(fsp, "writeFile").mockImplementation((_path, data) => {
       if (typeof data === "string") {
@@ -1908,13 +1903,16 @@ describe("M3LFileListExporter", () => {
       }
       return Promise.resolve();
     });
+    vi.spyOn(fsp, "rename").mockResolvedValue(undefined);
     const exporter = new M3LFileListExporter<Row>({
       filePath: "/exports/list.json",
     });
 
     await exporter.export([{ id: "1" }, { id: "2" }]);
 
-    expect(written.length).toBeGreaterThan(0);
+    // writeFileAtomic writes to a temp sibling of `filePath`, not
+    // `filePath` itself; see exporters-atomic-write.test.ts.
+    expect(JSON.parse(written)).toEqual([{ id: "1" }, { id: "2" }]);
   });
 
   test("rejects with an M3LError chaining the underlying cause when the write fails", async () => {
@@ -1934,6 +1932,7 @@ describe("M3LFileListExporter", () => {
     }
 
     expect(thrown).toBeInstanceOf(M3LError);
+    expect((thrown as M3LError).code).toBe("ERR_FILE_LIST_EXPORT");
     expect((thrown as M3LError).cause).toBe(writeError);
     expect((thrown as M3LError).context).toMatchObject({
       filePath: "/exports/is-a-directory",

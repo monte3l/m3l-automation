@@ -205,6 +205,24 @@ production:
   `columns: []` with `resumeFromByte > 0` is rejected the same as an absent
   `columns`.
 
+### `M3LFileListExporter` atomicity
+
+`M3LFileListExporter.export()` writes atomically: the serialized JSON array
+is first written to a temp sibling file (same directory as the target
+`filePath`), then renamed onto it. `rename(2)` is atomic on POSIX
+filesystems for paths on the same filesystem, so a concurrent reader of
+`filePath` always observes either the complete previous file or the complete
+new one — never a truncated or partially-written one. This closes a
+torn-read race a naive direct `fsp.writeFile` onto the live path has (the
+default `'w'` flag truncates before writing). On any failure the temp file is
+removed on a best-effort basis and the original error is wrapped into an
+`M3LError` (`ERR_FILE_LIST_EXPORT`) as usual.
+
+The other whole-file exporters (`M3LFileExporter`, `M3LJSONFileExporter`,
+`M3LBinaryFileExporter`) still write directly and do not yet carry this
+guarantee — the same class of race exists for them, tracked as follow-up
+work rather than fixed here.
+
 ## Notes and behavior
 
 - **CSV column conflicts** — `M3LCSVListExporter` uses `csv-stringify` over an `fs.WriteStream`. When merging original row data, column name collisions are resolved by `ColumnConflictStrategy`: `'keep-generated'` or `'keep-original'`.

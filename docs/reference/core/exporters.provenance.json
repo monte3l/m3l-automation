@@ -108,15 +108,15 @@
         {
           "file": "packages/m3l-common/src/core/exporters/M3LFileListExporter.ts",
           "symbol": "M3LFileListExporter",
-          "blob": "0399adb4096eae4bdb35f1f251039c87ea47ad6d"
+          "blob": "08a383e6532f088bef2bf7b7d57b677cd0515f10"
         },
         {
           "file": "packages/m3l-common/src/core/exporters/M3LFileListExporter.ts",
           "symbol": "M3LFileListExporterOptions",
-          "blob": "0399adb4096eae4bdb35f1f251039c87ea47ad6d"
+          "blob": "08a383e6532f088bef2bf7b7d57b677cd0515f10"
         }
       ],
-      "retrieved": "2026-08-15"
+      "retrieved": "2026-09-09"
     },
     {
       "heading": "The `M3LListExporter<TItem>` contract",
@@ -201,10 +201,10 @@
         {
           "file": "packages/m3l-common/src/core/exporters/M3LFileListExporter.ts",
           "symbol": "M3LFileListExporter",
-          "blob": "0399adb4096eae4bdb35f1f251039c87ea47ad6d"
+          "blob": "08a383e6532f088bef2bf7b7d57b677cd0515f10"
         }
       ],
-      "retrieved": "2026-08-15"
+      "retrieved": "2026-09-09"
     }
   ]
 }
