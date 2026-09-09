@@ -1,8 +1,10 @@
-import { describe, expect, test } from "vitest";
+import { join } from "node:path";
+import { describe, expect, test, vi } from "vitest";
 import {
   LANES,
   parseArgs,
   buildLaneCommand,
+  clearLaneCacheDir,
   median,
   isHostBusy,
   parseGnuTimeVerbose,
@@ -71,6 +73,19 @@ describe("LANES", () => {
     expect(LANES["build"]?.command).toBe(
       "pnpm exec turbo run build --concurrency=$(node bin/print-concurrency.mjs)",
     );
+  });
+
+  // Regression test: `format` is the first (and currently only) lane with a
+  // `cacheDir` — `--cold` needs it so the lane measures a true uncached
+  // Prettier run rather than silently reusing a previous invocation's cache.
+  test("format is the only lane with a cacheDir, and it points at Prettier's default cache location", () => {
+    expect(LANES["format"]?.cacheDir).toBe("node_modules/.cache/prettier");
+    expect(LANES["format"]?.command).toBe("pnpm format:check");
+    expect(LANES["format"]?.turbo).toBe(false);
+    for (const [name, lane] of Object.entries(LANES)) {
+      if (name === "format") continue;
+      expect(lane.cacheDir).toBeUndefined();
+    }
   });
 });
 
@@ -235,6 +250,66 @@ describe("buildLaneCommand", () => {
         "cold",
       ),
     ).toBe("echo 'turbo run fake' && pnpm exec turbo run build --force");
+  });
+});
+
+describe("clearLaneCacheDir", () => {
+  const cwd = "/repo";
+  const lane = {
+    command: "pnpm format:check",
+    turbo: false,
+    cacheDir: "node_modules/.cache/prettier",
+  };
+
+  test("cold mode + a lane with cacheDir calls remove with the joined cache path and force+recursive options", () => {
+    const remove = vi.fn();
+
+    clearLaneCacheDir(lane, "cold", cwd, remove);
+
+    expect(remove).toHaveBeenCalledTimes(1);
+    expect(remove).toHaveBeenCalledWith(join(cwd, lane.cacheDir), {
+      recursive: true,
+      force: true,
+    });
+  });
+
+  test("warm mode + a lane with cacheDir never calls remove", () => {
+    const remove = vi.fn();
+
+    clearLaneCacheDir(lane, "warm", cwd, remove);
+
+    expect(remove).not.toHaveBeenCalled();
+  });
+
+  test("cold mode + a lane with no cacheDir never calls remove and does not throw", () => {
+    const noCacheDirLane = {
+      command: "pnpm exec turbo run build",
+      turbo: true,
+    };
+    const remove = vi.fn();
+
+    expect(() =>
+      clearLaneCacheDir(noCacheDirLane, "cold", cwd, remove),
+    ).not.toThrow();
+    expect(remove).not.toHaveBeenCalled();
+  });
+
+  test("cold mode + an injected remove that throws (e.g. EACCES) is swallowed, not propagated", () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const remove = vi.fn(() => {
+      throw new Error("EACCES: permission denied");
+    });
+
+    expect(() => clearLaneCacheDir(lane, "cold", cwd, remove)).not.toThrow();
+
+    expect(remove).toHaveBeenCalledTimes(1);
+    expect(remove).toHaveBeenCalledWith(join(cwd, lane.cacheDir), {
+      recursive: true,
+      force: true,
+    });
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+
+    warnSpy.mockRestore();
   });
 });
 

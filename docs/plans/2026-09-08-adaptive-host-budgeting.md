@@ -50,4 +50,11 @@ table a submodule's reference page carries, gated by
 | P0    | `fix/earlyoom-process-matching` | Fix earlyoom `--prefer`/`--avoid` targeting + swap threshold + `lint:workspace` heap ceiling (Stage 0) | Done   |
 | P1    | `feat/host-profile`             | `bin/lib/host-profile.mjs` + `bin/bench-gates.mjs` (Stage 1)                                           | Done   |
 | P2    | `refactor/adaptive-concurrency` | Switch consumers to the derived budget; retire fixed caps (Stage 2)                                    | Done   |
-| P3    | —                               | Phase-2 tuning candidates, one PR each (Stage 3)                                                       | To Do  |
+| P3.1  | `feat/prettier-cache`           | Phase 2 #1: Prettier `--cache --cache-strategy content` on `format`/`format:check` (Stage 3)           | Doing  |
+| P3.2  | —                               | Phase 2 #2: `incremental`/`tsBuildInfoFile` on the tooling tsconfigs + `bin/tsconfig.json` (Stage 3)   | To Do  |
+| P3.3  | —                               | Phase 2 #3: ESLint `--cache --cache-strategy content`, local-only via `lint:fast` (Stage 3)            | To Do  |
+| P3.4  | —                               | Phase 2 #4: `--jobs N` for `bin/verify-all.mjs` (Stage 3)                                              | To Do  |
+| P3.5  | —                               | Phase 2 #5: lane scheduling (`--concurrent` vs `--isolated`, lefthook seam) (Stage 3)                  | To Do  |
+| P3.6  | —                               | Phase 2 #6: ESLint `--concurrency` > 1, after P3.3/P3.5 (Stage 3)                                      | To Do  |
+| P3.7  | —                               | Phase 2 #7: `/tmp` → tmpfs (Stage 3)                                                                   | To Do  |
+| P3.8  | —                               | Phase 2 #8: parallelise the 29-gate `checks` chain (Stage 3)                                           | To Do  |
