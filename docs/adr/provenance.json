@@ -40,7 +40,7 @@
     "sourceFiles": [
       {
         "path": "package.json",
-        "blob": "a3999ce79c45373dc501f9da6199cc0a920f24f1"
+        "blob": "60681ecf46c5bbe7ecd0faf23f5d3d573f396afd"
       },
       {
         "path": "packages/m3l-common/package.json",
@@ -97,7 +97,7 @@
       },
       {
         "path": "package.json",
-        "blob": "a3999ce79c45373dc501f9da6199cc0a920f24f1"
+        "blob": "60681ecf46c5bbe7ecd0faf23f5d3d573f396afd"
       },
       {
         "path": "packages/m3l-common/package.json",
@@ -130,7 +130,7 @@
       },
       {
         "path": "package.json",
-        "blob": "a3999ce79c45373dc501f9da6199cc0a920f24f1"
+        "blob": "60681ecf46c5bbe7ecd0faf23f5d3d573f396afd"
       },
       {
         "path": "packages/m3l-common/package.json",
@@ -172,7 +172,7 @@
     "sourceFiles": [
       {
         "path": "package.json",
-        "blob": "a3999ce79c45373dc501f9da6199cc0a920f24f1"
+        "blob": "60681ecf46c5bbe7ecd0faf23f5d3d573f396afd"
       },
       {
         "path": "packages/m3l-common/package.json",
@@ -248,7 +248,7 @@
       },
       {
         "path": "package.json",
-        "blob": "a3999ce79c45373dc501f9da6199cc0a920f24f1"
+        "blob": "60681ecf46c5bbe7ecd0faf23f5d3d573f396afd"
       }
     ],
     "verifiedAt": "2026-09-09"
@@ -257,7 +257,7 @@
     "sourceFiles": [
       {
         "path": "package.json",
-        "blob": "a3999ce79c45373dc501f9da6199cc0a920f24f1"
+        "blob": "60681ecf46c5bbe7ecd0faf23f5d3d573f396afd"
       }
     ],
     "verifiedAt": "2026-09-09"
@@ -307,7 +307,7 @@
       },
       {
         "path": "package.json",
-        "blob": "a3999ce79c45373dc501f9da6199cc0a920f24f1"
+        "blob": "60681ecf46c5bbe7ecd0faf23f5d3d573f396afd"
       }
     ],
     "verifiedAt": "2026-09-09"
@@ -360,7 +360,7 @@
       },
       {
         "path": "package.json",
-        "blob": "a3999ce79c45373dc501f9da6199cc0a920f24f1"
+        "blob": "60681ecf46c5bbe7ecd0faf23f5d3d573f396afd"
       }
     ],
     "verifiedAt": "2026-09-09"
@@ -506,7 +506,7 @@
       },
       {
         "path": "package.json",
-        "blob": "a3999ce79c45373dc501f9da6199cc0a920f24f1"
+        "blob": "60681ecf46c5bbe7ecd0faf23f5d3d573f396afd"
       }
     ],
     "verifiedAt": "2026-09-09"
@@ -552,7 +552,7 @@
       },
       {
         "path": "package.json",
-        "blob": "a3999ce79c45373dc501f9da6199cc0a920f24f1"
+        "blob": "60681ecf46c5bbe7ecd0faf23f5d3d573f396afd"
       },
       {
         "path": "pnpm-workspace.yaml",
@@ -783,7 +783,7 @@
       },
       {
         "path": "package.json",
-        "blob": "a3999ce79c45373dc501f9da6199cc0a920f24f1"
+        "blob": "60681ecf46c5bbe7ecd0faf23f5d3d573f396afd"
       }
     ],
     "verifiedAt": "2026-09-09"
@@ -877,7 +877,7 @@
       },
       {
         "path": "package.json",
-        "blob": "a3999ce79c45373dc501f9da6199cc0a920f24f1"
+        "blob": "60681ecf46c5bbe7ecd0faf23f5d3d573f396afd"
       },
       {
         "path": "packages/m3l-common/src/aws/clients/provider.ts",
@@ -974,7 +974,7 @@
       },
       {
         "path": "docs/logs/README.md",
-        "blob": "8c0e2cc4f12a180b155a8f059146d5ac18d2caf1"
+        "blob": "9276e2eb624d27f15f39e682c75ec46a5ca4759e"
       },
       {
         "path": "docs/plans/IMPLEMENTATION.md",
@@ -986,7 +986,7 @@
       },
       {
         "path": "package.json",
-        "blob": "a3999ce79c45373dc501f9da6199cc0a920f24f1"
+        "blob": "60681ecf46c5bbe7ecd0faf23f5d3d573f396afd"
       }
     ],
     "verifiedAt": "2026-09-09"
@@ -1062,7 +1062,7 @@
       },
       {
         "path": "package.json",
-        "blob": "a3999ce79c45373dc501f9da6199cc0a920f24f1"
+        "blob": "60681ecf46c5bbe7ecd0faf23f5d3d573f396afd"
       },
       {
         "path": "packages/m3l-common/package.json",
@@ -1222,7 +1222,7 @@
       },
       {
         "path": "package.json",
-        "blob": "a3999ce79c45373dc501f9da6199cc0a920f24f1"
+        "blob": "60681ecf46c5bbe7ecd0faf23f5d3d573f396afd"
       },
       {
         "path": "packages/m3l-common/src/aws/clients/provider.ts",
@@ -1277,7 +1277,7 @@
     "sourceFiles": [
       {
         "path": "package.json",
-        "blob": "a3999ce79c45373dc501f9da6199cc0a920f24f1"
+        "blob": "60681ecf46c5bbe7ecd0faf23f5d3d573f396afd"
       }
     ],
     "verifiedAt": "2026-09-09"
@@ -1701,7 +1701,7 @@
       },
       {
         "path": "package.json",
-        "blob": "a3999ce79c45373dc501f9da6199cc0a920f24f1"
+        "blob": "60681ecf46c5bbe7ecd0faf23f5d3d573f396afd"
       }
     ],
     "verifiedAt": "2026-09-09"
@@ -1901,7 +1901,7 @@
       },
       {
         "path": "bin/setup-host-resources.mjs",
-        "blob": "089bba43aab25cf8ef99fa401e370344f9ad14ee"
+        "blob": "d484e44fb401250325b4a9ad7b1b4151296d9a1e"
       },
       {
         "path": "bin/worktree-setup.mjs",
@@ -1925,11 +1925,11 @@
       },
       {
         "path": "docs/plans/2026-09-08-adaptive-host-budgeting.md",
-        "blob": "ba0b8cd5a7278ff00c51e7ae9882c94348794ad1"
+        "blob": "2b2f1b1e6d4d1e917d7bedeaf38bd36406cf32a6"
       },
       {
         "path": "package.json",
-        "blob": "a3999ce79c45373dc501f9da6199cc0a920f24f1"
+        "blob": "60681ecf46c5bbe7ecd0faf23f5d3d573f396afd"
       },
       {
         "path": "turbo.json",
@@ -2444,7 +2444,7 @@
       },
       {
         "path": "docs/logs/README.md",
-        "blob": "8c0e2cc4f12a180b155a8f059146d5ac18d2caf1"
+        "blob": "9276e2eb624d27f15f39e682c75ec46a5ca4759e"
       }
     ],
     "verifiedAt": "2026-09-09"
@@ -2453,7 +2453,7 @@
     "sourceFiles": [
       {
         "path": ".claude/rules/harness-artifacts.md",
-        "blob": "dfcb82c7e8c1e4a33c7c9ff318af989ddae4d46f"
+        "blob": "7d9ac9978820e3c478fc7ce3befea55c6b0b5317"
       },
       {
         "path": ".claude/rules/tests.md",
