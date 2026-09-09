@@ -20,6 +20,33 @@ const scriptPackageNames = readdirSync(new URL("./scripts/", import.meta.url), {
   .map((entry) => entry.name)
   .sort();
 
+// The test-I/O sandbox policy's fs-mutator name set (style-guide.md § Runner,
+// layout & the test-I/O policy; docs/adr/0100). symlink/link are excluded —
+// their argument order is (target, path), not (path, ...), and are matched
+// by their own selector below.
+const SANDBOX_FS_MUTATOR_NAMES =
+  "mkdtempSync|mkdirSync|writeFileSync|appendFileSync|rmSync|unlinkSync|rmdirSync|chmodSync|renameSync|cpSync|mkdtemp|mkdir|writeFile|appendFile|rm|unlink|rmdir|chmod|rename|cp";
+const SANDBOX_FS_LINK_NAMES = "symlinkSync|linkSync|symlink|link";
+const SANDBOX_FS_ALL_NAMES = `${SANDBOX_FS_MUTATOR_NAMES}|${SANDBOX_FS_LINK_NAMES}`;
+
+/**
+ * An esquery selector matching a call to one of `namesPattern` in EITHER a
+ * bare-identifier form (`mkdtemp(...)`) or a member-expression form on
+ * `fs`/`fsp`/`fsPromises` (`fs.mkdtemp(...)`, `fsp.mkdtemp(...)`) — so a
+ * "does this call use X" selector doesn't silently miss the member-call
+ * shape. A PR review caught exactly this gap in the sandbox-policy
+ * selectors below: the pre-fix cwd()/import.meta.dirname/tmpdir() checks
+ * matched only the identifier form, so `fs.mkdirSync(join(process.cwd(),
+ * ...))` passed uncaught even though the ban this replaced (member calls,
+ * unconditionally) used to catch it (docs/adr/0100).
+ *
+ * @param {string} namesPattern regex alternation, e.g. `"mkdtemp|mkdtempSync"`
+ * @returns {string}
+ */
+function sandboxFsCallEitherForm(namesPattern) {
+  return `CallExpression:matches([callee.type='Identifier'][callee.name=/^(${namesPattern})$/], [callee.type='MemberExpression'][callee.object.name=/^(fs|fsp|fsPromises)$/][callee.property.name=/^(${namesPattern})$/])`;
+}
+
 export default tseslint.config(
   {
     // Generated / vendored output is never linted.
@@ -1112,12 +1139,13 @@ export default tseslint.config(
     },
   },
   {
-    // Tests may use devDependencies and relax a few rules.
-    // The no-restricted-syntax entry bans real filesystem mutations — these make
-    // "unit" tests CI-green only when the live tree happens to match expectations
-    // (the #25 smell: mkdtempSync/writeFileSync against /tmp in pure unit tests).
-    // Read-only methods tests legitimately vi.spyOn (existsSync, readdirSync,
-    // accessSync) are NOT banned. Use vi.spyOn(fs, method) for everything else.
+    // Tests may use devDependencies. Kept as its own block, deliberately NOT
+    // merged with the no-restricted-syntax block below: flat config REPLACES
+    // a rule's value for whichever matching block comes last and never
+    // merges (see the comment on the scripts/*/src/**/*.ts block above for
+    // the same hazard), and the block below carries an `ignores` this one
+    // must not — an integration test still needs the devDependencies
+    // exemption even though it's exempt from the fs/network sandbox rule.
     // `.tsx` widened on for packages/m3l-console-web's component tests.
     files: [
       "**/tests/**/*.ts",
@@ -1127,19 +1155,115 @@ export default tseslint.config(
     ],
     rules: {
       "import-x/no-extraneous-dependencies": "off",
+    },
+  },
+  {
+    // The test-I/O sandbox policy (style-guide.md § Runner, layout & the
+    // test-I/O policy; docs/adr/0100-test-fs-sandbox-isolation.md). Real
+    // filesystem access is permitted in a test ONLY inside a per-test root
+    // from mkdtemp()/mkdtempSync() under os.tmpdir(), removed in teardown —
+    // never the repo tree, process.cwd(), the module's own directory, or a
+    // fixed path. This replaced a blanket ban on any fs.<mutator>() member
+    // call (the #25 smell: mkdtempSync/writeFileSync against /tmp in a
+    // "unit" test), which caught only that one call SHAPE regardless of
+    // whether the path was sandboxed — the exact asymmetry that pushed three
+    // files (checkpoint.test.ts, exporters.test.ts,
+    // tests/integration/store.integration.test.ts) into a documented
+    // bare-import workaround specifically to stay outside it (issue #862).
+    // These selectors key on the PATH SHAPE instead, so a sandboxed call is
+    // never flagged regardless of import style.
+    //
+    // `**/tests/integration/**` is exempt: it runs under its own
+    // vitest.integration.config.ts and the sandbox policy was never written
+    // for that layer (docs/adr/0100). Excluding it here — rather than on the
+    // block above — is why this is its own block: putting `ignores` on the
+    // shared block would also drop its devDependencies exemption, which an
+    // integration test still needs.
+    //
+    // Read-only methods (existsSync, readdirSync, accessSync, statSync, ...)
+    // are NOT restricted here — a gate legitimately reading the real repo
+    // tree (docs/, a manifest) is fine; only mutation is sandbox-constrained.
+    files: [
+      "**/tests/**/*.ts",
+      "**/tests/**/*.tsx",
+      "**/*.test.ts",
+      "**/*.test.tsx",
+    ],
+    ignores: ["**/tests/integration/**"],
+    rules: {
       "no-restricted-syntax": [
         "error",
         {
           selector:
-            "CallExpression[callee.type='MemberExpression'][callee.object.name=/^(fs|fsp|fsPromises)$/][callee.property.name=/^(mkdtempSync|mkdirSync|writeFileSync|appendFileSync|rmSync|unlinkSync|rmdirSync|mkdtemp|mkdir|writeFile|appendFile|rm|unlink|rmdir)$/]",
-          message:
-            "Mutating filesystem calls are banned in unit tests. Use vi.spyOn(fs, method) or vi.mock('node:fs') instead.",
-        },
-        {
-          selector:
             "CallExpression[callee.type='Identifier'][callee.name='fetch']",
           message:
-            "Bare fetch() in unit tests makes real network calls. Use vi.spyOn or mock the collaborator.",
+            "Bare fetch() in tests makes a real network call. Use vi.spyOn or mock the collaborator (style-guide.md § Runner, layout & the test-I/O policy).",
+        },
+        {
+          // The common case: path is argument 0. symlink/link are handled
+          // separately below — they take (target, path), not (path, ...).
+          // Matches a string literal OR a no-substitution template literal
+          // (`/tmp/x`) — a plain backtick string is just as hard-coded as a
+          // quoted one, and checking only `Literal` would leave exactly the
+          // kind of call-form gap issue #862 itself was about.
+          selector: `CallExpression[callee.type='Identifier'][callee.name=/^(${SANDBOX_FS_MUTATOR_NAMES})$/]:matches([arguments.0.type='Literal'], [arguments.0.type='TemplateLiteral'][arguments.0.expressions.length=0])`,
+          message:
+            "A hard-coded path in a mutating fs call bypasses the sandbox — use a per-test mkdtemp() root instead (style-guide.md § Runner, layout & the test-I/O policy).",
+        },
+        {
+          // symlinkSync/symlink/linkSync/link take (target, path): argument
+          // 0 is the link's target NAME (often a bare relative string on
+          // purpose, e.g. symlink("2026-01-01-0003.jsonl", path.join(dir,
+          // "..."))) — not a path being written. Argument 1 is the real
+          // filesystem path. A selector checking arguments.0 uniformly
+          // across every fs mutator flags that target name as a hard-coded
+          // path when it is nothing of the sort — caught live against
+          // storage-append-only-segments-listing.test.ts:656-661 while
+          // validating this selector (docs/adr/0100).
+          selector: `CallExpression[callee.type='Identifier'][callee.name=/^(${SANDBOX_FS_LINK_NAMES})$/]:matches([arguments.1.type='Literal'], [arguments.1.type='TemplateLiteral'][arguments.1.expressions.length=0])`,
+          message:
+            "A hard-coded path in symlink()/link()'s second argument bypasses the sandbox — use a per-test mkdtemp() root instead (style-guide.md § Runner, layout & the test-I/O policy).",
+        },
+        {
+          // Same forms as above, via a member-expression call
+          // (fs.mkdirSync(...), fsp.writeFile(...)) — the shape the original
+          // selector caught, kept so that form is still covered.
+          selector: `CallExpression[callee.type='MemberExpression'][callee.object.name=/^(fs|fsp|fsPromises)$/][callee.property.name=/^(${SANDBOX_FS_ALL_NAMES})$/]:matches([arguments.0.type='Literal'], [arguments.0.type='TemplateLiteral'][arguments.0.expressions.length=0])`,
+          message:
+            "A hard-coded path in a mutating fs call bypasses the sandbox — use a per-test mkdtemp() root instead (style-guide.md § Runner, layout & the test-I/O policy).",
+        },
+        {
+          // process.cwd() anywhere in the argument subtree — e.g.
+          // mkdirSync(join(process.cwd(), "out")). Matches identifier AND
+          // member-call form (fs.mkdirSync(...)) via sandboxFsCallEitherForm
+          // — a PR review found the identifier-only form let a member call
+          // through uncaught, a net loss versus the unconditional
+          // member-call ban this selector set replaced (docs/adr/0100).
+          selector: `${sandboxFsCallEitherForm(SANDBOX_FS_ALL_NAMES)} CallExpression[callee.object.name='process'][callee.property.name='cwd']`,
+          message:
+            "process.cwd()-rooted path in a mutating fs call bypasses the sandbox — use a per-test mkdtemp() root instead (style-guide.md § Runner, layout & the test-I/O policy).",
+        },
+        {
+          // import.meta.dirname anywhere in the argument subtree. Same
+          // either-form coverage as the cwd() selector above.
+          selector: `${sandboxFsCallEitherForm(SANDBOX_FS_ALL_NAMES)} MetaProperty[meta.name='import'][property.name='meta']`,
+          message:
+            "import.meta.dirname-rooted path in a mutating fs call bypasses the sandbox — use a per-test mkdtemp() root instead (style-guide.md § Runner, layout & the test-I/O policy).",
+        },
+        {
+          // A mkdtemp/mkdtempSync call (either form) not rooted at
+          // os.tmpdir() — e.g. mkdtempSync(join(homedir(), "m3l-")). The
+          // inner tmpdir() check matches either form too: `[callee.name=
+          // 'tmpdir']` alone missed a default `import os from "node:os"`
+          // call site (`os.tmpdir()`, a MemberExpression with no top-level
+          // `.name`), which a PR review caught — the tree was green only
+          // because every current call site imports `tmpdir` named
+          // (docs/adr/0100). check:test-fs-isolation complements this with
+          // the one rule no per-node selector can express: a mkdtemp with
+          // no matching rm/rmSync anywhere in the file.
+          selector: `${sandboxFsCallEitherForm("mkdtemp|mkdtempSync")}:not(:has(CallExpression:matches([callee.type='Identifier'][callee.name='tmpdir'], [callee.type='MemberExpression'][callee.property.name='tmpdir'])))`,
+          message:
+            "mkdtemp()'s root must be under os.tmpdir() (style-guide.md § Runner, layout & the test-I/O policy).",
         },
       ],
     },

@@ -379,6 +379,11 @@ export const VERIFY_STEPS = [
     cmd: () => "pnpm check:file-budget",
   },
   {
+    ciStepName: "Check test filesystem isolation",
+    id: "check-test-fs-isolation",
+    cmd: () => "pnpm check:test-fs-isolation",
+  },
+  {
     ciStepName: "Check script scaffold conformance",
     id: "check-script-scaffold",
     cmd: () => "pnpm check:script-scaffold",

@@ -59,12 +59,11 @@ vi.mock("node:fs/promises", async () => {
 });
 
 // Named imports (not `fsp.<method>` member calls) are used for every direct,
-// real-filesystem call in this file: the repo's `no-restricted-syntax` guard
-// bans mutating `fs`/`fsp`/`fsPromises` *member-expression* calls in tests,
-// but a bare identifier call (`mkdtemp(...)`) is unaffected — the same
-// pattern `tests/files.test.ts` already relies on. `fsp` itself is retained
-// only as the `vi.spyOn(fsp, "...")` target for the handful of tests that
-// force a specific rejection.
+// real-filesystem call in this file: these are the mkdtemp-sandbox real-fs
+// calls the test-I/O policy permits (style-guide.md § Runner, layout & the
+// test-I/O policy). `fsp` itself is retained only as the
+// `vi.spyOn(fsp, "...")` target for the handful of tests that force a
+// specific rejection.
 import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 
 import {

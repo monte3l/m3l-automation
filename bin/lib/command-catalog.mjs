@@ -341,6 +341,11 @@ export const COMMAND_CATALOG = [
       "Verifies the per-submodule test counts recorded in docs/implementation-status.md's Notes column match the live Vitest suite. CI and pre-push both run this. Run after adding/removing tests for an implemented submodule.",
   },
   {
+    name: "check:test-fs-isolation",
+    description:
+      "Test-I/O sandbox policy (docs/adr/0100): flags a test file that creates a mkdtemp()/mkdtempSync() sandbox with no matching rm()/rmSync() anywhere in the file — the one rule no eslint.config.js no-restricted-syntax selector can express. CI and pre-push both run this.",
+  },
+  {
     name: "check:review-size",
     description:
       "Reproduces claude-pr-review.yml's reviewable-size measurement locally against origin/main...HEAD (ADR-0072): warns above the 75,000-char soft target, fails above the workflow's MAX_REVIEWABLE_BYTES ceiling. Run before opening a PR.",

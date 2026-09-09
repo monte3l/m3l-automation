@@ -21,14 +21,12 @@ import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 
-// Bare named imports (not `fsp.mkdtemp(...)` member calls): the repo's
-// `no-restricted-syntax` guard bans mutating `fs`/`fsp`/`fsPromises`
-// *member-expression* calls in tests (the #25 smell: mkdtempSync/writeFileSync
-// against /tmp in a *unit* test making it green only when the live tree
-// happens to match). A bare identifier call is unaffected, and this file is
-// explicitly an integration test whose entire point is real filesystem I/O —
-// see `packages/m3l-common/tests/checkpoint.test.ts:61-67` for the same
-// pattern and rationale.
+// `**/tests/integration/**` is exempt from the test-I/O sandbox policy
+// entirely (both the fs and network rules) — it runs under its own
+// `vitest.integration.config.ts`, and the sandbox policy was never written
+// for this layer (style-guide.md § Runner, layout & the test-I/O policy;
+// docs/adr/0100). Real, unmocked filesystem I/O is fine here because that is
+// the entire point of this integration suite.
 import { mkdtemp, rm, stat, writeFile } from "node:fs/promises";
 
 import { M3LConsoleError } from "../../src/errors/console-error.js";
