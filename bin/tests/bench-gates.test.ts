@@ -56,6 +56,22 @@ describe("LANES", () => {
       expect(lane.command.startsWith("pnpm exec turbo run ")).toBe(true);
     }
   });
+
+  // Regression test: `turbo.json`'s old static `"concurrency": "50%"` field
+  // was removed elsewhere, so a turbo-backed lane whose command drops
+  // `--concurrency=` silently falls back to turbo's own default of 10
+  // concurrent tasks — oversubscribing the host and no longer measuring the
+  // same concurrency `pnpm build`/`pnpm typecheck` actually run at. A
+  // prefix-only check (above) cannot catch a flag dropped from the middle
+  // or end of the command, so this asserts the exact full string.
+  test("turbo:typecheck and build always carry --concurrency=, never turbo's bare default", () => {
+    expect(LANES["turbo:typecheck"]?.command).toBe(
+      "pnpm exec turbo run typecheck --concurrency=$(node bin/print-concurrency.mjs)",
+    );
+    expect(LANES["build"]?.command).toBe(
+      "pnpm exec turbo run build --concurrency=$(node bin/print-concurrency.mjs)",
+    );
+  });
 });
 
 describe("parseArgs", () => {
@@ -150,16 +166,27 @@ describe("parseArgs", () => {
 });
 
 describe("buildLaneCommand", () => {
+  // Fixtures use the real "pnpm exec turbo run <task>" shape every LANES
+  // entry actually has — `buildLaneCommand`'s --force-insertion regex is
+  // anchored on that full literal prefix (not a bare "turbo run"), so a
+  // bare-"turbo run" fixture no longer matches and would silently return
+  // unchanged.
   test("cold + turbo lane appends --force", () => {
     expect(
-      buildLaneCommand({ command: "turbo run build", turbo: true }, "cold"),
-    ).toBe("turbo run build --force");
+      buildLaneCommand(
+        { command: "pnpm exec turbo run build", turbo: true },
+        "cold",
+      ),
+    ).toBe("pnpm exec turbo run build --force");
   });
 
   test("warm + turbo lane is unchanged", () => {
     expect(
-      buildLaneCommand({ command: "turbo run build", turbo: true }, "warm"),
-    ).toBe("turbo run build");
+      buildLaneCommand(
+        { command: "pnpm exec turbo run build", turbo: true },
+        "warm",
+      ),
+    ).toBe("pnpm exec turbo run build");
   });
 
   test("cold + non-turbo lane is unchanged", () => {
@@ -171,23 +198,43 @@ describe("buildLaneCommand", () => {
   test("--force is inserted right after the task name, not appended at the end", () => {
     expect(
       buildLaneCommand(
-        { command: "turbo run build --filter=foo", turbo: true },
+        { command: "pnpm exec turbo run build --filter=foo", turbo: true },
         "cold",
       ),
-    ).toBe("turbo run build --force --filter=foo");
+    ).toBe("pnpm exec turbo run build --force --filter=foo");
   });
 
-  // The `turbo run <task>` substring can now appear anywhere in the command
-  // (e.g. prefixed with "pnpm exec "), not only at position 0 — the real
-  // shape every LANES entry uses. This proves the unanchored regex still
-  // finds and augments it when it isn't at the start of the string.
-  test("finds and augments 'turbo run <task>' when it is not at the start of the command", () => {
+  // The anchor is on the literal "pnpm exec turbo run" substring, not on
+  // string-start position 0 — this proves the regex still finds and
+  // augments it when preceded by other text (e.g. an env-var assignment),
+  // distinct from the tests above where the anchor happens to sit at index
+  // 0 of the whole command.
+  test("finds and augments 'pnpm exec turbo run <task>' when it is not at the start of the command", () => {
     expect(
       buildLaneCommand(
-        { command: "pnpm exec turbo run build", turbo: true },
+        { command: "FOO=bar pnpm exec turbo run build", turbo: true },
         "cold",
       ),
-    ).toBe("pnpm exec turbo run build --force");
+    ).toBe("FOO=bar pnpm exec turbo run build --force");
+  });
+
+  // Regression test for the bot-flagged Nit that motivated anchoring the
+  // regex on the full "pnpm exec turbo run" prefix: an unanchored
+  // `/(turbo run \S+)/` would match the FIRST "turbo run <word>" substring
+  // anywhere in the command — including one sitting inside an unrelated
+  // quoted argument — and append --force there instead of (or in addition
+  // to) the real invocation. The anchored form must only ever touch the
+  // real "pnpm exec turbo run <task>" occurrence.
+  test("does not append --force to an unrelated 'turbo run' substring inside a quoted argument", () => {
+    expect(
+      buildLaneCommand(
+        {
+          command: "echo 'turbo run fake' && pnpm exec turbo run build",
+          turbo: true,
+        },
+        "cold",
+      ),
+    ).toBe("echo 'turbo run fake' && pnpm exec turbo run build --force");
   });
 });
 

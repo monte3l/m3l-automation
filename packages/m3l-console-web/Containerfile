@@ -33,7 +33,7 @@ COPY . .
 # (`gypfile: false`), so pnpm never triggers a native build for it regardless
 # of `--ignore-scripts`.
 RUN pnpm install --frozen-lockfile --ignore-scripts
-RUN pnpm exec turbo run build --filter=@m3l-automation/m3l-console-web...
+RUN pnpm exec turbo run build --filter=@m3l-automation/m3l-console-web... --concurrency=$(node bin/print-concurrency.mjs)
 
 # `nginx-unprivileged` (not plain `nginx`): the only published port in
 # console-pod.yaml belongs to this image, and it is the SSE reverse proxy

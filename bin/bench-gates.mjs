@@ -91,9 +91,17 @@ export const LANES = Object.freeze({
   format: { command: "pnpm format:check", turbo: false },
   "lint:library": { command: "pnpm lint:library", turbo: false },
   "lint:workspace": { command: "pnpm lint:workspace", turbo: false },
-  "turbo:typecheck": { command: "pnpm exec turbo run typecheck", turbo: true },
+  "turbo:typecheck": {
+    command:
+      "pnpm exec turbo run typecheck --concurrency=$(node bin/print-concurrency.mjs)",
+    turbo: true,
+  },
   "tsc:bin": { command: "pnpm exec tsc -p bin/tsconfig.json", turbo: false },
-  build: { command: "pnpm exec turbo run build", turbo: true },
+  build: {
+    command:
+      "pnpm exec turbo run build --concurrency=$(node bin/print-concurrency.mjs)",
+    turbo: true,
+  },
   "test:unit": { command: "pnpm exec vitest run", turbo: false },
   "test:bin": {
     command: "pnpm exec vitest run --config vitest.bin.config.ts",
@@ -179,7 +187,11 @@ export function parseArgs(argv) {
  */
 export function buildLaneCommand(lane, mode) {
   if (mode === "cold" && lane.turbo) {
-    return lane.command.replace(/(turbo run \S+)/, "$1 --force");
+    // Anchored on the full "pnpm exec turbo run" prefix (every turbo-backed
+    // lane's actual shape) rather than a bare "turbo run" — the bare form
+    // could in principle match inside a quoted argument elsewhere in the
+    // command string, which this anchor rules out.
+    return lane.command.replace(/(pnpm exec turbo run \S+)/, "$1 --force");
   }
   return lane.command;
 }
