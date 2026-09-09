@@ -167,7 +167,7 @@ describe("buildUserSliceOverride", () => {
 describe("buildClaudeRcOverride", () => {
   test("produces the fixed MemoryMax + OOMPolicy drop-in", () => {
     expect(buildClaudeRcOverride()).toBe(
-      "[Service]\nMemoryMax=6G\nOOMPolicy=kill\n",
+      "[Service]\nMemoryMax=10G\nOOMPolicy=kill\n",
     );
   });
 });

@@ -183,10 +183,17 @@ export function buildUserSliceOverride(totalMemGiB) {
 /**
  * Build the claude-rc.service drop-in, if that unit exists on this host.
  *
+ * MemoryMax is 10G, deliberately above the 9G CLAUDE_CODE_TOOL_MEMORY_LIMIT
+ * (step 6, below) that spawned sessions inherit from
+ * `.claude/settings.local.json`. If this ceiling sat at or below that limit,
+ * the cgroup's OOMPolicy=kill would race the tool limit's own targeted kill
+ * and could win — tearing down every session in the unit at once instead of
+ * just the one tool call that overran its budget.
+ *
  * @returns {string}
  */
 export function buildClaudeRcOverride() {
-  return "[Service]\nMemoryMax=6G\nOOMPolicy=kill\n";
+  return "[Service]\nMemoryMax=10G\nOOMPolicy=kill\n";
 }
 
 /**
