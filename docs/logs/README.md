@@ -293,3 +293,4 @@ target was renamed is repaired via `RENAMED_TARGETS` in
 | 2026-09-08 | earlyoom process-matching fix + lint:workspace heap ceiling — P0 of ADR-0080 follow-on (PR #1134) | [earlyoom-process-matching](./2026-09-08-earlyoom-process-matching.md)                     |
 | 2026-09-09 | Dependabot #33-38 + Trivy #22-25 alert remediation (PR #1138/#1139)                               | [dependabot-trivy-alerts](./2026-09-09-dependabot-trivy-alerts.md)                         |
 | 2026-09-09 | host-profile.mjs + bench-gates.mjs — P1 of adaptive-host-budgeting wave (PR #1136)                | [host-profile](./2026-09-09-host-profile.md)                                               |
+| 2026-09-09 | vitest/turbo switched to derived budget — P2 of adaptive-host-budgeting wave (PR #1143)           | [adaptive-concurrency](./2026-09-09-adaptive-concurrency.md)                               |
