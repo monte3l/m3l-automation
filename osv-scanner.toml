@@ -1,0 +1,12 @@
+# Ignore list for OpenSSF Scorecard's Vulnerabilities check (ADR-0015),
+# which runs OSV-Scanner internally and reads this file from the repo root,
+# next to pnpm-lock.yaml. See https://google.github.io/osv-scanner/configuration/.
+#
+# This does NOT suppress `pnpm audit` or Dependabot — only Scorecard's OSV
+# query. Dependabot alert #34 for the same advisory was separately dismissed
+# (state=dismissed, reason=not_used) via the GitHub API with the identical
+# reachability rationale below.
+
+[[IgnoredVulns]]
+id = "GHSA-vwc7-r8mq-g2x9"
+reason = "adm-zip 0.6.0 (packages/m3l-common devDependency + optional peer) is the latest release; no patched version exists. Advisory covers extractAllTo/extractEntryTo following destination symlinks. packages/m3l-common/src/core/text/zip.ts never calls either API — it uses getEntries()+entry.getData() in memory only, and writes nested entries itself via path.join(mkdtemp(), path.basename(entryName)). adm-zip is also lazily imported (await import(\"adm-zip\")), loaded only if a consumer installs the optional peer. Re-evaluate if zip.ts ever adopts an adm-zip extraction API, or if a patched release ships."
