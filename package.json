@@ -17,8 +17,8 @@
     "node": ">=24"
   },
   "scripts": {
-    "build": "turbo run build",
-    "typecheck": "turbo run typecheck && tsc -p bin/tsconfig.json",
+    "build": "turbo run build --concurrency=$(node bin/print-concurrency.mjs)",
+    "typecheck": "turbo run typecheck --concurrency=$(node bin/print-concurrency.mjs) && tsc -p bin/tsconfig.json",
     "lint": "pnpm lint:library && pnpm lint:workspace",
     "lint:library": "eslint packages/m3l-common --concurrency=1",
     "lint:workspace": "NODE_OPTIONS=\"${NODE_OPTIONS:+$NODE_OPTIONS }--max-old-space-size=8192\" eslint . --ignore-pattern 'packages/m3l-common/**' --concurrency=1",

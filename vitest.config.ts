@@ -1,19 +1,21 @@
 import { defineConfig } from "vitest/config";
+import { detectHostProfile, deriveBudget } from "./bin/lib/host-profile.mjs";
+
+// docs/plans/2026-09-08-adaptive-host-budgeting.md, Stage 2: replaces the old
+// fixed `maxWorkers: "50%"` (a blind percentage of raw logical cores, wrong
+// on SMT/P-E-core hosts) with `deriveBudget`'s `concurrentLaneWorkers` — the
+// same halving ratio, now computed from real physical/performance cores and
+// available memory. This run is one of several heavy processes lefthook's
+// `pre-push` runs CONCURRENTLY (`parallel: true`) — a 19-package `turbo run
+// typecheck` and a 19-package `turbo run build` fire at the same time — so
+// `concurrentLaneWorkers` already accounts for those siblings (see that
+// field's own doc comment in bin/lib/host-profile.mjs for the CI exemption).
+const { concurrentLaneWorkers } = deriveBudget(detectHostProfile());
 
 export default defineConfig({
   test: {
     pool: "forks",
-    // ADR-0080: cap the pool at half of this host's cores instead of
-    // Vitest's own default (`availableParallelism() - 1`, i.e. nearly every
-    // core). A percentage (Vitest 4 top-level `maxWorkers`, replacing the
-    // removed `poolOptions.forks.maxForks`) scales with whatever host runs
-    // it. This run is one of several heavy processes lefthook's `pre-push`
-    // runs CONCURRENTLY (`parallel: true`) — a 19-package `turbo run
-    // typecheck` and a 19-package `turbo run build` fire at the same time —
-    // so leaving half the cores unclaimed here gives turbo's own (also
-    // capped, see turbo.json) concurrency room instead of both processes
-    // racing for every core at once.
-    maxWorkers: "50%",
+    maxWorkers: concurrentLaneWorkers,
     include: ["**/tests/**/*.test.ts", "**/*.test.ts"],
     // `.claude/worktrees/**` holds nested checkouts of other branches; running
     // their tests from the main tree is wrong and pollutes the run.

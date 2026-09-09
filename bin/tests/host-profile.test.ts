@@ -686,4 +686,45 @@ describe("deriveBudget", () => {
     expect(budget.memoryBoundWorkers).toBe(1);
     expect(budget.workers).toBeGreaterThanOrEqual(1);
   });
+
+  test("concurrentLaneWorkers halves an even workers count outside CI", () => {
+    // 8 physical cores, plenty of memory, single session -> workers = 8.
+    const profile = { ...baseProfile, physicalCores: 8, logicalCores: 8 };
+    const budget = deriveBudget(profile);
+    expect(budget.workers).toBe(8);
+    expect(budget.concurrentLaneWorkers).toBe(4);
+  });
+
+  test("concurrentLaneWorkers floors at 1, never 0, when halving workers=1", () => {
+    const profile = {
+      ...baseProfile,
+      availableMemGiB: 1,
+    };
+    const budget = deriveBudget(profile, { perWorkerGiB: 2 });
+    expect(budget.workers).toBe(1);
+    expect(budget.concurrentLaneWorkers).toBe(1);
+  });
+
+  test("concurrentLaneWorkers floors an odd workers count outside CI", () => {
+    // 5 physical cores, plenty of memory, single session -> workers = 5.
+    const profile = { ...baseProfile, physicalCores: 5, logicalCores: 5 };
+    const budget = deriveBudget(profile);
+    expect(budget.workers).toBe(5);
+    expect(budget.concurrentLaneWorkers).toBe(2);
+  });
+
+  test("concurrentLaneWorkers equals the full workers value in CI, unhalved", () => {
+    // CI budgets for a single session regardless of the profile's own count,
+    // and earns the whole machine — no sibling-lane halving either.
+    const profile = {
+      ...baseProfile,
+      isCI: true,
+      sessions: 5,
+      physicalCores: 8,
+      logicalCores: 8,
+    };
+    const budget = deriveBudget(profile);
+    expect(budget.workers).toBe(8);
+    expect(budget.concurrentLaneWorkers).toBe(8);
+  });
 });

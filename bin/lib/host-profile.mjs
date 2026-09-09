@@ -648,6 +648,7 @@ const DEFAULT_PER_WORKER_GIB = 1;
  *   memoryBoundWorkers: number,
  *   workers: number,
  *   limitedBy: "cpu" | "memory",
+ *   concurrentLaneWorkers: number,
  * }} HostBudget
  */
 
@@ -682,6 +683,18 @@ export function deriveBudget(profile, opts = {}) {
     Math.floor(profile.availableMemGiB / perWorkerGiB),
   );
   const workers = Math.max(1, Math.min(perSessionCores, memoryBoundWorkers));
+  // `workers` is the full budget for ONE exclusive lane. Locally, `pre-push`
+  // (lefthook.yml `parallel: true`) runs several CPU-fanout lanes at once —
+  // turbo's typecheck, turbo's build, and vitest's own fork pool — so each
+  // must independently claim only a share of `workers`, the same ratio
+  // ADR-0080's fixed `50%` constants encoded (halving), now computed from
+  // real cores/memory instead of a blind percentage of logical cores. A CI
+  // runner has no such sibling-lane contention — each gate is its own job on
+  // its own container — so it earns the whole `workers` budget, matching the
+  // "CI earns the whole machine" rule already applied to `sessions` above.
+  const concurrentLaneWorkers = profile.isCI
+    ? workers
+    : Math.max(1, Math.floor(workers / 2));
   return {
     effectiveCores,
     sessions,
@@ -689,5 +702,6 @@ export function deriveBudget(profile, opts = {}) {
     memoryBoundWorkers,
     workers,
     limitedBy: perSessionCores <= memoryBoundWorkers ? "cpu" : "memory",
+    concurrentLaneWorkers,
   };
 }

@@ -49,5 +49,5 @@ table a submodule's reference page carries, gated by
 | ----- | ------------------------------- | ------------------------------------------------------------------------------------------------------ | ------ |
 | P0    | `fix/earlyoom-process-matching` | Fix earlyoom `--prefer`/`--avoid` targeting + swap threshold + `lint:workspace` heap ceiling (Stage 0) | Done   |
 | P1    | `feat/host-profile`             | `bin/lib/host-profile.mjs` + `bin/bench-gates.mjs` (Stage 1)                                           | Done   |
-| P2    | —                               | Switch consumers to the derived budget; retire fixed caps (Stage 2)                                    | To Do  |
+| P2    | `refactor/adaptive-concurrency` | Switch consumers to the derived budget; retire fixed caps (Stage 2)                                    | Done   |
 | P3    | —                               | Phase-2 tuning candidates, one PR each (Stage 3)                                                       | To Do  |

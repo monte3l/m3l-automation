@@ -1,4 +1,10 @@
 import { defineConfig } from "vitest/config";
+import { detectHostProfile, deriveBudget } from "./bin/lib/host-profile.mjs";
+
+// docs/plans/2026-09-08-adaptive-host-budgeting.md, Stage 2 — see
+// vitest.config.ts's header comment for the full rationale behind
+// `concurrentLaneWorkers` replacing the old fixed `maxWorkers: "50%"`.
+const { concurrentLaneWorkers } = deriveBudget(detectHostProfile());
 
 // Separate coverage run for bin/ tooling, invoked as a second pass by
 // `pnpm test:coverage` (see package.json) alongside the main vitest.config.ts
@@ -30,10 +36,7 @@ import { defineConfig } from "vitest/config";
 export default defineConfig({
   test: {
     pool: "forks",
-    // ADR-0080: cap the pool at half of this host's cores — see
-    // vitest.config.ts for the full rationale (this run is one of several
-    // heavy processes lefthook's `pre-push` runs concurrently).
-    maxWorkers: "50%",
+    maxWorkers: concurrentLaneWorkers,
     include: ["bin/tests/**/*.test.ts"],
     coverage: {
       provider: "v8",
