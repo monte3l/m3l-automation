@@ -1901,7 +1901,7 @@
       },
       {
         "path": "bin/setup-host-resources.mjs",
-        "blob": "d484e44fb401250325b4a9ad7b1b4151296d9a1e"
+        "blob": "3194bb48d0b03159138541e5241e14bf4b3456d1"
       },
       {
         "path": "bin/worktree-setup.mjs",
