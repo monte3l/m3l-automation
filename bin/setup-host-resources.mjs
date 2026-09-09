@@ -180,20 +180,37 @@ export function buildUserSliceOverride(totalMemGiB) {
   )}G\n`;
 }
 
+// Margin, in GiB, that claude-rc.service's MemoryMax is kept above the
+// host-derived CLAUDE_CODE_TOOL_MEMORY_LIMIT (recommendToolMemoryLimitGiB,
+// step 6). A fixed margin on top of a host-derived number, rather than a
+// second hardcoded constant, is what keeps the "always above" invariant true
+// BY CONSTRUCTION as totalMemGiB/sessions vary — a hardcoded MemoryMax could
+// equal or fall below a tool limit computed for a larger host (e.g. a 24 GiB
+// host's recommendToolMemoryLimitGiB(24, 2) is 10, which a flat 10G ceiling
+// only equals rather than exceeds).
+const CLAUDE_RC_MEMORY_MARGIN_GIB = 2;
+
 /**
  * Build the claude-rc.service drop-in, if that unit exists on this host.
  *
- * MemoryMax is 10G, deliberately above the 9G CLAUDE_CODE_TOOL_MEMORY_LIMIT
- * (step 6, below) that spawned sessions inherit from
- * `.claude/settings.local.json`. If this ceiling sat at or below that limit,
- * the cgroup's OOMPolicy=kill would race the tool limit's own targeted kill
- * and could win — tearing down every session in the unit at once instead of
- * just the one tool call that overran its budget.
+ * MemoryMax is derived as `recommendToolMemoryLimitGiB(totalMemGiB,
+ * maxConcurrentSessions) + CLAUDE_RC_MEMORY_MARGIN_GIB` — deliberately above
+ * the CLAUDE_CODE_TOOL_MEMORY_LIMIT (step 6, below) that spawned sessions
+ * inherit from `.claude/settings.local.json`, on every supported host size,
+ * not just this one. If this ceiling sat at or below that limit, the
+ * cgroup's OOMPolicy=kill would race the tool limit's own targeted kill and
+ * could win — tearing down every session in the unit at once instead of just
+ * the one tool call that overran its budget.
  *
+ * @param {number} totalMemGiB
+ * @param {number} [maxConcurrentSessions]
  * @returns {string}
  */
-export function buildClaudeRcOverride() {
-  return "[Service]\nMemoryMax=10G\nOOMPolicy=kill\n";
+export function buildClaudeRcOverride(totalMemGiB, maxConcurrentSessions = 2) {
+  const memoryMaxGiB =
+    recommendToolMemoryLimitGiB(totalMemGiB, maxConcurrentSessions) +
+    CLAUDE_RC_MEMORY_MARGIN_GIB;
+  return `[Service]\nMemoryMax=${memoryMaxGiB}G\nOOMPolicy=kill\n`;
 }
 
 /**
@@ -433,8 +450,10 @@ function run(opts, reporter) {
     ".config/systemd/user/claude-rc.service",
   );
   if (existsSync(rcUnitPath)) {
+    const rcOverride = buildClaudeRcOverride(totalMemGiB, opts.sessions);
+    const rcMemoryMaxGiB = extractMemoryMaxGiB(rcOverride);
     reporter.info(
-      "[5/7] claude-rc.service: would add MemoryMax=10G + OOMPolicy=kill drop-in.",
+      `[5/7] claude-rc.service: would add MemoryMax=${rcMemoryMaxGiB}G + OOMPolicy=kill drop-in.`,
     );
     if (opts.apply) {
       const dropinDir = join(
@@ -442,7 +461,7 @@ function run(opts, reporter) {
         ".config/systemd/user/claude-rc.service.d",
       );
       mkdirSync(dropinDir, { recursive: true });
-      writeFileSync(join(dropinDir, "override.conf"), buildClaudeRcOverride());
+      writeFileSync(join(dropinDir, "override.conf"), rcOverride);
       sh("systemctl", ["--user", "daemon-reload"]);
       reporter.change("updated", "claude-rc.service.d/override.conf");
     }
