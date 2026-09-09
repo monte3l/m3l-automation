@@ -306,3 +306,4 @@ target was renamed is repaired via `RENAMED_TARGETS` in
 | 2026-09-09 | host-profile.mjs + bench-gates.mjs — P1 of adaptive-host-budgeting wave (PR #1136)                | [host-profile](./2026-09-09-host-profile.md)                                               |
 | 2026-09-09 | vitest/turbo switched to derived budget — P2 of adaptive-host-budgeting wave (PR #1143)           | [adaptive-concurrency](./2026-09-09-adaptive-concurrency.md)                               |
 | 2026-09-09 | `lessons` → `insights` vocabulary rename, 3-PR wave (ADR-0099, PR #1137)                          | [lessons-to-insights-vocabulary](./2026-09-09-lessons-to-insights-vocabulary.md)           |
+| 2026-09-09 | Test-I/O sandbox isolation policy — 2-PR sequence (issue #862, PR #1148/#1149)                    | [issue-862-test-fs-sandbox-isolation](./2026-09-09-issue-862-test-fs-sandbox-isolation.md) |

@@ -115,3 +115,17 @@ paths:
   (`docs/logs/2026-09-08-earlyoom-process-matching.md`). Any idempotent
   script whose target configuration can itself change across script versions
   needs this comparison, not just an existence/active check.
+
+- **A matching pattern reused as a structural template for a sibling rule
+  inherits none of the reasoning that made the original correct — only its
+  shape.** Three `eslint.config.js` `no-restricted-syntax` selectors copied a
+  working selector's `CallExpression[callee.name=...]` anchor for a new
+  check, but that anchor only covered every call form in the original
+  because a _separate_, paired selector handled the member-expression case
+  alongside it; reused alone, the copy silently dropped member-call coverage
+  three selectors deep, caught only by a review round exercising the exact
+  call shape (`docs/logs/2026-09-09-issue-862-test-fs-sandbox-isolation.md`).
+  When copying a working pattern for a new rule (a selector, a regex, a
+  matcher), re-derive what made the original complete and confirm the new
+  context still has it — don't assume the shape alone carries the
+  correctness.
