@@ -190,6 +190,9 @@ describe("buildClaudeRcOverride — invariant", () => {
     [24, 2],
     [32, 2],
     [64, 4],
+    // Hits recommendToolMemoryLimitGiB's Math.max(2, ...) clamp: raw =
+    // floor((4-2)/1 - 1) = floor(1) = 1, which is < 2 and clamps to 2.
+    [4, 1],
   ])(
     "MemoryMax stays above the tool memory limit for %i GiB / %i session(s)",
     (totalMemGiB, sessions) => {
