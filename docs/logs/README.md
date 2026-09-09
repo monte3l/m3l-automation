@@ -291,3 +291,4 @@ target was renamed is repaired via `RENAMED_TARGETS` in
 | 2026-09-08 | TypeScript guidance skill pair + check:typescript-freshness gate, ADR-0098 (PR #1129/#1130)       | [typescript-guidance-skills](./2026-09-08-typescript-guidance-skills.md)                   |
 | 2026-09-08 | First real refreshing-typescript-guidance sweep + review-round override (PR #1132)                | [typescript-refresh-first-sweep](./2026-09-08-typescript-refresh-first-sweep.md)           |
 | 2026-09-08 | earlyoom process-matching fix + lint:workspace heap ceiling — P0 of ADR-0080 follow-on (PR #1134) | [earlyoom-process-matching](./2026-09-08-earlyoom-process-matching.md)                     |
+| 2026-09-09 | Dependabot #33-38 + Trivy #22-25 alert remediation (PR #1138/#1139)                               | [dependabot-trivy-alerts](./2026-09-09-dependabot-trivy-alerts.md)                         |
