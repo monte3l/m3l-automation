@@ -64,6 +64,21 @@ ENV NODE_ENV=production
 
 COPY --from=builder --chown=node:node /deploy /app
 
+# The runtime stage's only entrypoint is `node bin/m3l-console-server.mjs` —
+# npm is never invoked here (the builder stage keeps it, to install pnpm at
+# :28). The base image's bundled npm is therefore dead weight, and it is the
+# sole source of the weekly Trivy HIGH findings against this image
+# (CVE-2026-73566 tar, CVE-2026-69192 ip-address, CVE-2026-14257 and
+# CVE-2026-69152 brace-expansion — all inside
+# /usr/local/lib/node_modules/npm, none reachable from
+# `pnpm-workspace.yaml`'s overrides, since Trivy scans the base image's
+# bundled npm install, not this repo's own pnpm-lock.yaml). Removing it
+# fixes them at the source rather than suppressing them, and stops the class
+# recurring every time npm bundles a new vulnerable transitive.
+RUN rm -rf /usr/local/lib/node_modules/npm \
+           /usr/local/bin/npm \
+           /usr/local/bin/npx
+
 # The official image's non-root `node` user (uid 1000, home `/home/node`) —
 # matches console-pod.yaml's host-SSO volume mount target.
 USER node
