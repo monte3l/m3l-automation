@@ -100,7 +100,7 @@
   "peerDependencies": {
     "adm-zip": "^0.6.0",
     "cheerio": "^1.2.0",
-    "mailparser": "^3.9.17",
+    "mailparser": "^3.9.23",
     "mammoth": "^1.12.1",
     "read-excel-file": "^9.3.10",
     "unpdf": "^1.6.2"
