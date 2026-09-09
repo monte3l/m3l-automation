@@ -4,9 +4,12 @@
 > the full unit/integration/E2E pyramid. **`@m3l-automation/m3l-common` is a
 > unit-only suite by design** — a pure ESM utilities library has no real
 > integration points, so the integration and end-to-end layers below are
-> _aspirational_ and intentionally absent. For how tests are actually written and
-> changed here — deterministic, isolated, I/O mocked at the primitive — see the
-> canonical **[Style Guide § Writing new tests](../docs/contributing/style-guide.md#part-2--writing-new-tests)**,
+> intentionally absent there. Other packages in this monorepo do run a real
+> integration layer — `packages/m3l-console-server/tests/integration/`, its own
+> `vitest.integration.config.ts` — so "aspirational" does not describe the repo
+> as a whole. For how tests are actually written and changed here —
+> deterministic, isolated, real filesystem confined to a per-test sandbox — see
+> the canonical **[Style Guide § Writing new tests](../docs/contributing/style-guide.md#part-2--writing-new-tests)**,
 > which is the operational source of truth.
 
 ## Overview

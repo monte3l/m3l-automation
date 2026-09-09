@@ -23,7 +23,7 @@
       },
       {
         "path": "docs/contributing/contributing.md",
-        "blob": "856abe5ea611208e54305b38ce4c3722c49c8545"
+        "blob": "34313a04cba1d645de98bdd9858402321854d8f0"
       },
       {
         "path": "lefthook.yml",
@@ -89,7 +89,7 @@
       },
       {
         "path": "docs/contributing/contributing.md",
-        "blob": "856abe5ea611208e54305b38ce4c3722c49c8545"
+        "blob": "34313a04cba1d645de98bdd9858402321854d8f0"
       },
       {
         "path": "lefthook.yml",
@@ -151,7 +151,7 @@
     "sourceFiles": [
       {
         "path": "docs/contributing/coding-standards.md",
-        "blob": "67ee50dac38967df0efbe4606eb8706c6b78c7b7"
+        "blob": "79620b1ba53f6df2104e25dacf551e1feb19c35b"
       },
       {
         "path": "docs/m3l-common-architecture.md",
@@ -166,7 +166,7 @@
         "blob": "4d3466d0726b9dfc574f3efbbd3eaee022f6ad19"
       }
     ],
-    "verifiedAt": "2026-09-07"
+    "verifiedAt": "2026-09-09"
   },
   "0006": {
     "sourceFiles": [
@@ -369,7 +369,7 @@
     "sourceFiles": [
       {
         "path": ".claude/rules/tests.md",
-        "blob": "0a3260a0b4e604d141aa6fc8935333e8bc673a2c"
+        "blob": "8e9c408d9409425045e9746130b8107b6fb284fc"
       },
       {
         "path": ".github/dependabot.yml",
@@ -1260,7 +1260,7 @@
     "sourceFiles": [
       {
         "path": "docs/contributing/style-guide.md",
-        "blob": "276cacf7093b95f58204128ce28734546b899c40"
+        "blob": "21890d8e08fb3946dcb9be722626d45bf596eefa"
       },
       {
         "path": "docs/reference/core/pipeline.md",
@@ -1271,7 +1271,7 @@
         "blob": "534df41770a1ad14d9d8e035b24458a674efa7bd"
       }
     ],
-    "verifiedAt": "2026-09-06"
+    "verifiedAt": "2026-09-09"
   },
   "0047": {
     "sourceFiles": [
@@ -1831,7 +1831,7 @@
       },
       {
         "path": "bin/context-budget-baseline.json",
-        "blob": "eca9e5c3220a779e94d52e162c09cc5800d69653"
+        "blob": "45d27bd0a35bee22060220972f166aa005e34f8d"
       },
       {
         "path": "bin/spoke-recovery.mjs",
@@ -2084,14 +2084,14 @@
       },
       {
         "path": "docs/contributing/contributing.md",
-        "blob": "856abe5ea611208e54305b38ce4c3722c49c8545"
+        "blob": "34313a04cba1d645de98bdd9858402321854d8f0"
       },
       {
         "path": "docs/research/session-naming.md",
         "blob": "1c8dd5683cc5463ae3ba98de0b9b0766e5633782"
       }
     ],
-    "verifiedAt": "2026-09-08"
+    "verifiedAt": "2026-09-09"
   },
   "0088": {
     "sourceFiles": [
@@ -2113,14 +2113,14 @@
       },
       {
         "path": "docs/contributing/contributing.md",
-        "blob": "856abe5ea611208e54305b38ce4c3722c49c8545"
+        "blob": "34313a04cba1d645de98bdd9858402321854d8f0"
       },
       {
         "path": "docs/research/harness-refresh.md",
         "blob": "b0bebce5ab3010955e4cc10d2cef34c3903f591a"
       }
     ],
-    "verifiedAt": "2026-09-08"
+    "verifiedAt": "2026-09-09"
   },
   "0089": {
     "sourceFiles": [

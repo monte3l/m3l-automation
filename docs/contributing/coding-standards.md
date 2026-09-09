@@ -13,7 +13,7 @@ Jump straight to the section you need:
   `interface` vs `type`, control flow, parsing untrusted text, public-API typing,
   the `M3LError` hierarchy, TSDoc, the `exports` contract, complexity limits.
 - [Writing new tests](./style-guide.md#part-2--writing-new-tests) — Vitest,
-  the unit-only policy, Arrange–Act–Assert, `expectTypeOf`, mocking, fixtures,
+  the test-I/O policy, Arrange–Act–Assert, `expectTypeOf`, mocking, fixtures,
   parameterization, determinism, the per-file coverage gate.
 - [Refactoring existing code & tests](./style-guide.md#part-3--refactoring-existing-code--tests)
   — the test safety net, small isolated steps, opportunistic/Boy-Scout refactoring,

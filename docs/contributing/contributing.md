@@ -166,11 +166,12 @@ the public contract.
 
 ## Testing Strategy
 
-Tests use Vitest — pure unit tests (no network, no filesystem; mock
-collaborators), a happy path plus at least one failure path per exported
-function, and `expectTypeOf` where the type is the contract. The full rules,
-mocking conventions, coverage gate, and refactoring discipline live in the
-canonical **[Style Guide § Writing new tests](./style-guide.md#part-2--writing-new-tests)**.
+Tests use Vitest — deterministic and isolated (no network; real filesystem only
+inside a per-test `mkdtemp` sandbox, mock the collaborator otherwise), a happy
+path plus at least one failure path per exported function, and `expectTypeOf`
+where the type is the contract. The full rules, mocking conventions, coverage
+gate, and refactoring discipline live in the canonical
+**[Style Guide § Writing new tests](./style-guide.md#part-2--writing-new-tests)**.
 
 ## Git Workflow
 

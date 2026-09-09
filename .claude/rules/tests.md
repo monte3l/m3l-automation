@@ -54,6 +54,10 @@ paths:
   back the outcome under question asserts the stub, not the code, while
   still reading as coverage. Exercise the real collaborator at least once
   (`docs/logs/2026-08-24-w8-sqs-dead-letter-triage.md`).
+- **No network; real filesystem only inside a per-test `mkdtemp` sandbox**,
+  always as a bare named import (style-guide.md § Runner, layout & the
+  test-I/O policy) — the lint rule doesn't yet catch that form
+  (`check:test-fs-isolation`, ADR-0100, closes the gap).
 - **Assert barrel reachability through the package entry point** — importing
   `src/` paths directly can't observe a broken namespace re-export.
   `tests/index.test.ts`'s table-driven check names one load-bearing symbol

@@ -369,19 +369,41 @@ choosing a parameter's mode. **[advisory]**
 
 ## Part 2 — Writing new tests
 
-### Runner, layout & the unit-only policy
+### Runner, layout & the test-I/O policy
 
 - **Vitest.** Test files are `*.test.ts`, placed at
   `packages/m3l-common/tests/<module>.test.ts`, importing from `src/` with the
   `.js` extension (`../src/core/foo/index.js`). **[enforced]** (discovery +
   `.js`-extension lint)
-- **This library's suite is unit-only by design.** Tests are deterministic and
-  isolated: **no network, no filesystem** — mock the I/O primitive instead. The
-  broader test pyramid (integration/E2E layers exercising
-  real databases/brokers/filesystems) describes general practice and is
-  _aspirational_ here: a pure ESM utilities library has no such integration points,
-  so those layers are intentionally absent. **[enforced]** (real `fs` mutation and
-  bare `fetch()` are banned in tests by `no-restricted-syntax`)
+- **Deterministic and isolated — this policy governs every package's test
+  suite, not just this library's.** No network — **[enforced]**
+  (`no-restricted-syntax` bans a bare `fetch()` call; since `fetch` is a
+  global, not an import, this catches every call style). Real filesystem
+  access is permitted only inside a per-test sandbox root created with a
+  **bare named-import** call — `import { mkdtemp } from "node:fs/promises";
+mkdtemp(join(tmpdir(), …))` — removed in teardown; never the repo tree,
+  `process.cwd()`, `import.meta.dirname`, or a fixed/literal path. A read-only
+  scan of the real tree (a gate asserting against `docs/` or a manifest file)
+  is fine; only mutation is constrained to the sandbox. **[advisory]** for
+  now: `no-restricted-syntax` currently bans only the **member-expression**
+  form (`fs.mkdtempSync(...)`), not the bare named-import form this repo's own
+  convention uses — the exact gap issue #862 found. A follow-up PR widens the
+  selector and adds a `check:test-fs-isolation` gate (path-shape rules,
+  ADR-0100) to close it; until then, nothing mechanically stops a fixed-path
+  or `cwd()`-rooted call written as a bare import.
+- **Mock the filesystem when it is a collaborator; use a real sandbox when it
+  is the subject.** Some suites' entire point is a real filesystem guarantee —
+  `core/storage`'s append-only suites assert `O_NOFOLLOW` refusal and
+  cold-start segment discovery against real inodes, and `m3l-cli`'s completion
+  suite spawns `bash -n <file>`, a real out-of-process shell parser. Mocking
+  `fs` there would mock the behavior under test, not isolate it. **[advisory]**
+- **Integration tests are a separate layer, not an excluded one.**
+  `*.integration.test.ts` under `**/tests/integration/` runs under its own
+  `vitest.integration.config.ts`, which is real today. **[enforced]** for that
+  execution split. It is **not yet** exempt from the two rules above at the
+  lint level — `no-restricted-syntax`'s `files` glob still matches it — so the
+  follow-up PR that widens the selector also carves out this directory with
+  an `ignores` entry.
 
 ### What to test
 
@@ -468,10 +490,10 @@ expectTypeOf<M3LResult<number, Error>>().toEqualTypeOf<
   `Object.defineProperty` in a `beforeAll` (CI is non-TTY, so the property may be
   absent entirely, not just `false`). **[advisory]**
 - **Never tolerate a flaky test** — diagnose and fix the nondeterminism; do not
-  mute or retry-mask it. (In this repo, "quarantine" is not an option: the suite is
-  small and unit-only, so a flake is fixed immediately, not parked. Test
-  quarantine is a general large-suite CI practice, not a licence to mute these
-  tests.) **[advisory]**
+  mute or retry-mask it. (In this repo, "quarantine" is not an option: the
+  default suite is small and deterministic, so a flake is fixed immediately,
+  not parked. Test quarantine is a general large-suite CI practice, not a
+  licence to mute these tests.) **[advisory]**
 
 ### Coverage
 
