@@ -1,10 +1,10 @@
 {
-  "skill_name": "promoting-work-log-lessons",
+  "skill_name": "promoting-work-log-insights",
   "evals": [
     {
       "id": 1,
-      "prompt": "Scan the work logs and show me what recurring lessons we should fold into the rules — propose only, don't edit anything yet.",
-      "expected_output": "A correct propose-mode response reads all four seeded logs, identifies the vi.fn()/vi.mock factory mock-reset lesson as the sole recurring candidate (appearing in three logs with different wording), routes it to .claude/rules/tests.md, excludes the one-log lockfile-drift lesson from candidates, and edits no files.",
+      "prompt": "Scan the work logs and show me what recurring insights we should fold into the rules — propose only, don't edit anything yet.",
+      "expected_output": "A correct propose-mode response reads all four seeded logs, identifies the vi.fn()/vi.mock factory mock-reset insight as the sole recurring candidate (appearing in three logs with different wording), routes it to .claude/rules/tests.md, excludes the one-log lockfile-drift insight from candidates, and edits no files.",
       "files": [
         {
           "path": "docs/logs/2026-07-14-core-polling.md",
@@ -30,15 +30,15 @@
       "expectations": [
         "The response names the vi.fn()/vi.mock factory mock-reset issue as a recurring promotion candidate and cites at least two of the three log filenames where it recurs: `2026-07-14-core-polling.md`, `2026-07-28-aws-sqs.md`, and `2026-08-11-aws-dynamodb.md`",
         "The response names `.claude/rules/tests.md` as the target file for the promoted rule",
-        "The response's list of promotion candidates contains only one theme (the vi.fn()/mockReset mock-reset lesson); the lockfile-drift or `pnpm install --frozen-lockfile` lesson from `2026-08-19-core-validation.md` does not appear as a candidate",
+        "The response's list of promotion candidates contains only one theme (the vi.fn()/mockReset mock-reset insight); the lockfile-drift or `pnpm install --frozen-lockfile` insight from `2026-08-19-core-validation.md` does not appear as a candidate",
         "The response includes a summary line or paragraph stating how many themes were extracted and how many survived the recurrence filter (appeared in ≥2 logs)",
         "The response contains no statement claiming it edited or wrote any file — no mention of having modified `.claude/rules/tests.md` or any `docs/logs/*.md` file"
       ]
     },
     {
       "id": 2,
-      "prompt": "/promoting-work-log-lessons --apply — I've seen the proposal, go ahead and fold in the recurring lessons and stamp the logs.",
-      "expected_output": "A correct apply-mode response edits .claude/rules/tests.md to add a rule about mockReset in afterEach for vi.mock factory functions, stamps a `_(promoted → .claude/rules/tests.md)_` marker into all three recurring-lesson log files, omits the distractor log, and states it is handing off to /writing-commits.",
+      "prompt": "/promoting-work-log-insights --apply — I've seen the proposal, go ahead and fold in the recurring insights and stamp the logs.",
+      "expected_output": "A correct apply-mode response edits .claude/rules/tests.md to add a rule about mockReset in afterEach for vi.mock factory functions, stamps a `_(promoted → .claude/rules/tests.md)_` marker into all three recurring-insight log files, omits the distractor log, and states it is handing off to /writing-commits.",
       "files": [
         {
           "path": "docs/logs/2026-07-14-core-polling.md",
@@ -63,17 +63,17 @@
       ],
       "expectations": [
         "The response names `.claude/rules/tests.md` as the destination for the promoted rule and states the rule text verbatim — that `vi.restoreAllMocks()` does not reset a `vi.fn()` created inside a `vi.mock()` factory, and that `vi.mocked(<export>).mockReset()` must be called per factory export in `afterEach`. Grade the RESPONSE TEXT only: whether the write to that path succeeded is explicitly NOT part of this criterion, because this environment blocks writes under `.claude/` as sensitive files. A blocked edit that still names the destination and states the rule text satisfies this criterion in full.",
-        "The file `docs/logs/2026-07-14-core-polling.md` contains a `_(promoted → .claude/rules/tests.md)_` provenance marker on the relevant lesson bullet",
-        "The file `docs/logs/2026-07-28-aws-sqs.md` contains a `_(promoted → .claude/rules/tests.md)_` provenance marker on the relevant lesson bullet",
-        "The file `docs/logs/2026-08-11-aws-dynamodb.md` contains a `_(promoted → .claude/rules/tests.md)_` provenance marker on the relevant lesson bullet",
-        "The file `docs/logs/2026-08-19-core-validation.md` contains no `_(promoted →` text — the lockfile-drift lesson was a single-occurrence distractor and was not promoted",
+        "The file `docs/logs/2026-07-14-core-polling.md` contains a `_(promoted → .claude/rules/tests.md)_` provenance marker on the relevant insight bullet",
+        "The file `docs/logs/2026-07-28-aws-sqs.md` contains a `_(promoted → .claude/rules/tests.md)_` provenance marker on the relevant insight bullet",
+        "The file `docs/logs/2026-08-11-aws-dynamodb.md` contains a `_(promoted → .claude/rules/tests.md)_` provenance marker on the relevant insight bullet",
+        "The file `docs/logs/2026-08-19-core-validation.md` contains no `_(promoted →` text — the lockfile-drift insight was a single-occurrence distractor and was not promoted",
         "The response mentions handing off to `/writing-commits` and characterises the change as a `docs:` change"
       ]
     },
     {
       "id": 3,
       "prompt": "Do another pass over the work logs — have we missed anything that keeps coming up?",
-      "expected_output": "A correct re-run response finds the vi.fn()/mockReset lesson already stamped as promoted in all three source logs and already present in .claude/rules/tests.md, then reports that no new recurring lessons survived the filters and edits no files.",
+      "expected_output": "A correct re-run response finds the vi.fn()/mockReset insight already stamped as promoted in all three source logs and already present in .claude/rules/tests.md, then reports that no new recurring insights survived the filters and edits no files.",
       "files": [
         {
           "path": "docs/logs/2026-07-14-core-polling.md",
@@ -97,9 +97,9 @@
         }
       ],
       "expectations": [
-        "The response states that the vi.fn()/vi.mock factory mock-reset lesson is already promoted, citing either the `_(promoted → .claude/rules/tests.md)_` markers in the source logs or the presence of the rule in `.claude/rules/tests.md`",
-        "The response reports that no new lessons survived the filters — nothing to promote in this pass — rather than re-listing already-promoted lessons as fresh candidates",
-        "The response does not list any lesson from the seeded logs as a new promotion candidate",
+        "The response states that the vi.fn()/vi.mock factory mock-reset insight is already promoted, citing either the `_(promoted → .claude/rules/tests.md)_` markers in the source logs or the presence of the rule in `.claude/rules/tests.md`",
+        "The response reports that no new insights survived the filters — nothing to promote in this pass — rather than re-listing already-promoted insights as fresh candidates",
+        "The response does not list any insight from the seeded logs as a new promotion candidate",
         "The response makes no claim of having edited or written any file — no `.claude/rules/` or `docs/logs/` path is stated as modified"
       ]
     }

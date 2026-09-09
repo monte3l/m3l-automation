@@ -1,7 +1,7 @@
 // Pure functions validating the `promoted →` stamp convention
-// `/promoting-work-log-lessons` and `/writing-work-logs` share (see
+// `/promoting-work-log-insights` and `/writing-work-logs` share (see
 // docs/research/retrospective.md § "Why a ledger and not just the in-log
-// marker" and .claude/skills/promoting-work-log-lessons/SKILL.md Step 5).
+// marker" and .claude/skills/promoting-work-log-insights/SKILL.md Step 5).
 // Consumed by bin/check-promotion-stamps.mjs and
 // bin/tests/check-promotion-stamps.test.ts.
 //
@@ -144,6 +144,12 @@ export const RENAMED_TARGETS = new Map([
   [
     ".claude/skills/vitest-coverage-types-mocks/SKILL.md",
     ".claude/skills/vitest-testing/SKILL.md",
+  ],
+  // .claude/skills/promoting-work-log-lessons -> promoting-work-log-insights,
+  // ADR-0099 (observation/insight vocabulary)
+  [
+    ".claude/skills/promoting-work-log-lessons/SKILL.md",
+    ".claude/skills/promoting-work-log-insights/SKILL.md",
   ],
 ]);
 

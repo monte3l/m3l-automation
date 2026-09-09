@@ -351,10 +351,10 @@ describe("deriveIntegrationStanceIssues — m3l descriptor", () => {
 // ---------------------------------------------------------------------------
 
 describe("deriveIntegrationStanceIssues — live m3l-stance skill files (ADR-0096)", () => {
-  test("syncing-docs, promoting-work-log-lessons, and triaging-ci all satisfy the m3l stance gate", () => {
+  test("syncing-docs, promoting-work-log-insights, and triaging-ci all satisfy the m3l stance gate", () => {
     const skillNames = [
       "syncing-docs",
-      "promoting-work-log-lessons",
+      "promoting-work-log-insights",
       "triaging-ci",
     ];
     const skills = skillNames.map((name) => ({

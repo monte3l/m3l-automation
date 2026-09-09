@@ -19,7 +19,7 @@
       },
       {
         "path": "CLAUDE.md",
-        "blob": "82ab71cfedc7445482de1ff8b8f8f5d98fc0ca34"
+        "blob": "5634be9a01afd3427350fbd98f940b9b098082de"
       },
       {
         "path": "docs/contributing/contributing.md",
@@ -27,20 +27,20 @@
       },
       {
         "path": "lefthook.yml",
-        "blob": "d4347be41862616f5609b64a36214d0263b6a7d5"
+        "blob": "7532ef55ea0f88969685d01c544d2edc61c9491e"
       },
       {
         "path": "turbo.json",
-        "blob": "c4ae7a2819c9f28a37c0ecdf2da0c6a03cee31f4"
+        "blob": "d2b88dbb4423408a33153335c055b088c6fd628a"
       }
     ],
-    "verifiedAt": "2026-09-08"
+    "verifiedAt": "2026-09-09"
   },
   "0002": {
     "sourceFiles": [
       {
         "path": "package.json",
-        "blob": "3286492d33af9ed3a88f6469ea2af62569352221"
+        "blob": "2651b6ce76505454b5dee829d91afca4331d9ba5"
       },
       {
         "path": "packages/m3l-common/package.json",
@@ -93,11 +93,11 @@
       },
       {
         "path": "lefthook.yml",
-        "blob": "d4347be41862616f5609b64a36214d0263b6a7d5"
+        "blob": "7532ef55ea0f88969685d01c544d2edc61c9491e"
       },
       {
         "path": "package.json",
-        "blob": "3286492d33af9ed3a88f6469ea2af62569352221"
+        "blob": "2651b6ce76505454b5dee829d91afca4331d9ba5"
       },
       {
         "path": "packages/m3l-common/package.json",
@@ -130,7 +130,7 @@
       },
       {
         "path": "package.json",
-        "blob": "3286492d33af9ed3a88f6469ea2af62569352221"
+        "blob": "2651b6ce76505454b5dee829d91afca4331d9ba5"
       },
       {
         "path": "packages/m3l-common/package.json",
@@ -172,7 +172,7 @@
     "sourceFiles": [
       {
         "path": "package.json",
-        "blob": "3286492d33af9ed3a88f6469ea2af62569352221"
+        "blob": "2651b6ce76505454b5dee829d91afca4331d9ba5"
       },
       {
         "path": "packages/m3l-common/package.json",
@@ -210,10 +210,10 @@
       },
       {
         "path": "lefthook.yml",
-        "blob": "d4347be41862616f5609b64a36214d0263b6a7d5"
+        "blob": "7532ef55ea0f88969685d01c544d2edc61c9491e"
       }
     ],
-    "verifiedAt": "2026-09-08"
+    "verifiedAt": "2026-09-09"
   },
   "0009": {
     "sourceFiles": [
@@ -240,7 +240,7 @@
       },
       {
         "path": "CLAUDE.md",
-        "blob": "82ab71cfedc7445482de1ff8b8f8f5d98fc0ca34"
+        "blob": "5634be9a01afd3427350fbd98f940b9b098082de"
       },
       {
         "path": "docs/adr/template.md",
@@ -248,19 +248,19 @@
       },
       {
         "path": "package.json",
-        "blob": "3286492d33af9ed3a88f6469ea2af62569352221"
+        "blob": "2651b6ce76505454b5dee829d91afca4331d9ba5"
       }
     ],
-    "verifiedAt": "2026-09-08"
+    "verifiedAt": "2026-09-09"
   },
   "0011": {
     "sourceFiles": [
       {
         "path": "package.json",
-        "blob": "3286492d33af9ed3a88f6469ea2af62569352221"
+        "blob": "2651b6ce76505454b5dee829d91afca4331d9ba5"
       }
     ],
-    "verifiedAt": "2026-09-08"
+    "verifiedAt": "2026-09-09"
   },
   "0012": {
     "sourceFiles": [
@@ -299,7 +299,7 @@
       },
       {
         "path": "CLAUDE.md",
-        "blob": "82ab71cfedc7445482de1ff8b8f8f5d98fc0ca34"
+        "blob": "5634be9a01afd3427350fbd98f940b9b098082de"
       },
       {
         "path": "docs/implementation-status.md",
@@ -307,10 +307,10 @@
       },
       {
         "path": "package.json",
-        "blob": "3286492d33af9ed3a88f6469ea2af62569352221"
+        "blob": "2651b6ce76505454b5dee829d91afca4331d9ba5"
       }
     ],
-    "verifiedAt": "2026-09-08"
+    "verifiedAt": "2026-09-09"
   },
   "0014": {
     "sourceFiles": [
@@ -360,10 +360,10 @@
       },
       {
         "path": "package.json",
-        "blob": "3286492d33af9ed3a88f6469ea2af62569352221"
+        "blob": "2651b6ce76505454b5dee829d91afca4331d9ba5"
       }
     ],
-    "verifiedAt": "2026-09-08"
+    "verifiedAt": "2026-09-09"
   },
   "0015": {
     "sourceFiles": [
@@ -385,14 +385,14 @@
       },
       {
         "path": "CLAUDE.md",
-        "blob": "82ab71cfedc7445482de1ff8b8f8f5d98fc0ca34"
+        "blob": "5634be9a01afd3427350fbd98f940b9b098082de"
       },
       {
         "path": "docs/contributing/branch-protection.md",
         "blob": "43ec135cbe20f2a9aef990c189623d43e9a6ca43"
       }
     ],
-    "verifiedAt": "2026-09-08"
+    "verifiedAt": "2026-09-09"
   },
   "0016": {
     "sourceFiles": [
@@ -506,10 +506,10 @@
       },
       {
         "path": "package.json",
-        "blob": "3286492d33af9ed3a88f6469ea2af62569352221"
+        "blob": "2651b6ce76505454b5dee829d91afca4331d9ba5"
       }
     ],
-    "verifiedAt": "2026-09-08"
+    "verifiedAt": "2026-09-09"
   },
   "0021": {
     "sourceFiles": [
@@ -548,11 +548,11 @@
       },
       {
         "path": "lefthook.yml",
-        "blob": "d4347be41862616f5609b64a36214d0263b6a7d5"
+        "blob": "7532ef55ea0f88969685d01c544d2edc61c9491e"
       },
       {
         "path": "package.json",
-        "blob": "3286492d33af9ed3a88f6469ea2af62569352221"
+        "blob": "2651b6ce76505454b5dee829d91afca4331d9ba5"
       },
       {
         "path": "pnpm-workspace.yaml",
@@ -564,7 +564,7 @@
       },
       {
         "path": "turbo.json",
-        "blob": "c4ae7a2819c9f28a37c0ecdf2da0c6a03cee31f4"
+        "blob": "d2b88dbb4423408a33153335c055b088c6fd628a"
       }
     ],
     "verifiedAt": "2026-09-09"
@@ -634,7 +634,7 @@
       },
       {
         "path": "CLAUDE.md",
-        "blob": "82ab71cfedc7445482de1ff8b8f8f5d98fc0ca34"
+        "blob": "5634be9a01afd3427350fbd98f940b9b098082de"
       },
       {
         "path": "docs/implementation-status.md",
@@ -691,14 +691,14 @@
       },
       {
         "path": "CLAUDE.md",
-        "blob": "82ab71cfedc7445482de1ff8b8f8f5d98fc0ca34"
+        "blob": "5634be9a01afd3427350fbd98f940b9b098082de"
       },
       {
         "path": "docs/contributing/model-selection.md",
-        "blob": "164378e4c05d7b82c4413c78fd5ba667583d8255"
+        "blob": "e53bebac09c85522feb17213b97a9d60d5245a92"
       }
     ],
-    "verifiedAt": "2026-09-08"
+    "verifiedAt": "2026-09-09"
   },
   "0026": {
     "sourceFiles": [
@@ -729,7 +729,7 @@
     "sourceFiles": [
       {
         "path": "CLAUDE.md",
-        "blob": "82ab71cfedc7445482de1ff8b8f8f5d98fc0ca34"
+        "blob": "5634be9a01afd3427350fbd98f940b9b098082de"
       },
       {
         "path": "docs/reference/aws/clients.md",
@@ -744,7 +744,7 @@
         "blob": "8de88ccbba9e75d387c88342faec1e394c3a057b"
       }
     ],
-    "verifiedAt": "2026-09-08"
+    "verifiedAt": "2026-09-09"
   },
   "0028": {
     "sourceFiles": [
@@ -783,10 +783,10 @@
       },
       {
         "path": "package.json",
-        "blob": "3286492d33af9ed3a88f6469ea2af62569352221"
+        "blob": "2651b6ce76505454b5dee829d91afca4331d9ba5"
       }
     ],
-    "verifiedAt": "2026-09-08"
+    "verifiedAt": "2026-09-09"
   },
   "0030": {
     "sourceFiles": [
@@ -853,11 +853,11 @@
     "sourceFiles": [
       {
         "path": "CLAUDE.md",
-        "blob": "82ab71cfedc7445482de1ff8b8f8f5d98fc0ca34"
+        "blob": "5634be9a01afd3427350fbd98f940b9b098082de"
       },
       {
         "path": "docs/adr/README.md",
-        "blob": "43d940b9e450ed8e483e57168e394bc08c925f31"
+        "blob": "b4c00bfde310b516b375a0973885c0ccd7d412d5"
       },
       {
         "path": "docs/logs/2026-08-14-aws-rds-data.md",
@@ -877,14 +877,14 @@
       },
       {
         "path": "package.json",
-        "blob": "3286492d33af9ed3a88f6469ea2af62569352221"
+        "blob": "2651b6ce76505454b5dee829d91afca4331d9ba5"
       },
       {
         "path": "packages/m3l-common/src/aws/clients/provider.ts",
         "blob": "8de88ccbba9e75d387c88342faec1e394c3a057b"
       }
     ],
-    "verifiedAt": "2026-09-08"
+    "verifiedAt": "2026-09-09"
   },
   "0032": {
     "sourceFiles": [
@@ -922,7 +922,7 @@
       },
       {
         "path": "bin/lib/command-catalog.mjs",
-        "blob": "7c66aa9fb2c72a2e29e159b5c0b045459f642056"
+        "blob": "a2ec17b00fbd32bcb5aaa1572339faa362db0c12"
       },
       {
         "path": "bin/lib/hub-sync.mjs",
@@ -974,7 +974,7 @@
       },
       {
         "path": "docs/logs/README.md",
-        "blob": "ceb78280865e8268be387335ef137fb0de1fd3cd"
+        "blob": "3b5ddf383c5541ee03f81ba42ef18a3384cb45fd"
       },
       {
         "path": "docs/plans/IMPLEMENTATION.md",
@@ -986,7 +986,7 @@
       },
       {
         "path": "package.json",
-        "blob": "3286492d33af9ed3a88f6469ea2af62569352221"
+        "blob": "2651b6ce76505454b5dee829d91afca4331d9ba5"
       }
     ],
     "verifiedAt": "2026-09-09"
@@ -1062,7 +1062,7 @@
       },
       {
         "path": "package.json",
-        "blob": "3286492d33af9ed3a88f6469ea2af62569352221"
+        "blob": "2651b6ce76505454b5dee829d91afca4331d9ba5"
       },
       {
         "path": "packages/m3l-common/package.json",
@@ -1121,10 +1121,10 @@
     "sourceFiles": [
       {
         "path": "CLAUDE.md",
-        "blob": "82ab71cfedc7445482de1ff8b8f8f5d98fc0ca34"
+        "blob": "5634be9a01afd3427350fbd98f940b9b098082de"
       }
     ],
-    "verifiedAt": "2026-09-08"
+    "verifiedAt": "2026-09-09"
   },
   "0040": {
     "sourceFiles": [
@@ -1222,7 +1222,7 @@
       },
       {
         "path": "package.json",
-        "blob": "3286492d33af9ed3a88f6469ea2af62569352221"
+        "blob": "2651b6ce76505454b5dee829d91afca4331d9ba5"
       },
       {
         "path": "packages/m3l-common/src/aws/clients/provider.ts",
@@ -1233,7 +1233,7 @@
         "blob": "525749955c204dae2c1d0a1cd4f363afff408894"
       }
     ],
-    "verifiedAt": "2026-09-08"
+    "verifiedAt": "2026-09-09"
   },
   "0045": {
     "sourceFiles": [
@@ -1277,10 +1277,10 @@
     "sourceFiles": [
       {
         "path": "package.json",
-        "blob": "3286492d33af9ed3a88f6469ea2af62569352221"
+        "blob": "2651b6ce76505454b5dee829d91afca4331d9ba5"
       }
     ],
-    "verifiedAt": "2026-09-08"
+    "verifiedAt": "2026-09-09"
   },
   "0049": {
     "sourceFiles": [
@@ -1307,14 +1307,14 @@
       },
       {
         "path": "CLAUDE.md",
-        "blob": "82ab71cfedc7445482de1ff8b8f8f5d98fc0ca34"
+        "blob": "5634be9a01afd3427350fbd98f940b9b098082de"
       },
       {
         "path": "docs/contributing/filing-work.md",
         "blob": "7a2156c9c0c9c8d0f902b8c3f6ba9df3fb85f646"
       }
     ],
-    "verifiedAt": "2026-09-08"
+    "verifiedAt": "2026-09-09"
   },
   "0051": {
     "sourceFiles": [
@@ -1661,7 +1661,7 @@
       },
       {
         "path": "CLAUDE.md",
-        "blob": "82ab71cfedc7445482de1ff8b8f8f5d98fc0ca34"
+        "blob": "5634be9a01afd3427350fbd98f940b9b098082de"
       },
       {
         "path": "docs/contributing/subagent-context-management.md",
@@ -1697,14 +1697,14 @@
       },
       {
         "path": "lefthook.yml",
-        "blob": "d4347be41862616f5609b64a36214d0263b6a7d5"
+        "blob": "7532ef55ea0f88969685d01c544d2edc61c9491e"
       },
       {
         "path": "package.json",
-        "blob": "3286492d33af9ed3a88f6469ea2af62569352221"
+        "blob": "2651b6ce76505454b5dee829d91afca4331d9ba5"
       }
     ],
-    "verifiedAt": "2026-09-08"
+    "verifiedAt": "2026-09-09"
   },
   "0073": {
     "sourceFiles": [
@@ -1839,11 +1839,11 @@
       },
       {
         "path": "CLAUDE.md",
-        "blob": "82ab71cfedc7445482de1ff8b8f8f5d98fc0ca34"
+        "blob": "5634be9a01afd3427350fbd98f940b9b098082de"
       },
       {
         "path": "docs/contributing/model-selection.md",
-        "blob": "164378e4c05d7b82c4413c78fd5ba667583d8255"
+        "blob": "e53bebac09c85522feb17213b97a9d60d5245a92"
       },
       {
         "path": "docs/contributing/subagent-context-management.md",
@@ -1858,7 +1858,7 @@
         "blob": "b0bebce5ab3010955e4cc10d2cef34c3903f591a"
       }
     ],
-    "verifiedAt": "2026-09-08"
+    "verifiedAt": "2026-09-09"
   },
   "0079": {
     "sourceFiles": [
@@ -1909,7 +1909,7 @@
       },
       {
         "path": "CLAUDE.md",
-        "blob": "82ab71cfedc7445482de1ff8b8f8f5d98fc0ca34"
+        "blob": "5634be9a01afd3427350fbd98f940b9b098082de"
       },
       {
         "path": "docs/contributing/host-resources.md",
@@ -1925,18 +1925,18 @@
       },
       {
         "path": "docs/plans/2026-09-08-adaptive-host-budgeting.md",
-        "blob": "0b8b73aa9a3c35ae1bc232ac157684c2f2e7d959"
+        "blob": "ba0b8cd5a7278ff00c51e7ae9882c94348794ad1"
       },
       {
         "path": "package.json",
-        "blob": "3286492d33af9ed3a88f6469ea2af62569352221"
+        "blob": "2651b6ce76505454b5dee829d91afca4331d9ba5"
       },
       {
         "path": "turbo.json",
-        "blob": "c4ae7a2819c9f28a37c0ecdf2da0c6a03cee31f4"
+        "blob": "d2b88dbb4423408a33153335c055b088c6fd628a"
       }
     ],
-    "verifiedAt": "2026-09-08"
+    "verifiedAt": "2026-09-09"
   },
   "0081": {
     "sourceFiles": [
@@ -1967,14 +1967,14 @@
       },
       {
         "path": "CLAUDE.md",
-        "blob": "82ab71cfedc7445482de1ff8b8f8f5d98fc0ca34"
+        "blob": "5634be9a01afd3427350fbd98f940b9b098082de"
       },
       {
         "path": "docs/research/harness-refresh.md",
         "blob": "b0bebce5ab3010955e4cc10d2cef34c3903f591a"
       }
     ],
-    "verifiedAt": "2026-09-08"
+    "verifiedAt": "2026-09-09"
   },
   "0083": {
     "sourceFiles": [
@@ -2000,37 +2000,33 @@
         "blob": "6dad00b55562b5d1a60a913209662f16d7b7644a"
       },
       {
-        "path": ".claude/skills/promoting-work-log-lessons/SKILL.md",
-        "blob": "0efa0af482289b478423aa1189ba34e501064ee3"
-      },
-      {
         "path": "bin/check-control-chars.mjs",
         "blob": "fb89735c491f22af10bee278cfffee6daf3d3ed7"
       },
       {
         "path": "bin/check-retrospective.mjs",
-        "blob": "11406fe472cb7a8a12815319627fc0f872eddb0b"
+        "blob": "39bb8b728871a2c1f337a304a7c12a2397472e4d"
       },
       {
         "path": "bin/session-telemetry.mjs",
-        "blob": "8365a0e3e9a03dbb27c3748b4ab1762300b12e11"
+        "blob": "4e48f7e01e4dfeed0825ad72464bdc9d1ba6fed5"
       },
       {
         "path": "CLAUDE.md",
-        "blob": "82ab71cfedc7445482de1ff8b8f8f5d98fc0ca34"
+        "blob": "5634be9a01afd3427350fbd98f940b9b098082de"
       },
       {
         "path": "docs/research/retrospective.md",
-        "blob": "cf88da2a4c81823f5f57bd112b301f010c70ce8a"
+        "blob": "203ed8da7f6cd8a9335c865a0ab33647f32505c2"
       }
     ],
-    "verifiedAt": "2026-09-08"
+    "verifiedAt": "2026-09-09"
   },
   "0085": {
     "sourceFiles": [
       {
         "path": "CLAUDE.md",
-        "blob": "82ab71cfedc7445482de1ff8b8f8f5d98fc0ca34"
+        "blob": "5634be9a01afd3427350fbd98f940b9b098082de"
       },
       {
         "path": "docs/plans/2026-08-20-agent-operator.md",
@@ -2057,7 +2053,7 @@
         "blob": "a554f625f8d023da5f84fa376e7d3853bb72b2e7"
       }
     ],
-    "verifiedAt": "2026-09-08"
+    "verifiedAt": "2026-09-09"
   },
   "0086": {
     "sourceFiles": [
@@ -2080,7 +2076,7 @@
       },
       {
         "path": "bin/session-telemetry.mjs",
-        "blob": "8365a0e3e9a03dbb27c3748b4ab1762300b12e11"
+        "blob": "4e48f7e01e4dfeed0825ad72464bdc9d1ba6fed5"
       },
       {
         "path": "bin/worktree-new.mjs",
@@ -2095,7 +2091,7 @@
         "blob": "1c8dd5683cc5463ae3ba98de0b9b0766e5633782"
       }
     ],
-    "verifiedAt": "2026-09-07"
+    "verifiedAt": "2026-09-08"
   },
   "0088": {
     "sourceFiles": [
@@ -2109,7 +2105,7 @@
       },
       {
         "path": "bin/session-telemetry.mjs",
-        "blob": "8365a0e3e9a03dbb27c3748b4ab1762300b12e11"
+        "blob": "4e48f7e01e4dfeed0825ad72464bdc9d1ba6fed5"
       },
       {
         "path": "bin/worktree-new.mjs",
@@ -2124,7 +2120,7 @@
         "blob": "b0bebce5ab3010955e4cc10d2cef34c3903f591a"
       }
     ],
-    "verifiedAt": "2026-09-07"
+    "verifiedAt": "2026-09-08"
   },
   "0089": {
     "sourceFiles": [
@@ -2138,26 +2134,26 @@
       },
       {
         "path": "CLAUDE.md",
-        "blob": "82ab71cfedc7445482de1ff8b8f8f5d98fc0ca34"
+        "blob": "5634be9a01afd3427350fbd98f940b9b098082de"
       },
       {
         "path": "docs/contributing/agent-operating-model.md",
-        "blob": "a4444a805e654f8867b713b5ddb752d9073a1c83"
+        "blob": "b29157761b3032a2006bcc17e188d676796586af"
       },
       {
         "path": "docs/contributing/skill-routing.md",
-        "blob": "0bb9740814fae30ae550d4b39bf0067bc1e9d260"
+        "blob": "bdcd0c4faa725f52a9b8e531889005c7b3129a17"
       },
       {
         "path": "docs/contributing/skills-catalog.md",
-        "blob": "0751a445fbce2aeeded8b400876ec517c2ca0c35"
+        "blob": "d8c760ea4edb2c32148df21a7c1337bc612c1047"
       },
       {
         "path": "docs/plans/archive/2026-09-03-skill-invocation-and-listing-budget.md",
         "blob": "acfcda66e41569485f508ff3ff5b0cea825641ef"
       }
     ],
-    "verifiedAt": "2026-09-08"
+    "verifiedAt": "2026-09-09"
   },
   "0090": {
     "sourceFiles": [
@@ -2258,11 +2254,11 @@
       },
       {
         "path": "docs/contributing/agent-operating-model.md",
-        "blob": "a4444a805e654f8867b713b5ddb752d9073a1c83"
+        "blob": "b29157761b3032a2006bcc17e188d676796586af"
       },
       {
         "path": "docs/contributing/skills-catalog.md",
-        "blob": "0751a445fbce2aeeded8b400876ec517c2ca0c35"
+        "blob": "d8c760ea4edb2c32148df21a7c1337bc612c1047"
       },
       {
         "path": "docs/logs/2026-07-17-adr-0030-workflow-tooling-mcp.md",
@@ -2277,7 +2273,7 @@
         "blob": "40caafa3178dd40f2b22aa430eed9bfc0562df25"
       }
     ],
-    "verifiedAt": "2026-09-08"
+    "verifiedAt": "2026-09-09"
   },
   "0094": {
     "sourceFiles": [
@@ -2307,7 +2303,7 @@
       },
       {
         "path": "docs/adr/README.md",
-        "blob": "43d940b9e450ed8e483e57168e394bc08c925f31"
+        "blob": "b4c00bfde310b516b375a0973885c0ccd7d412d5"
       },
       {
         "path": "docs/contributing/filing-work.md",
@@ -2328,18 +2324,18 @@
       },
       {
         "path": "docs/adr/README.md",
-        "blob": "43d940b9e450ed8e483e57168e394bc08c925f31"
+        "blob": "b4c00bfde310b516b375a0973885c0ccd7d412d5"
       },
       {
         "path": "docs/decision-notes/README.md",
-        "blob": "5359352046f186596827b9682777069e2bf02195"
+        "blob": "871bf8e541efcc8c9da739f00084ab2af3bcbc31"
       },
       {
         "path": "docs/logs/2026-09-06-adr-corpus-audit.md",
         "blob": "0915d8bc8a00fb43f0c943b5ccf8019d094a65cc"
       }
     ],
-    "verifiedAt": "2026-09-08"
+    "verifiedAt": "2026-09-09"
   },
   "0096": {
     "sourceFiles": [
@@ -2427,9 +2423,30 @@
       },
       {
         "path": "docs/contributing/instruction-authoring.md",
-        "blob": "7f3ddc5dfec3ed8b4471de571180dcaee6aa88fa"
+        "blob": "03b36f49c0e68f7c8b9baae69657944939e10849"
       }
     ],
-    "verifiedAt": "2026-09-08"
+    "verifiedAt": "2026-09-09"
+  },
+  "0099": {
+    "sourceFiles": [
+      {
+        "path": "bin/lib/promotion-stamps.mjs",
+        "blob": "c54c5f862b4ed8a58822ebfa19bf37b23ce47995"
+      },
+      {
+        "path": "CLAUDE.md",
+        "blob": "5634be9a01afd3427350fbd98f940b9b098082de"
+      },
+      {
+        "path": "docs/contributing/glossary.md",
+        "blob": "1e8efc8fcae1f847e166434fa609fba4bd3b49a9"
+      },
+      {
+        "path": "docs/logs/README.md",
+        "blob": "3b5ddf383c5541ee03f81ba42ef18a3384cb45fd"
+      }
+    ],
+    "verifiedAt": "2026-09-09"
   }
 }

@@ -339,7 +339,7 @@ export function evaluateSweepFreshness(header, totalLogs, now) {
         `${backlog} work log(s) have not been swept (${totalLogs} in ` +
           `${LOGS_DIR}, ${logsConsidered} considered) — at or over the ` +
           `${SWEEP_BACKLOG_THRESHOLD}-log cadence. Run ` +
-          `/promoting-work-log-lessons.`,
+          `/promoting-work-log-insights.`,
       );
     }
   }
@@ -347,7 +347,7 @@ export function evaluateSweepFreshness(header, totalLogs, now) {
   if (lastSwept === "unset") {
     findings.push(
       `${TRACKER_PATH} has never been swept (last-swept=unset) — run ` +
-        `/promoting-work-log-lessons.`,
+        `/promoting-work-log-insights.`,
     );
     return findings;
   }
@@ -368,7 +368,7 @@ export function evaluateSweepFreshness(header, totalLogs, now) {
     findings.push(
       `${TRACKER_PATH} was last swept ${staleDays} day(s) ago ` +
         `(${lastSwept}) — over the ${SWEEP_STALENESS_THRESHOLD_DAYS}-day ` +
-        `threshold. Run /promoting-work-log-lessons.`,
+        `threshold. Run /promoting-work-log-insights.`,
     );
   }
 
@@ -483,7 +483,7 @@ export function runRetrospectiveCheck({
     );
   } catch (cause) {
     reporter.warn(
-      `${TRACKER_PATH} not found — run /promoting-work-log-lessons to ` +
+      `${TRACKER_PATH} not found — run /promoting-work-log-insights to ` +
         `create it. (${cause instanceof Error ? cause.message : String(cause)})`,
       { file: TRACKER_PATH },
     );

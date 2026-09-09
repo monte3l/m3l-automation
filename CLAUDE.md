@@ -161,7 +161,7 @@ Comment the _why_, not the _what_. TSDoc rules (every exported symbol, `@example
 
 ## Agent Operating Model
 
-**Hub-and-spoke**: the hub plans and dispatches to isolated spokes, never writing or reviewing `src/`/test code itself — enforced by `guard-hub-src-writes.mjs` and `disallowedTools: Agent` on every spoke (`pnpm check:agents`). Spoke roster, TDD loop, model tiering, recurring-failure lessons: `docs/contributing/agent-operating-model.md`, `model-selection.md`.
+**Hub-and-spoke**: the hub plans and dispatches to isolated spokes, never writing or reviewing `src/`/test code itself — enforced by `guard-hub-src-writes.mjs` and `disallowedTools: Agent` on every spoke (`pnpm check:agents`). Spoke roster, TDD loop, model tiering, recurring-failure insights: `docs/contributing/agent-operating-model.md`, `model-selection.md`.
 
 **Where a new instruction goes** — this file vs a path-scoped rule vs a skill vs a hook: `docs/contributing/instruction-authoring.md`. Inventories: `hooks-reference.md`, `skills-catalog.md`, `subagent-context-management.md` (mid-turn truncation).
 

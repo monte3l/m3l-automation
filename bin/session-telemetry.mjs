@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // The ONLY thing in this repo permitted to read Claude Code's session
 // transcripts. A thin adapter over the session-report plugin's bundled
-// analyze-sessions.mjs, invoked on demand by /promoting-work-log-lessons —
+// analyze-sessions.mjs, invoked on demand by /promoting-work-log-insights —
 // never a pre-push gate. ADR-0084.
 //
 // Why an adapter rather than calling the analyzer directly, three reasons:
@@ -360,7 +360,7 @@ export function listRecentTranscripts(dir, sinceMs, nowMs, fs) {
  * that's the AI-generated title, which is derived from the session's first
  * user prompt. A prompt that happened to include a secret or other
  * sensitive text would otherwise appear, uncapped, in this report — and
- * this report's documented consumer (`promoting-work-log-lessons`) can
+ * this report's documented consumer (`promoting-work-log-insights`) can
  * fold it into a work log that gets committed. Bounding the length and
  * stripping control characters reduces, without eliminating, that surface;
  * this is a local, on-demand admin tool reporting on the operator's own

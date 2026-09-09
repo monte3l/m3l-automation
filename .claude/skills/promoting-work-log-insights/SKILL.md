@@ -1,29 +1,35 @@
 ---
-name: promoting-work-log-lessons
+name: promoting-work-log-insights
 description: >-
-  Closes the work-log → rules loop: reads docs/logs/*.md, finds lessons
+  Closes the work-log → rules loop: reads docs/logs/*.md, finds insights
   recurring across logs, promotes them into .claude/rules, agents, or a skill's
-  SKILL.md. Use for /promoting-work-log-lessons, "promote work-log lessons",
-  "which lessons keep recurring", "what does our session telemetry say". m3l
-  MCP stance: adr_query (ADR-0096).
+  SKILL.md. Use for /promoting-work-log-insights, "promote work-log insights",
+  "which insights keep recurring", "what does our session telemetry say". m3l
+  MCP stance: adr_query (ADR-0096). Vocabulary: docs/contributing/glossary.md
+  (ADR-0099).
 ---
 
-# promoting-work-log-lessons
+# promoting-work-log-insights
 
 The `/writing-work-logs` skill writes a durable narrative after each task, and its
-Step 4 asks the author to fold generalizable lessons into the rules **in the
+Step 4 asks the author to fold generalizable insights into the rules **in the
 same change set**. That step is discretionary and single-log: the same agent
-that just wrote one log decides, in the moment, whether a lesson is worth
-promoting. Nothing ever looks _across_ logs. So a lesson that shows up once and
-is skipped as "too specific" can recur three logs later and still never reach
-`.claude/rules/` — the loop leaks.
+that just wrote one log decides, in the moment, whether an insight is worth
+promoting. Nothing ever looks _across_ logs. So an insight that shows up once
+and is skipped as "too specific" can recur three logs later and still never
+reach `.claude/rules/` — the loop leaks.
 
 This skill closes that leak. It reads the whole `docs/logs/` corpus at once,
-finds the lessons that recur (recurrence is the strongest signal that a lesson
-generalizes), and promotes each to the durable home where it will actually
-change future behavior. A promoted lesson is stamped back in its source logs so
-the next run skips it — that provenance marker is how the loop stays closed
-instead of re-proposing the same thing forever.
+finds the insights that recur (recurrence is the strongest signal that an
+insight generalizes), and promotes each to the durable home where it will
+actually change future behavior. A promoted insight is stamped back in its
+source logs so the next run skips it — that provenance marker is how the loop
+stays closed instead of re-proposing the same thing forever.
+
+See [`docs/contributing/glossary.md`](../../../docs/contributing/glossary.md)
+(ADR-0099) for the strict definitions of **observation** (the raw,
+run-specific noticing) and **insight** (the generalized, actionable claim this
+skill promotes) this page assumes throughout.
 
 **Three evidence sources, not one** (ADR-0084). Work logs are the narrative
 record, but they are not the only place this project's lived experience
@@ -37,13 +43,13 @@ accumulates:
 
 The three fail differently, which is the point. A log records what an author
 noticed; a memory records what an author chose to keep; telemetry records what
-actually happened whether or not anyone noticed. A lesson corroborated across
-two of them is much stronger evidence than one repeated twice inside a single
-system — see the extended recurrence criterion in Step 2.
+actually happened whether or not anyone noticed. An insight corroborated
+across two of them is much stronger evidence than one repeated twice inside a
+single system — see the extended recurrence criterion in Step 2.
 
 **Every considered log is recorded in `docs/research/retrospective.md`,
 including the ones this skill rejects.** That is not bookkeeping: without a
-`no-durable-lesson` row, a log that was read and found barren is
+`no-durable-insight` row, a log that was read and found barren is
 indistinguishable from a log nobody has opened, and the backlog cannot be
 counted. `check:retrospective` reads that tracker's header on every
 `pre-push`.
@@ -58,10 +64,10 @@ report. Only switch to apply after the user has seen and approved the proposals.
 
 - **propose** (default): scan, aggregate, route, and print a structured report of
   proposed edits with citations. No file writes.
-- **apply**: invoked as `/promoting-work-log-lessons --apply`, or when the user
+- **apply**: invoked as `/promoting-work-log-insights --apply`, or when the user
   approves the proposals in the same session. Writes the routed edits into the
   target files **and** stamps the provenance marker into every source log the
-  promoted lesson came from.
+  promoted insight came from.
 
 Propose first even when the user asks to apply directly, unless they have already
 seen the specific edits — a wrong promotion pollutes a rule file every future
@@ -72,11 +78,11 @@ task reads, so a look-before-write beat is cheap insurance.
 Copy this into your working notes and check items off as you go:
 
 ```
-- [ ] Step 1: Scan every docs/logs/*.md; extract lessons + divergences with source
+- [ ] Step 1: Scan every docs/logs/*.md; extract insights + divergences with source
 - [ ] Step 1b: Read the auto-memory store; run `pnpm telemetry:sessions`
 - [ ] Step 2: Aggregate by theme; apply the recurrence criterion; drop the
               already-promoted (provenance marker) and already-captured (grep)
-- [ ] Step 3: Route each surviving lesson to its durable home
+- [ ] Step 3: Route each surviving insight to its durable home
 - [ ] Step 4: (propose) Print the report — no writes — and stop
 - [ ] Step 5: (apply) Write the edits + stamp provenance markers, then verify
 - [ ] Step 6: Update docs/research/retrospective.md — EVERY log considered,
@@ -86,21 +92,28 @@ Copy this into your working notes and check items off as you go:
 ## Step 1 — Scan the corpus
 
 Read **every** file in `docs/logs/` in full — not a grep, not the first screen.
-The signal you are after (the same lesson phrased two different ways in two
+The signal you are after (the same insight phrased two different ways in two
 different logs) is invisible to a keyword search and easy to miss in an excerpt.
+
+**The corpus uses three different section headings for the same concept**,
+because `docs/logs/` is immutable history (ADR-0099 did not rewrite existing
+logs when the vocabulary changed): older logs use `## Lessons learned` or
+`## Lessons`, newer logs use `## Insights`. Scan for all three — a sweep that
+only matches one heading silently skips the rest of the corpus.
 
 From each log extract, with its source file and item number:
 
-- Every bullet under **Lessons learned**.
+- Every bullet under **Insights** (`## Insights`, `## Lessons learned`, or
+  `## Lessons` — whichever heading that log uses).
 - Every numbered item under **What didn't go as planned** — specifically its
   headline and its `Fix for future:` line, which is the actionable part.
 
 Ignore anything under **What went as planned** and the **Summary** — those record
 what happened, not what should change.
 
-Note whether a lesson already carries a provenance marker (see the marker syntax
-in Step 5). A marked lesson is already promoted; carry it forward only to skip it
-in Step 2.
+Note whether an insight already carries a provenance marker (see the marker
+syntax in Step 5). A marked insight is already promoted; carry it forward only
+to skip it in Step 2.
 
 ## Step 1b — Read the other two sources
 
@@ -122,7 +135,7 @@ zero-report that adapter exists to prevent.
 
 ## Step 2 — Aggregate, then filter to what's worth promoting
 
-Group the extracted lessons by theme. Two bullets that say the same thing in
+Group the extracted insights by theme. Two bullets that say the same thing in
 different words belong in one group — you are clustering by meaning, not string
 match (e.g. "verify the writer spoke's on-disk state" and "don't trust the
 implementer's truncated summary — check the files" are one theme).
@@ -130,10 +143,10 @@ implementer's truncated summary — check the files" are one theme).
 Keep a theme as a **promotion candidate** only if it clears all three filters:
 
 1. **Recurs across ≥2 distinct logs — OR appears in ≥1 log _and_ ≥1 memory.**
-   A lesson that appears in exactly one log is either already handled by that
+   An insight that appears in exactly one log is either already handled by that
    log's own Step 4 or genuinely specific to that submodule. Recurrence is what
    distinguishes a durable convention from a one-off. (If the user explicitly
-   asks to promote a specific single-log lesson, honor that — this is the
+   asks to promote a specific single-log insight, honor that — this is the
    default discovery signal, not a hard gate.)
 
    The memory arm is not a loosening of the bar, it is a different and
@@ -144,14 +157,15 @@ Keep a theme as a **promotion candidate** only if it clears all three filters:
    project noticed the same thing twice, in two systems, unprompted. Treat
    that as at least as strong as two logs, and cite both sources in Step 4.
    Count occurrences by **grepping every log for the theme's keyword**, not from
-   memory of what you read — a lesson is easy to miss in one log when that log
-   also carries a louder sibling divergence, and undercounting silently drops a
-   real candidate. `grep -rl "gen:index" docs/logs` is more reliable than recall.
+   memory of what you read — an insight is easy to miss in one log when that
+   log also carries a louder sibling divergence, and undercounting silently
+   drops a real candidate. `grep -rl "gen:index" docs/logs` is more reliable
+   than recall.
 
-2. **Not already promoted.** Drop any theme whose source lessons already carry a
-   `promoted → …` provenance marker.
+2. **Not already promoted.** Drop any theme whose source insights already carry
+   a `promoted → …` provenance marker.
 3. **Not already captured in the rules.** Before proposing, grep the likely
-   targets for the lesson's keyword — e.g.
+   targets for the insight's keyword — e.g.
    `grep -rin "gen:index" .claude/rules .claude/agents .claude/skills`. If the
    convention is already written down, the loop is already closed for it; drop it.
    A rule/agent/skill grep alone can miss a convention that lives only in ADR
@@ -159,13 +173,13 @@ Keep a theme as a **promotion candidate** only if it clears all three filters:
 })` is a cheap second check for that case before proposing a new rule that
    would just restate an existing decision.
 
-What survives all three is a real gap: a lesson the project keeps re-learning
-that its durable rules still don't mention.
+What survives all three is a real gap: an insight the project keeps
+re-learning that its durable rules still don't mention.
 
-## Step 3 — Route each lesson to its durable home
+## Step 3 — Route each insight to its durable home
 
-A lesson only changes behavior if it lives where the next agent will read it.
-`docs/contributing/instruction-authoring.md` is the canonical placement
+An insight only changes behavior if it lives where the next agent will read
+it. `docs/contributing/instruction-authoring.md` is the canonical placement
 policy: it routes any instruction to one of six tiers — `CLAUDE.md`,
 `.claude/rules/*.md` (`library-src.md`, `tests.md`, `scripts.md`,
 `domain-knowledge.md`), `.claude/agents/*.md`, a
@@ -180,10 +194,11 @@ prompt that governs the task.
 
 Write the promotion as the rules themselves are written: terse, imperative, and
 explaining the _why_ (a rule the reader understands survives edge cases a bare
-imperative does not). Include a code snippet only when the exact syntax _is_ the
-lesson. Keep it to a few lines — you are adding a rule, not pasting the log.
+imperative does not). Include a code snippet only when the exact syntax _is_
+the insight. Keep it to a few lines — you are adding a rule, not pasting the
+log.
 
-### Telemetry-derived findings
+### Telemetry-derived insights
 
 `pnpm telemetry:sessions` surfaces a class of problem no work log ever
 records, because nobody experiences it as an event. Read its payload for:
@@ -212,10 +227,10 @@ not because a five-question decision gate is expensive. Compare
 average means something, and read a `by_skill` total as "how much work followed
 this skill", never as "what this skill cost".
 
-Route these like any other lesson, with one difference: **cite the numbers**.
-A telemetry finding whose proposed edit does not carry the measurement that
-motivated it cannot be re-checked after the fix, and the next sweep has no way
-to tell whether it worked.
+Route these like any other insight, with one difference: **cite the
+numbers**. A telemetry insight whose proposed edit does not carry the
+measurement that motivated it cannot be re-checked after the fix, and the
+next sweep has no way to tell whether it worked.
 
 ## Step 4 — Propose (default mode: stop here)
 
@@ -247,38 +262,40 @@ For each approved promotion:
 1. **Edit the target file** — insert the rule text where it fits the file's
    existing structure (under the matching heading, alongside sibling rules). Match
    the surrounding formatting exactly.
-2. **Stamp the provenance marker** into every source log the lesson came from, so
-   the next run's Step 2 filter skips it. The marker is an italic suffix appended
-   to the lesson's bullet or divergence headline:
+2. **Stamp the provenance marker** into every source log the insight came
+   from, so the next run's Step 2 filter skips it. The marker is an italic
+   suffix appended to the insight's bullet or divergence headline:
 
    ```
-   **<keyword>** … the lesson text. _(promoted → .claude/rules/tests.md)_
+   **<keyword>** … the insight text. _(promoted → .claude/rules/tests.md)_
    ```
 
-   This is the same marker `/writing-work-logs`'s Step 4 uses when it promotes a
-   lesson at write time — the two skills share one convention so a log's promotion
-   state is always readable from the log itself. `pnpm check:promotion-stamps`
-   (blocking, ROADMAP H7) verifies the target path actually exists — a target
-   that gets renamed later is repaired via `RENAMED_TARGETS` in
-   `bin/lib/promotion-stamps.mjs`, never by editing the log.
+   This is the same marker `/writing-work-logs`'s Step 4 uses when it promotes
+   an insight at write time — the two skills share one convention so a log's
+   promotion state is always readable from the log itself.
+   `pnpm check:promotion-stamps` (blocking, ROADMAP H7) verifies the target
+   path actually exists — a target that gets renamed later is repaired via
+   `RENAMED_TARGETS` in `bin/lib/promotion-stamps.mjs`, never by editing the
+   log.
 
-3. **Incident → eval.** If the promoted lesson originated from a gate or CI
+3. **Incident → eval.** If the promoted insight originated from a gate or CI
    failure (not just a behavioral correction with no failing check attached),
    check whether the owning skill's `evals/evals.json` should gain a case
-   reproducing it — a lesson that once broke a real gate is exactly the shape
-   of regression an eval case exists to catch. Add one if it's missing; skip
-   this for lessons with no gate/CI failure behind them (most behavioral
-   corrections have nothing concrete to encode as a pass/fail case).
+   reproducing it — an insight that once broke a real gate is exactly the
+   shape of regression an eval case exists to catch. Add one if it's missing;
+   skip this for insights with no gate/CI failure behind them (most
+   behavioral corrections have nothing concrete to encode as a pass/fail
+   case).
 
 ## Step 6 — Record every considered log in the tracker
 
 Update `docs/research/retrospective.md` for **every log this run read**, not
 only the ones that produced an edit. A log read and found barren gets
-`no-durable-lesson`; a log carrying a candidate held back gets `deferred` with
-the reason. Skipping the rejects is what made the previous marker-only scheme
-uncountable, and it is the one step whose omission the gate cannot detect —
-`check:retrospective` compares `logs-considered` against the live log count, so
-an under-recorded sweep simply looks like a smaller backlog.
+`no-durable-insight`; a log carrying a candidate held back gets `deferred`
+with the reason. Skipping the rejects is what made the previous marker-only
+scheme uncountable, and it is the one step whose omission the gate cannot
+detect — `check:retrospective` compares `logs-considered` against the live
+log count, so an under-recorded sweep simply looks like a smaller backlog.
 
 Then update the header comment:
 
@@ -312,9 +329,10 @@ not a release event).
 
 ## Relationship to /auditing and /writing-work-logs
 
-- **/writing-work-logs** writes one log and _may_ promote that log's own lessons at
-  write time. This skill is the periodic cross-log sweep that catches what those
-  single-log passes left behind. They share the provenance-marker convention.
+- **/writing-work-logs** writes one log and _may_ promote that log's own insights
+  at write time. This skill is the periodic cross-log sweep that catches what
+  those single-log passes left behind. They share the provenance-marker
+  convention.
 - **/auditing** finds gaps by reading _live code_; this skill finds gaps by reading
   _logged history_. They are complementary — auditing surfaces "the code is missing
   X"; this surfaces "five logs show we keep hitting Y and never wrote it down."

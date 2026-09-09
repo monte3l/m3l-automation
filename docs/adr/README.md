@@ -230,5 +230,6 @@ surface).
 | 0096 | [Replace the in-repo `m3l` MCP server's tool set with read-only query tools](./0096-m3l-mcp-server-replace-with-query-tools.md)                           | Accepted             |
 | 0097 | [A Should-fix acknowledgment gate for claude-pr-review](./0097-should-fix-acknowledgment-gate.md)                                                         | Accepted             |
 | 0098 | [Raise the skill-listing budget fraction from 1% to 2%](./0098-raise-skill-listing-budget-fraction.md)                                                    | Accepted             |
+| 0099 | [Observation/insight vocabulary replaces the undefined "lesson"](./0099-observation-and-insight-vocabulary.md)                                            | Accepted             |
 
 <!-- END GENERATED ADR INDEX -->

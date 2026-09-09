@@ -1,19 +1,30 @@
 # Work logs
 
 Per-unit work logs — the durable narrative of what shipped, what diverged, and
-the lessons, written during the session that did the work. Logs are **immutable
+the insights, written during the session that did the work. Logs are **immutable
 history**: they are not edited after landing (unlike the living trackers in
 [`../ROADMAP.md`](../ROADMAP.md) and
 [`../plans/IMPLEMENTATION.md`](../plans/IMPLEMENTATION.md)). New logs are added
-by `/writing-work-logs`; recurring lessons graduate into the rules/agents via
-`/promoting-work-log-lessons`. Run that sweep after **every 5 new logs** —
+by `/writing-work-logs`; recurring insights graduate into the rules/agents via
+`/promoting-work-log-insights`. Run that sweep after **every 5 new logs** —
 `/writing-work-logs` Step 5 checks this (it counts logs newer than the latest
-`promoted →` stamp and prompts the sweep at 5+), or sooner whenever a lesson in
+`promoted →` stamp and prompts the sweep at 5+), or sooner whenever an insight in
 a fresh log feels familiar from an earlier one.
+
+**Vocabulary:** an **observation** is a raw, run-specific noticing (the "What
+went as planned"/"What didn't go as planned" sections); an **insight** is the
+generalized, actionable claim synthesized from one or more observations (the
+fourth section). Strict definitions and the boundary against neighboring
+terms: [`docs/contributing/glossary.md`](../contributing/glossary.md)
+(ADR-0099). **Heading history:** that section is titled `## Insights` in logs
+written from 2026-09-08 onward; earlier logs use `## Lessons learned` or
+`## Lessons` — same section, same concept, under its name at the time it was
+written. Never retitle an existing log's heading; a reader or tool scanning
+the corpus should recognize all three headings as the same section.
 
 **Scope is substance, not commit type.** A unit of work gets a log when it
 produced something worth re-reading later — what shipped, what diverged from
-plan, the lessons. That covers submodule/script implementation units _and_
+plan, the insights. That covers submodule/script implementation units _and_
 harness/governance/infra work with a real narrative (see `## Workflow /
 infra` below — dependabot-gate fixes, hook hardening, rule-file trims). It
 excludes mechanical changes with no narrative: dependency bumps,
@@ -44,7 +55,7 @@ exactly once, no dangling links, no date-column mismatches — but it is a
 backstop for the step above, not a substitute for it.
 
 A `promoted →` stamp's syntax is `_(promoted → <repo-relative path>)_`,
-appended to the lesson bullet or divergence headline it came from.
+appended to the insight bullet or divergence headline it came from.
 `pnpm check:promotion-stamps` (blocking, ROADMAP H7 / issue #1000) verifies
 every stamp's target exists and every `docs/logs/<name>.md` citation inside a
 rule/agent/skill/CLAUDE.md resolves — logs stay immutable, so a stamp whose

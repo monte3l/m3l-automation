@@ -24,7 +24,7 @@ depend on it:
 | ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------- | ------------------------------------------------------------------------------------ |
 | [ADR](../adr/README.md)            | A decision hard to reverse without a major bump, or one other decisions will cite (`docs/adr/README.md`'s "When to write an ADR") | At decision time, forward-looking   | Yes, once `Accepted` (`## Update` sections only execute an already-declared trigger) |
 | **Decision note** (this directory) | A real decision, low blast radius, cheaply reversible, nothing else depends on its exact form                                     | At decision time, forward-looking   | No — superseded by editing in place, dated                                           |
-| [Work log](../logs/README.md)      | The narrative of what shipped, what diverged, and the lessons from a unit of work                                                 | After the work ships, retrospective | Yes — logs are never edited after landing                                            |
+| [Work log](../logs/README.md)      | The narrative of what shipped, what diverged, and the insights from a unit of work                                                | After the work ships, retrospective | Yes — logs are never edited after landing                                            |
 
 The test that actually separates an ADR from a decision note: **would a
 different choice here force a different choice somewhere else, or cost a

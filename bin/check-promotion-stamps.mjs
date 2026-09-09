@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Validates the `promoted →` stamp convention `/promoting-work-log-lessons`
+// Validates the `promoted →` stamp convention `/promoting-work-log-insights`
 // and `/writing-work-logs` share (ROADMAP H7, issue #1000):
 //   - forward: every docs/logs/*.md `_(promoted → <path>)_` stamp names a
 //     file that actually exists;
