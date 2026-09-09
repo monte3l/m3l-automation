@@ -22,10 +22,10 @@ Three PRs, ~40 files total, all landed on `feat/lessons-to-insights` →
 - **PR2** — `git mv .claude/skills/promoting-work-log-lessons/`
   → `promoting-work-log-insights/`, rewrote `SKILL.md` and `evals/evals.json`,
   and added a `RENAMED_TARGETS` alias in `bin/lib/promotion-stamps.mjs` so
-  every pre-existing `_(promoted → …promoting-work-log-lessons/SKILL.md)_`
-  stamp in an immutable `docs/logs/` entry keeps resolving. Mechanical
-  dependents (gates, catalog, tests, fixtures, provenance) updated in the
-  same PR.
+  every pre-existing promotion stamp pointing at the old
+  `promoting-work-log-lessons/SKILL.md` path (in an immutable `docs/logs/`
+  entry) keeps resolving. Mechanical dependents (gates, catalog, tests,
+  fixtures, provenance) updated in the same PR.
 - **PR3** (this PR, #1137) — `writing-work-logs/SKILL.md`'s
   `### Lessons learned` → `## Insights` template section, dual/triple-heading
   recognition (`## Lessons learned` / `## Lessons` / `## Insights`, since 175
