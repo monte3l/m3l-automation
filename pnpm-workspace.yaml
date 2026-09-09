@@ -36,6 +36,13 @@ overrides:
   # which pins ^7.1.5; no html-to-text release yet ships >=8. Drop once
   # html-to-text or mailparser bumps the direct dep above 8.
   "deepmerge-ts@<8.0.0": "^8.0.0"
+  # GHSA-2883-xcg3-v3hh: js-yaml unbounded CPU on empty merge sources —
+  # maxTotalMergeKeys does not bound them (2026-09-09). Transitive path:
+  # @commitlint/load → cosmiconfig@9, which pins js-yaml ^4.1.0; only
+  # cosmiconfig@10 moved to js-yaml ^5, and @commitlint/load has no release
+  # that takes it. Caret (not >=) so the pin stays on the 4.x line.
+  # Drop once @commitlint/load bumps cosmiconfig to >=10.
+  "js-yaml@>=4.0.0 <4.3.2": "^4.3.2"
 allowBuilds:
   unrs-resolver: false
   lefthook: true
