@@ -47,8 +47,8 @@ export interface M3LFileLoggerHandlerOptions {
  * in emit order.
  *
  * `handle()` is synchronous and returns before the queued write settles;
- * callers that need the write to have landed should poll the file (as the
- * test suite does with `vi.waitFor`).
+ * callers that need the write to have landed should `await`
+ * {@link M3LFileLoggerHandler.flush}.
  *
  * `reset()` is intentionally a no-op — logs must survive a script reset
  * rather than being silently discarded.
@@ -117,6 +117,40 @@ export class M3LFileLoggerHandler implements M3LLoggerHandler {
     this.#writeQueue = this.#writeQueue.then(() =>
       this.#writeSnapshot(snapshot),
     );
+  }
+
+  /**
+   * Waits for every write enqueued so far — including one enqueued by a
+   * `handle()` call made while this `flush()` is itself in flight — to have
+   * settled. A loop-until-stable read of the private write queue, not a
+   * single `await`: a single `await this.#writeQueue` would capture a stale
+   * reference if `handle()` re-chains the queue during the await, and could
+   * resolve before a write queued in that window actually lands.
+   *
+   * Never rejects: `#writeSnapshot` already catches and reports every export
+   * failure to `process.stderr` rather than letting it propagate, so a
+   * queued write failing does not make `flush()` reject.
+   *
+   * @returns A promise that resolves once every currently-queued (and any
+   *   write enqueued while waiting) write has settled.
+   *
+   * @example
+   * ```ts
+   * import { Core } from "@m3l-automation/m3l-common";
+   *
+   * const handler = new Core.M3LFileLoggerHandler({ filePath: "run.log" });
+   * handler.handle({ category: Core.M3LLogEventCategory.INFO, message: "done" });
+   * await handler.flush();
+   * // the file on disk now reflects the "done" event, unless the write
+   * // failed (see the process.stderr diagnostic in that case).
+   * ```
+   */
+  async flush(): Promise<void> {
+    let previous: Promise<void>;
+    do {
+      previous = this.#writeQueue;
+      await previous;
+    } while (previous !== this.#writeQueue);
   }
 
   /**

@@ -303,7 +303,7 @@
       },
       {
         "path": "docs/implementation-status.md",
-        "blob": "b53dd9787c60e3765107ed4593c33f17d2ea0e7b"
+        "blob": "ce47730ae37a09ae83bf195cca19397f2004d4ac"
       },
       {
         "path": "package.json",
@@ -638,7 +638,7 @@
       },
       {
         "path": "docs/implementation-status.md",
-        "blob": "b53dd9787c60e3765107ed4593c33f17d2ea0e7b"
+        "blob": "ce47730ae37a09ae83bf195cca19397f2004d4ac"
       },
       {
         "path": "docs/plans/IMPLEMENTATION.md",
@@ -970,7 +970,7 @@
       },
       {
         "path": "docs/implementation-status.md",
-        "blob": "b53dd9787c60e3765107ed4593c33f17d2ea0e7b"
+        "blob": "ce47730ae37a09ae83bf195cca19397f2004d4ac"
       },
       {
         "path": "docs/logs/README.md",
@@ -1184,14 +1184,14 @@
       },
       {
         "path": "docs/reference/core/logging.md",
-        "blob": "7b6d24516ae651b169241ff258bfae6615e991dc"
+        "blob": "008e6dace2938423fd3597b1c4bfea10876c0ec5"
       },
       {
         "path": "scripts/json-etl/src/config.ts",
         "blob": "7585109b37476c97a740680dfbee343f9b65d3e1"
       }
     ],
-    "verifiedAt": "2026-09-07"
+    "verifiedAt": "2026-09-09"
   },
   "0043": {
     "sourceFiles": [
@@ -1251,10 +1251,10 @@
       },
       {
         "path": "docs/reference/core/exporters.md",
-        "blob": "f5b1b535d0f87eadaa7fcd7704bf5fdcf313ce9d"
+        "blob": "ded03cd28e6b59e4a58fec09807a3203049ec429"
       }
     ],
-    "verifiedAt": "2026-09-07"
+    "verifiedAt": "2026-09-09"
   },
   "0046": {
     "sourceFiles": [
@@ -1669,7 +1669,7 @@
       },
       {
         "path": "docs/implementation-status.md",
-        "blob": "b53dd9787c60e3765107ed4593c33f17d2ea0e7b"
+        "blob": "ce47730ae37a09ae83bf195cca19397f2004d4ac"
       },
       {
         "path": "docs/logs/2026-08-21-f23-field-test-b2.md",

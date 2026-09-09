@@ -933,7 +933,7 @@ describe("M3LConsoleLoggerHandler", () => {
 });
 
 // ---------------------------------------------------------------------------
-// M3LFileLoggerHandler — real temp file, drained via vi.waitFor
+// M3LFileLoggerHandler — real temp file, drained via handler.flush()
 // ---------------------------------------------------------------------------
 describe("M3LFileLoggerHandler", () => {
   let tempFileCounter = 0;
@@ -973,11 +973,7 @@ describe("M3LFileLoggerHandler", () => {
     });
     handler.handle({ category: M3LLogEventCategory.ERROR, message: "third" });
 
-    await vi.waitFor(async () => {
-      const raw = await readFile(filePath, "utf8");
-      const parsed = JSON.parse(raw) as unknown[];
-      expect(parsed).toHaveLength(3);
-    });
+    await handler.flush();
 
     const raw = await readFile(filePath, "utf8");
     const parsed = JSON.parse(raw) as M3LLogEvent[];
@@ -996,11 +992,9 @@ describe("M3LFileLoggerHandler", () => {
       category: M3LLogEventCategory.INFO,
       message: "before-reset",
     });
-    await vi.waitFor(async () => {
-      const raw = await readFile(filePath, "utf8");
-      const parsed = JSON.parse(raw) as unknown[];
-      expect(parsed).toHaveLength(1);
-    });
+    await handler.flush();
+    const rawBeforeReset = await readFile(filePath, "utf8");
+    expect(JSON.parse(rawBeforeReset) as unknown[]).toHaveLength(1);
 
     handler.reset();
 
@@ -1008,11 +1002,9 @@ describe("M3LFileLoggerHandler", () => {
       category: M3LLogEventCategory.INFO,
       message: "after-reset",
     });
-    await vi.waitFor(async () => {
-      const raw = await readFile(filePath, "utf8");
-      const parsed = JSON.parse(raw) as unknown[];
-      expect(parsed).toHaveLength(2);
-    });
+    await handler.flush();
+    const rawAfterReset = await readFile(filePath, "utf8");
+    expect(JSON.parse(rawAfterReset) as unknown[]).toHaveLength(2);
 
     const raw = await readFile(filePath, "utf8");
     const parsed = JSON.parse(raw) as M3LLogEvent[];
@@ -1037,9 +1029,8 @@ describe("M3LFileLoggerHandler", () => {
       data: { SECRET_DATA_MUST_NOT_LEAK: true },
     });
 
-    await vi.waitFor(() => {
-      expect(stderrSpy).toHaveBeenCalled();
-    });
+    await handler.flush();
+    expect(stderrSpy).toHaveBeenCalled();
 
     const written = stderrSpy.mock.calls
       .map(([chunk]) => String(chunk))
@@ -1069,9 +1060,8 @@ describe("M3LFileLoggerHandler", () => {
       category: M3LLogEventCategory.ERROR,
       message: "at or above the WARNING floor",
     });
-    await vi.waitFor(() => {
-      expect(exportSpy).toHaveBeenCalledTimes(1);
-    });
+    await handler.flush();
+    expect(exportSpy).toHaveBeenCalledTimes(1);
 
     const [writtenEvents] = exportSpy.mock.calls[0] ?? [];
     expect(
@@ -1095,9 +1085,8 @@ describe("M3LFileLoggerHandler", () => {
 
     handler.handle({ category: M3LLogEventCategory.INFO, message: "x" });
 
-    await vi.waitFor(() => {
-      expect(stderrSpy).toHaveBeenCalled();
-    });
+    await handler.flush();
+    expect(stderrSpy).toHaveBeenCalled();
 
     const written = stderrSpy.mock.calls
       .map(([chunk]) => String(chunk))
