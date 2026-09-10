@@ -556,7 +556,20 @@ export function extractResultEnvelope(events) {
  *    the routing-assertion flakiness issue 1087 documents at corpus scale
  *    (~93-95% of all failures), not a gap in the skill's description or the
  *    case's scope — widening either would not change a model that already
- *    produces the right answer without the tool call.
+ *    produces the right answer without the tool call. Issue 1087's P2 audit
+ *    (`docs/logs/2026-09-10-skill-eval-flaky-negative-routing.md`) confirmed
+ *    the same pattern at wider scale via 2-3 probe runs per skill: 15 more
+ *    cases across `creating-prs`, `implementing-submodules`,
+ *    `refreshing-typescript-guidance`, `researching-typescript-guidance`,
+ *    `scaffolding-scripts`, and `writing-work-logs` each showed correct,
+ *    fully-graded-compliant content on at least one run with `skills
+ *    invoked: none` — including cases the issue's own candidate list never
+ *    named, and excluding some it did (`resolving-merge-conflicts#2`/`#4`
+ *    reproduced clean across 2 rounds and were left untouched). The
+ *    live-probe requirement in this reason is about verifying the specific
+ *    case, not about the case appearing on any particular candidate list —
+ *    a stale list is exactly the kind of authored claim CLAUDE.md's Task
+ *    Workflow says to re-derive before acting on it.
  * 4. The case is a NEGATIVE-ROUTING case: the graded-correct behavior is for
  *    the skill under test to decline and hand off to a *different* skill
  *    (e.g. `implementing-scripts#4`, which asks about a library submodule
