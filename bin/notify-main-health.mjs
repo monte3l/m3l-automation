@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // Opens, updates, or closes the single "main is red" tracking issue in
-// response to a workflow_run event on CI or Pages
+// response to a workflow_run event on any of bin/lib/main-health.mjs's
+// WATCHED_WORKFLOWS (CI, Pages, or Skill Evals)
 // (.github/workflows/main-health.yml). This closes the last gap the
 // 6-slice CI-fix effort named but didn't solve: nothing alerted when `main`
 // went red — seven consecutive red pushes over 2.5 hours went unremarked by
@@ -12,13 +13,14 @@
 // command string — this script has no injection surface from untrusted
 // event data.
 //
-// A success only closes the issue once the OTHER watched workflow's own
+// A success only closes the issue once every OTHER watched workflow's own
 // latest completed run on main is also green (otherWorkflowLatestConclusion
-// / decideSuccessAction) — CI recovering while Pages is still red must not
-// close the tracking issue. The calling workflow's `concurrency:` group
-// serializes overlapping notify runs (CI and Pages can both complete on the
-// same push), so a second run always re-reads live issue state after the
-// first run's write, rather than racing it into creating a duplicate.
+// / decideSuccessAction) — CI recovering while Pages or Skill Evals is
+// still red must not close the tracking issue. The calling workflow's
+// `concurrency:` group serializes overlapping notify runs (two or more
+// watched workflows can complete around the same push), so a second run
+// always re-reads live issue state after the first run's write, rather than
+// racing it into creating a duplicate.
 //
 // Never runs usefully outside that workflow (it needs a real workflow_run
 // payload and a `gh`-authenticated GITHUB_TOKEN), but is a real bin/*.mjs
@@ -38,7 +40,7 @@ import {
   decideSuccessAction,
   findTrackingIssue,
   MAIN_HEALTH_ISSUE_TITLE,
-  otherWatchedWorkflow,
+  otherWatchedWorkflows,
 } from "./lib/main-health.mjs";
 import { createReporter, parseJsonFlag } from "./lib/report.mjs";
 
@@ -115,11 +117,11 @@ function parseCreatedIssueNumber(output) {
 }
 
 /**
- * The other watched workflow's own most recent COMPLETED run's conclusion
+ * One other watched workflow's own most recent COMPLETED run's conclusion
  * on `main` — the live source of truth {@link decideSuccessAction} checks
  * before closing the tracking issue, rather than trusting that this run's
  * own success means main is fully green. `null` when it has no run history
- * at all (a repo where only one of the two has ever run).
+ * at all (e.g. a workflow that has never run).
  *
  * @param {(args: string[]) => string} runGhFn
  * @param {string} otherWorkflow
@@ -194,9 +196,11 @@ try {
     }
   } else if (conclusion === "success") {
     if (existing) {
-      const other = otherWatchedWorkflow(workflow);
-      const otherConclusion = otherWorkflowLatestConclusion(runGh, other);
-      const action = decideSuccessAction(otherConclusion);
+      const others = otherWatchedWorkflows(workflow);
+      const otherConclusions = others.map((other) =>
+        otherWorkflowLatestConclusion(runGh, other),
+      );
+      const action = decideSuccessAction(otherConclusions);
 
       if (action === "close") {
         runGh([
@@ -221,6 +225,11 @@ try {
           `${workflow} passed on main — closed tracking issue #${existing.number}.`,
         );
       } else {
+        const stillRed = others.filter(
+          (_, index) =>
+            otherConclusions[index] !== null &&
+            otherConclusions[index] !== "success",
+        );
         runGh([
           "issue",
           "comment",
@@ -228,10 +237,11 @@ try {
           "-R",
           REPO,
           "--body",
-          buildPartialResolutionComment({ ...occurrence, other }),
+          buildPartialResolutionComment({ ...occurrence, stillRed }),
         ]);
+        const stillRedVerb = stillRed.length === 1 ? "is" : "are";
         reporter.succeed(
-          `${workflow} passed on main, but ${other} is still red — tracking issue #${existing.number} stays open.`,
+          `${workflow} passed on main, but ${stillRed.join(", ")} ${stillRedVerb} still red — tracking issue #${existing.number} stays open.`,
         );
       }
     } else {

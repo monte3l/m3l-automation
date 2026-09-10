@@ -8,7 +8,7 @@ import {
   buildResolutionComment,
   decideSuccessAction,
   findTrackingIssue,
-  otherWatchedWorkflow,
+  otherWatchedWorkflows,
 } from "../lib/main-health.mjs";
 
 const OCCURRENCE = {
@@ -25,42 +25,58 @@ describe("MAIN_HEALTH_ISSUE_TITLE", () => {
 });
 
 describe("WATCHED_WORKFLOWS", () => {
-  test("is exactly CI and Pages, in that order", () => {
-    expect(WATCHED_WORKFLOWS).toEqual(["CI", "Pages"]);
+  test("is exactly CI, Pages, and Skill Evals, in that order", () => {
+    expect(WATCHED_WORKFLOWS).toEqual(["CI", "Pages", "Skill Evals"]);
   });
 });
 
-describe("otherWatchedWorkflow", () => {
-  test('returns "Pages" for "CI"', () => {
-    expect(otherWatchedWorkflow("CI")).toBe("Pages");
+describe("otherWatchedWorkflows", () => {
+  test('returns ["Pages", "Skill Evals"] for "CI"', () => {
+    expect(otherWatchedWorkflows("CI")).toEqual(["Pages", "Skill Evals"]);
   });
 
-  test('returns "CI" for "Pages"', () => {
-    expect(otherWatchedWorkflow("Pages")).toBe("CI");
+  test('returns ["CI", "Skill Evals"] for "Pages"', () => {
+    expect(otherWatchedWorkflows("Pages")).toEqual(["CI", "Skill Evals"]);
+  });
+
+  test('returns ["CI", "Pages"] for "Skill Evals"', () => {
+    expect(otherWatchedWorkflows("Skill Evals")).toEqual(["CI", "Pages"]);
   });
 
   test("throws for a workflow name that is not exactly one of the watched workflows", () => {
-    expect(() => otherWatchedWorkflow("Deploy")).toThrow(
-      '"Deploy" is not exactly one of the watched workflows (CI, Pages).',
+    expect(() => otherWatchedWorkflows("Deploy")).toThrow(
+      '"Deploy" is not exactly one of the watched workflows (CI, Pages, Skill Evals).',
     );
   });
 });
 
 describe("decideSuccessAction", () => {
-  test('returns "close" when the other workflow has no run history (null)', () => {
-    expect(decideSuccessAction(null)).toBe("close");
+  test('returns "close" for an empty array (vacuous truth over Array.prototype.every)', () => {
+    expect(decideSuccessAction([])).toBe("close");
   });
 
-  test('returns "close" when the other workflow\'s latest conclusion is "success"', () => {
-    expect(decideSuccessAction("success")).toBe("close");
+  test('returns "close" when every other workflow has no run history (null)', () => {
+    expect(decideSuccessAction([null, null])).toBe("close");
   });
 
-  test('returns "stay-open" when the other workflow\'s latest conclusion is "failure"', () => {
-    expect(decideSuccessAction("failure")).toBe("stay-open");
+  test('returns "close" for a mix of no-run-history (null) and "success"', () => {
+    expect(decideSuccessAction([null, "success"])).toBe("close");
+  });
+
+  test('returns "close" when every other workflow\'s latest conclusion is "success"', () => {
+    expect(decideSuccessAction(["success", "success"])).toBe("close");
+  });
+
+  test('returns "stay-open" when one other workflow is "failure", even alongside an otherwise-green entry', () => {
+    expect(decideSuccessAction(["failure", "success"])).toBe("stay-open");
+  });
+
+  test('returns "stay-open" when one entry is "failure" and another has no run history (null)', () => {
+    expect(decideSuccessAction([null, "failure"])).toBe("stay-open");
   });
 
   test('returns "stay-open" for a non-success, non-"failure" conclusion, proving it is not special-casing exactly "failure"', () => {
-    expect(decideSuccessAction("cancelled")).toBe("stay-open");
+    expect(decideSuccessAction(["cancelled", "success"])).toBe("stay-open");
   });
 });
 
@@ -125,14 +141,29 @@ describe("buildResolutionComment", () => {
 });
 
 describe("buildPartialResolutionComment", () => {
-  const PARTIAL_OCCURRENCE = { ...OCCURRENCE, other: "Pages" };
+  const PARTIAL_OCCURRENCE = { ...OCCURRENCE, stillRed: ["Pages"] };
 
   test("includes the recovered workflow, the still-red other workflow, the run URL, and sha", () => {
     const comment = buildPartialResolutionComment(PARTIAL_OCCURRENCE);
     expect(comment).toContain(PARTIAL_OCCURRENCE.workflow);
-    expect(comment).toContain(PARTIAL_OCCURRENCE.other);
+    expect(comment).toContain("Pages");
     expect(comment).toContain(PARTIAL_OCCURRENCE.runUrl);
     expect(comment).toContain(PARTIAL_OCCURRENCE.sha);
+  });
+
+  test("uses the singular verb when exactly one workflow is still red", () => {
+    const comment = buildPartialResolutionComment(PARTIAL_OCCURRENCE);
+    expect(comment).toContain("is still red");
+  });
+
+  test("uses the plural verb and lists every still-red workflow when more than one is still red", () => {
+    const comment = buildPartialResolutionComment({
+      ...OCCURRENCE,
+      stillRed: ["Pages", "Skill Evals"],
+    });
+    expect(comment).toContain("Pages");
+    expect(comment).toContain("Skill Evals");
+    expect(comment).toContain("are still red");
   });
 
   test("reads as still-open, not as a close", () => {
@@ -148,7 +179,7 @@ describe("buildPartialResolutionComment", () => {
     expect(partial).not.toBe(resolution);
     expect(resolution).toContain("closing");
     expect(partial).not.toContain("closing");
-    expect(resolution).not.toContain(PARTIAL_OCCURRENCE.other);
+    expect(resolution).not.toContain("Pages");
   });
 });
 

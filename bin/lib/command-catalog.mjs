@@ -553,7 +553,7 @@ export const COMMAND_CATALOG = [
   {
     name: "notify:main-health",
     description:
-      'Opens, updates, or closes the single "main is red" tracking issue from a workflow_run event on CI or Pages. Invoked by .github/workflows/main-health.yml only — needs WORKFLOW_NAME/RUN_URL/HEAD_SHA/CONCLUSION env vars from a real workflow_run payload, so not meaningfully runnable by hand.',
+      'Opens, updates, or closes the single "main is red" tracking issue from a workflow_run event on any watched workflow (CI, Pages, or Skill Evals). Invoked by .github/workflows/main-health.yml only — needs WORKFLOW_NAME/RUN_URL/HEAD_SHA/CONCLUSION env vars from a real workflow_run payload, so not meaningfully runnable by hand.',
   },
   {
     name: "check:index",

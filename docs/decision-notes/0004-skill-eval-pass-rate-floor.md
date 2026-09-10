@@ -96,16 +96,15 @@ The pre-fix 92-case calibration above stays as the historical record of why
 0.60 was chosen; it is not re-derived against the now-larger 98-case corpus,
 since that window's numbers describe a corpus that no longer exists in that
 form. Issue 1087's exit criterion (raising `MIN_PASS_RATE`) is met by this
-change; the issue remains open only for its separate main-health.yml
-coverage gap (its own gap #1), tracked as a follow-up PR against the same
-issue.
+change; the issue's separate main-health.yml coverage gap (its own gap #1)
+was closed in a follow-up PR against the same issue.
 
 ## Links
 
 - Related: issue 809 (item 5, closed by the original change), issue 1087 (the
   routing debt that kept the floor low; raising `MIN_PASS_RATE` was its exit
-  criterion — met by the 2026-09-10 addendum above; the issue stays open for
-  its separate main-health.yml coverage gap)
+  criterion — met by the 2026-09-10 addendum above; its separate
+  main-health.yml coverage gap was closed in a follow-up PR the same day)
 - Related: `bin/run-skill-evals.mjs` — `MIN_PASS_RATE`,
   `evaluateSuiteOutcome`, `formatSuiteSummary`, `gateFailureMessage`
 - Related: `.github/workflows/skill-evals.yml` header, and the
