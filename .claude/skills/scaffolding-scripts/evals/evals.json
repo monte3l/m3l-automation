@@ -46,6 +46,7 @@
     {
       "id": 4,
       "prompt": "Scaffold a new module for the library — a 'cache' capability. Nothing exists for it yet.",
+      "expect_routed_to": "scaffolding-submodules",
       "expected_output": "Skill recognizes this is a library module request, not a consumer script, and redirects to the `scaffolding-submodules` skill without describing any steps for scripts/.",
       "expectations": [
         "Explicitly identifies the request as a library module (not a consumer script under `scripts/`)",

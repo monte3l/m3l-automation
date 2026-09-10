@@ -23,6 +23,7 @@
     {
       "id": 2,
       "prompt": "/researching-anthropic-guidance prompt caching — I want to know Anthropic's official recommendations before I redesign our prompt structure",
+      "expect_skill_fired": false,
       "expected_output": "The response emits at least 3 distinct WOULD-DISPATCH: Explore lines covering different facets of prompt caching (cache-breakpoint placement, TTL/cost tradeoffs, API usage patterns, model-specific behavior), each restricted to Anthropic-owned domains, followed by a synthesis plan naming both Consensus/best-practices and Contradictions/drift sections explicitly.",
       "expectations": [
         "Response emits at least 3 distinct WOULD-DISPATCH: Explore lines, each scoped to a different facet of prompt caching — cache-breakpoint placement, TTL and cost tradeoffs, API usage patterns, and model-specific caching behavior are the expected facets; no two briefs may cover the same facet.",
@@ -47,6 +48,7 @@
     {
       "id": 4,
       "prompt": "/researching-anthropic-guidance has Claude Code shipped anything in the last few releases around hooks or subagent tool grants? I want to know before we touch our hook config — see docs/harness/settings-snapshot.json for what we currently have",
+      "expect_skill_fired": false,
       "expected_output": "The response emits at least 3 distinct WOULD-DISPATCH: Explore lines across different facets of recent Claude Code changes, with at least one brief explicitly naming the Claude Code CHANGELOG URL or the release-notes page as a first-class source to fetch directly, and a synthesis plan naming both Consensus and Contradictions/drift sections.",
       "files": [
         {

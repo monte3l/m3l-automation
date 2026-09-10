@@ -105,6 +105,7 @@
     {
       "id": 7,
       "prompt": "I just tried to push my feature branch and got this error: \"! [remote rejected] feat/notification-floor -> feat/notification-floor (cannot lock ref 'refs/heads/feat/notification-floor': unable to resolve reference)\". What do I do?",
+      "expect_skill_fired": false,
       "expected_output": "The skill recognizes this exact error as the tell that the push lost a race against the branch's own post-merge deletion, checks the PR's merge state via `gh pr view`, and — finding it MERGED — recovers by cherry-picking the orphaned commit onto a fresh branch off the new main rather than retrying the same push.",
       "expectations": [
         "States that a `cannot lock ref ... unable to resolve reference` rejection is the tell of a race against the branch's own deletion, not a transient error to blindly retry",

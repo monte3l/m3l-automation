@@ -38,6 +38,7 @@
     {
       "id": 2,
       "prompt": "/promoting-work-log-insights --apply — I've seen the proposal, go ahead and fold in the recurring insights and stamp the logs.",
+      "expect_skill_fired": false,
       "expected_output": "A correct apply-mode response edits .claude/rules/tests.md to add a rule about mockReset in afterEach for vi.mock factory functions, stamps a `_(promoted → .claude/rules/tests.md)_` marker into all three recurring-insight log files, omits the distractor log, and states it is handing off to /writing-commits.",
       "files": [
         {

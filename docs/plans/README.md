@@ -31,6 +31,7 @@ instead of carrying a stale table.
 | [`2026-08-20-cli-evolution.md`](./2026-08-20-cli-evolution.md)                     | CLI-first evolution programme (U-series) — U13 remaining       |
 | [`2026-08-20-m3l-console.md`](./2026-08-20-m3l-console.md)                         | m3l console programme (X-series) — X8a-d, X13 remaining        |
 | [`2026-09-08-adaptive-host-budgeting.md`](./2026-09-08-adaptive-host-budgeting.md) | Adaptive host budgeting (ADR-0080 follow-on) — P1-P3 remaining |
+| [`2026-09-10-skill-eval-routing-debt.md`](./2026-09-10-skill-eval-routing-debt.md) | Skill-eval routing debt (issue #1087) — P2-P4 remaining        |
 
 ## Archive
 

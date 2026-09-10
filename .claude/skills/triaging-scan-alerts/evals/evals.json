@@ -40,6 +40,7 @@
     {
       "id": 3,
       "prompt": "My GitHub Actions workflow failed on the `build` job \u2014 the TypeScript compilation step exited with code 1. Can you diagnose what went wrong?",
+      "expect_routed_to": "triaging-ci",
       "expected_output": "A short response explaining this is a CI workflow failure outside the scope of code-scanning triage, directing the user to the triaging-ci skill rather than running any code-scanning steps.",
       "expectations": [
         "The response does not emit any WOULD-RUN line containing `code-scanning/alerts`",

@@ -526,8 +526,10 @@ export function extractResultEnvelope(events) {
 /**
  * Whether a case's fired-skill requirement was met.
  *
- * Every case defaults to requiring the skill under test to actually fire —
- * `expect_skill_fired: false` opts a case OUT for two distinct reasons:
+ * Every case defaults to requiring the skill under test to actually fire.
+ * Two fields opt a case OUT of that default, for four distinct reasons —
+ * `expect_skill_fired: false` covers the first three, `expect_routed_to`
+ * turns the assertion around rather than dropping it:
  *
  * 1. The case tests the skill's own contract to skip itself
  *    (`.claude/skills/starting-work/evals/evals.json`#4: a read-only
@@ -546,16 +548,73 @@ export function extractResultEnvelope(events) {
  *    the choice was already made for it. {@link extractInvokedSkills} can
  *    only see the PROSE-triggered path, where the model itself decides to
  *    call `Skill` as an explicit tool use.
+ * 3. A genuinely in-scope prose prompt where a repeated probe shows the
+ *    model reliably satisfies every graded criterion without ever emitting
+ *    a `Skill` tool_use block (`creating-prs#7`: cherry-pick-after-lost-
+ *    push-race recovery, verified 2/2 independent runs — all five
+ *    expectations met each time, `skills invoked: none` each time). This is
+ *    the routing-assertion flakiness issue 1087 documents at corpus scale
+ *    (~93-95% of all failures), not a gap in the skill's description or the
+ *    case's scope — widening either would not change a model that already
+ *    produces the right answer without the tool call.
+ * 4. The case is a NEGATIVE-ROUTING case: the graded-correct behavior is for
+ *    the skill under test to decline and hand off to a *different* skill
+ *    (e.g. `implementing-scripts#4`, which asks about a library submodule
+ *    and should redirect to `implementing-submodules`). `expect_routed_to:
+ *    "<sibling>"` asserts the skill under test does NOT fire — the same
+ *    assertion `expect_skill_fired: false` makes, but self-documenting the
+ *    sibling it should have routed to instead, which `check-skill-evals.mjs`
+ *    can then validate still exists (catching a rename like
+ *    `promoting-work-log-lessons` → `promoting-work-log-insights` orphaning
+ *    the reference). It deliberately does NOT require the named sibling to
+ *    itself produce a `Skill` tool_use: two independent probes
+ *    (`implementing-scripts#3` → `scaffolding-scripts`,
+ *    `refreshing-anthropic-guidance#3` → `researching-anthropic-guidance`)
+ *    showed a model that correctly recommends the sibling IN PROSE — meeting
+ *    every graded criterion, including "names `<sibling>` as the correct
+ *    skill" — without ever invoking that sibling's `Skill` tool inline. That
+ *    is the right behavior for a single-turn advisory response: actually
+ *    invoking the sibling mid-turn would start executing ITS procedure
+ *    (`scaffolding-scripts` writes files) when the case's own
+ *    `expected_output` explicitly wants the response to stop and recommend,
+ *    not dispatch. Requiring `routedFired` would reproduce the exact
+ *    routing-assertion flakiness issue 1087 is about, on a claim the
+ *    checklist already grades via the LLM self-grader. A case whose correct
+ *    redirect is to an external tool rather than a sibling skill
+ *    (`eslint-flat-config#3`, `vitest-testing#4`: both redirect to the
+ *    context7 MCP) uses plain `expect_skill_fired: false` instead, since
+ *    there is no sibling `Skill` name to record.
  *
  * @param {string} skillName the skill under test (the evals.json directory)
  * @param {string[]} invokedSkills from {@link extractInvokedSkills}
- * @param {{ expect_skill_fired?: boolean }} evalCase
- * @returns {{ required: boolean, fired: boolean, met: boolean }}
+ * @param {{ expect_skill_fired?: boolean, expect_routed_to?: string }} evalCase
+ * @returns {{ required: boolean, fired: boolean, routedTo: string | null, routedFired: boolean, met: boolean }}
  */
 export function evaluateSkillFired(skillName, invokedSkills, evalCase) {
-  const required = evalCase.expect_skill_fired !== false;
+  // Trim-and-reject-blank matches discoverSkillEvalState's own normalization
+  // (bin/check-skill-evals.mjs) — without it, `expect_routed_to: ""` would
+  // silently disable the fired-skill requirement here (`required` false,
+  // `met` becomes `!fired`) while the checker's `expectRoutedTo` reads as
+  // `null` and neither of its two `expect_routed_to` guards would ever fire
+  // on the same blank value.
+  const routedTo =
+    typeof evalCase.expect_routed_to === "string" &&
+    evalCase.expect_routed_to.trim() !== ""
+      ? evalCase.expect_routed_to
+      : null;
+  // expect_routed_to implies the skill under test must NOT fire — it is a
+  // distinct assertion from the plain opt-out, not an additional condition
+  // layered on top of it. Whether the NAMED sibling itself fired is returned
+  // as `routedFired` but is NOT part of `met` — see reason 4 above for why
+  // that would over-constrain a single-turn advisory response. No
+  // production caller currently reads `routedFired` (it exists for a
+  // future consumer and for direct unit-test assertion on this function);
+  // it does not appear in `runCase`'s returned verdict.
+  const required = routedTo === null && evalCase.expect_skill_fired !== false;
   const fired = invokedSkills.includes(skillName);
-  return { required, fired, met: !required || fired };
+  const routedFired = routedTo === null || invokedSkills.includes(routedTo);
+  const met = routedTo === null ? !required || fired : !fired;
+  return { required, fired, routedTo, routedFired, met };
 }
 
 /**
@@ -873,7 +932,7 @@ function excerptStream(err, field) {
  *
  * @param {string} skillsDir
  * @param {string} skillName the skill under test — the evals.json directory name
- * @param {{ prompt: string, expected_output: string, expectations?: unknown[], assertions?: unknown[], files?: { path: string, content: string }[], expect_skill_fired?: boolean }} evalCase
+ * @param {{ prompt: string, expected_output: string, expectations?: unknown[], assertions?: unknown[], files?: { path: string, content: string }[], expect_skill_fired?: boolean, expect_routed_to?: string }} evalCase
  * @param {{ model: string, effort: string, maxBudgetUsd?: number }} options
  * @returns {{ pass: boolean, unmet_expectations: string[], reasoning: string, costUsd: number } | { error: string }}
  */
@@ -962,15 +1021,30 @@ function runCase(
     if ("error" in verdict) return verdict;
 
     const invokedSkills = extractInvokedSkills(events);
-    const { met } = evaluateSkillFired(skillName, invokedSkills, evalCase);
+    const { met, routedTo } = evaluateSkillFired(
+      skillName,
+      invokedSkills,
+      evalCase,
+    );
     if (!met) {
+      const invokedList =
+        invokedSkills.length > 0 ? invokedSkills.join(", ") : "none";
+      // routedTo === null → the plain "never invoked" case (unmet
+      // requirement). routedTo !== null → `met` is `!fired`, so reaching
+      // here means the skill under test fired when it should have routed
+      // away instead — the ONLY way an expect_routed_to case can be unmet
+      // (see evaluateSkillFired's TSDoc reason 4: the routed-to sibling
+      // itself firing is not part of `met`).
+      const routingMessage =
+        routedTo === null
+          ? `Skill "${skillName}" was never invoked via the Skill tool during ` +
+            `this case (skills invoked: ${invokedList}).`
+          : `Skill "${skillName}" was invoked via the Skill tool, but this ` +
+            `case expects it to route away to "${routedTo}" instead ` +
+            `(skills invoked: ${invokedList}).`;
       return {
         pass: false,
-        unmet_expectations: [
-          ...verdict.unmet_expectations,
-          `Skill "${skillName}" was never invoked via the Skill tool during ` +
-            `this case (skills invoked: ${invokedSkills.length > 0 ? invokedSkills.join(", ") : "none"}).`,
-        ],
+        unmet_expectations: [...verdict.unmet_expectations, routingMessage],
         reasoning: verdict.reasoning,
         costUsd: verdict.costUsd,
       };

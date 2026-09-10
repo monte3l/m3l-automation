@@ -974,7 +974,7 @@
       },
       {
         "path": "docs/logs/README.md",
-        "blob": "a755fd161524b7479c1de4bc3459a24ac5c5e296"
+        "blob": "da9c63436cac7d4ef3e88e8c161302d2bf0b9fe0"
       },
       {
         "path": "docs/plans/IMPLEMENTATION.md",
@@ -2130,7 +2130,7 @@
       },
       {
         "path": "bin/run-skill-evals.mjs",
-        "blob": "9946fbb25ef559a2adb9d505cf0e929bed7f6bdf"
+        "blob": "7dae4e5cc159c7256d8f2bd7d9d5fb8d3fe87e83"
       },
       {
         "path": "CLAUDE.md",
@@ -2153,7 +2153,7 @@
         "blob": "acfcda66e41569485f508ff3ff5b0cea825641ef"
       }
     ],
-    "verifiedAt": "2026-09-09"
+    "verifiedAt": "2026-09-10"
   },
   "0090": {
     "sourceFiles": [
@@ -2444,7 +2444,7 @@
       },
       {
         "path": "docs/logs/README.md",
-        "blob": "a755fd161524b7479c1de4bc3459a24ac5c5e296"
+        "blob": "da9c63436cac7d4ef3e88e8c161302d2bf0b9fe0"
       }
     ],
     "verifiedAt": "2026-09-10"
