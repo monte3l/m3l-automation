@@ -36,7 +36,13 @@ than silence, because the hub will act on it.
 1. **Structure & organization** — one responsibility per unit; decompose
    multi-purpose functions; no dead code.
 2. **Naming & clarity** — descriptive identifiers; named constants, no magic
-   values; comments explain _why_.
+   values; comments explain _why_. A comment asserting two independently
+   computed values "always agree"/"can never disagree" needs each call
+   site's actual inputs traced, not just confirmation they call the same
+   function — a shared formula does not imply shared inputs (a
+   `pnpm verify` bot review caught exactly this overclaim past a full
+   pre-push review that had verified the mechanism but not the comment's
+   own wording, `docs/logs/2026-09-10-lane-scheduling.md`).
 3. **Error handling** — all failure paths handled; throws subclass `M3LError`
    with `cause`; no swallowed errors; inputs validated at trust boundaries.
 4. **Testability** — happy + failure path per export; behavior, not internals;
