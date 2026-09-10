@@ -75,15 +75,22 @@ describe("LANES", () => {
     );
   });
 
-  // Regression test: `format` is the first (and currently only) lane with a
-  // `cacheDir` — `--cold` needs it so the lane measures a true uncached
-  // Prettier run rather than silently reusing a previous invocation's cache.
-  test("format is the only lane with a cacheDir, and it points at Prettier's default cache location", () => {
+  // Regression test: `format`, `turbo:typecheck`, and `tsc:bin` are the
+  // lanes with a `cacheDir` — `--cold` needs it so each lane measures a
+  // true uncached run rather than silently reusing a previous invocation's
+  // cache. `turbo:typecheck` and `tsc:bin` share the SAME cache directory
+  // (their underlying `tsc` invocations each write their own
+  // `.tsbuildinfo` file into it), so clearing it once before either lane's
+  // `--cold` run is correct.
+  test("format, turbo:typecheck, and tsc:bin are the lanes with a cacheDir, each pointing at the right cache location", () => {
     expect(LANES["format"]?.cacheDir).toBe("node_modules/.cache/prettier");
     expect(LANES["format"]?.command).toBe("pnpm format:check");
     expect(LANES["format"]?.turbo).toBe(false);
+    expect(LANES["turbo:typecheck"]?.cacheDir).toBe("node_modules/.cache/tsc");
+    expect(LANES["tsc:bin"]?.cacheDir).toBe("node_modules/.cache/tsc");
+    const cachedLaneNames = new Set(["format", "turbo:typecheck", "tsc:bin"]);
     for (const [name, lane] of Object.entries(LANES)) {
-      if (name === "format") continue;
+      if (cachedLaneNames.has(name)) continue;
       expect(lane.cacheDir).toBeUndefined();
     }
   });

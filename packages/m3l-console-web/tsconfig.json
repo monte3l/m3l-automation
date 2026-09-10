@@ -16,7 +16,9 @@
     "composite": false,
     "declaration": false,
     "declarationMap": false,
-    "noEmit": true
+    "noEmit": true,
+    "incremental": true,
+    "tsBuildInfoFile": "../../node_modules/.cache/tsc/m3l-console-web.tsbuildinfo"
   },
   "references": [{ "path": "../m3l-common/tsconfig.build.json" }],
   "include": [

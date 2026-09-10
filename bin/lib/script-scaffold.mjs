@@ -315,21 +315,41 @@ function expectedPackageScripts() {
 
 /**
  * Read tsconfig.json.tmpl / tsconfig.build.json.tmpl's `extends`,
- * `compilerOptions` and `references` shape directly from the template —
- * neither template substitutes any token, so their committed text IS every
- * scaffolded script's expected value verbatim. Reads lazily, matching
- * {@link expectedPackageScripts}.
+ * `compilerOptions` and `references` shape directly from the template.
+ * `tsconfig.json.tmpl`'s `tsBuildInfoFile` is the one templated value
+ * (`__SCRIPT_NAME__`, so each script's `.tsbuildinfo` lands under its own
+ * name in the shared `node_modules/.cache/tsc/` dir bench-gates clears as a
+ * whole) — every other field, and every field in `tsconfig.build.json.tmpl`,
+ * is committed verbatim with no substitution. `scriptName`, when given,
+ * replaces `__SCRIPT_NAME__` in every string compilerOptions value so the
+ * expected shape matches what a real scaffolded script actually contains;
+ * omitted, the literal token is left in place (matches only an
+ * unsubstituted fixture, e.g. the template's own conformance test). Reads
+ * lazily, matching {@link expectedPackageScripts}.
  *
  * @param {"tsconfig.json.tmpl" | "tsconfig.build.json.tmpl"} templateName
+ * @param {string} [scriptName]
  * @returns {{ extends: unknown, compilerOptions: Record<string, unknown>, references: { path?: unknown }[] }}
  */
-function expectedTsconfigShape(templateName) {
+function expectedTsconfigShape(templateName, scriptName) {
   const parsed = JSON.parse(
     readFileSync(join(root, TEMPLATE_DIR, templateName), "utf8"),
   );
+  const rawOptions = parsed.compilerOptions ?? {};
+  const compilerOptions =
+    scriptName === undefined
+      ? rawOptions
+      : Object.fromEntries(
+          Object.entries(rawOptions).map(([key, value]) => [
+            key,
+            typeof value === "string"
+              ? value.replaceAll("__SCRIPT_NAME__", scriptName)
+              : value,
+          ]),
+        );
   return {
     extends: parsed.extends,
-    compilerOptions: parsed.compilerOptions ?? {},
+    compilerOptions,
     references: parsed.references ?? [],
   };
 }
@@ -354,10 +374,13 @@ function expectedTsconfigShape(templateName) {
  *
  * @param {{ extends?: unknown, compilerOptions?: Record<string, unknown>, references?: { path?: unknown }[] }} tsconfig parsed tsconfig.json or tsconfig.build.json
  * @param {"tsconfig.json.tmpl" | "tsconfig.build.json.tmpl"} templateName which template's shape to check against
+ * @param {string} [scriptName] substitutes `__SCRIPT_NAME__` in the expected
+ *   shape (`tsconfig.json.tmpl`'s `tsBuildInfoFile`) — pass the scaffolded
+ *   script's kebab-case name to check a real script's tsconfig.
  * @returns {string[]}
  */
-export function tsconfigShapeErrors(tsconfig, templateName) {
-  const expected = expectedTsconfigShape(templateName);
+export function tsconfigShapeErrors(tsconfig, templateName, scriptName) {
+  const expected = expectedTsconfigShape(templateName, scriptName);
   const problems = [];
   if (tsconfig.extends !== expected.extends) {
     problems.push(
