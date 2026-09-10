@@ -44,7 +44,8 @@ export type M3LCliErrorCode =
   | "ERR_CLI_UNKNOWN_FLOW_STEP"
   | "ERR_CLI_FLOW_RECORD_WRITE_FAILED"
   | "ERR_CLI_FLOW_RECORD_INVALID"
-  | "ERR_CLI_FLOW_RESUME_REFUSED";
+  | "ERR_CLI_FLOW_RESUME_REFUSED"
+  | "ERR_CLI_FLOW_PREFLIGHT_FAILED";
 
 /**
  * The closed set of process exit codes the m3l CLI ever resolves to: `0`
@@ -160,6 +161,14 @@ const EXIT_CODE_BY_ERROR_CODE: Record<M3LCliErrorCode, M3LCliExitCode> = {
   // like ERR_CLI_UNKNOWN_FLOW_STEP (2), which is 2 because a wrong step id
   // IS the invocation's fault.
   ERR_CLI_FLOW_RESUME_REFUSED: GENERAL_EXIT_CODE,
+  // U11 follow-up (issue #883): a step dying on a missing required parameter
+  // throws M3LConfigMissingError (ERR_CONFIG_MISSING), catalogued
+  // origin: "caller", which exitCodeForError maps to CONFIG_USAGE (2). A
+  // pre-flight refusal reports the SAME exit code the run would have
+  // reported later — just earlier, and with no step executed. Not 1 like
+  // ERR_CLI_FLOW_RESUME_REFUSED: that is a state guard over a prior run's
+  // ledger, this is the invocation's own configuration being incomplete.
+  ERR_CLI_FLOW_PREFLIGHT_FAILED: 2,
 };
 
 /**

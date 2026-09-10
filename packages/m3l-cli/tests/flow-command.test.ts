@@ -135,7 +135,10 @@ interface CapturedContext {
   readonly headingLines: string[];
 }
 
-function buildContext(jsonOutput = false): CapturedContext {
+function buildContext(
+  jsonOutput = false,
+  envOverrides: Readonly<Record<string, string | undefined>> = {},
+): CapturedContext {
   const infoLines: string[] = [];
   const errorLines: string[] = [];
   const headingLines: string[] = [];
@@ -159,7 +162,7 @@ function buildContext(jsonOutput = false): CapturedContext {
       cacheFilePath: CACHE_FILE_PATH,
       historyFilePath: "/workspace/data/cache/m3l-cli/history.json",
       outputDirPath: "/workspace/data/output",
-      env: { PATH: "/usr/bin" },
+      env: { PATH: "/usr/bin", ...envOverrides },
       envFile: { kind: "auto" },
     },
     infoLines,
@@ -174,6 +177,37 @@ function candidate(name: string): M3LCliScriptCandidate {
     name,
     directory: `/workspace/scripts/${name}`,
     description: "",
+  };
+}
+
+/**
+ * A FULL parameter descriptor — every field `checkFlowPreflight` reads
+ * unconditionally once wired in (`operations`/`aliases`/`defaultValue`
+ * included). Omitting any of these crashes the real (unmocked)
+ * `checkFlowPreflight` at runtime, per the issue #883 wiring brief.
+ */
+function requiredDescriptor(
+  name: string,
+  overrides: { readonly secret?: boolean } = {},
+): {
+  readonly name: string;
+  readonly type: string;
+  readonly required: boolean;
+  readonly secret: boolean;
+  readonly aliases: readonly string[];
+  readonly operations: readonly [];
+  readonly description: string;
+  readonly defaultValue: undefined;
+} {
+  return {
+    name,
+    type: "string",
+    required: true,
+    secret: overrides.secret ?? false,
+    aliases: [],
+    operations: [],
+    description: "",
+    defaultValue: undefined,
   };
 }
 
@@ -1375,5 +1409,227 @@ describe("runFlowCommand — type contract", () => {
 
   test("resolves the general number, not the narrower M3LCliExitCode — a step's code propagates verbatim", () => {
     expectTypeOf(runFlowCommand).returns.toEqualTypeOf<Promise<number>>();
+  });
+});
+
+/*
+ * RED phase (issue #883): `commands/flow.ts` does not yet call
+ * `checkFlowPreflight`/`rejectFlowPreflight` — a separate GREEN spoke wires
+ * that in next. `flow/preflight.js` is deliberately NOT mocked here: it is a
+ * real, pure collaborator (bar its one `existsSync` touch against a
+ * candidate directory that never exists under these fixtures, which simply
+ * resolves every `envFileReachByScript` entry to `false`), exercised for
+ * real once `runNamedFlow` calls it.
+ *
+ * Tests 1-3 must currently FAIL: nothing refuses the run, so `runFlowMock`
+ * ends up called when the assertion says it must not be. Tests 4-6 may
+ * currently PASS VACUOUSLY — nothing in the not-yet-wired command touches
+ * preflight/reachability/ordering at all, so their assertions hold for a
+ * reason unrelated to the guarantee they name. That split is the expected
+ * RED-phase result; see the accompanying report for which test landed in
+ * which bucket.
+ */
+describe("runFlowCommand — flow run: the pre-flight resolution check (issue #883)", () => {
+  test("refuses the run and executes no step when a step would not receive a required parameter", async () => {
+    armHappyPath();
+    loadParametersCachedMock.mockImplementation((scriptName) =>
+      Promise.resolve(
+        scriptName === "sqs-etl"
+          ? [requiredDescriptor("command"), requiredDescriptor("queueUrl")]
+          : [],
+      ),
+    );
+    const { context } = buildContext();
+
+    let thrown: unknown;
+    try {
+      await runFlowCommand(context, ["run", "dlq-reconcile"]);
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LCliError);
+    expect((thrown as M3LCliError).code).toBe("ERR_CLI_FLOW_PREFLIGHT_FAILED");
+    expect(runFlowMock).not.toHaveBeenCalled();
+  });
+
+  test("writes no run record when pre-flight refuses", async () => {
+    armHappyPath();
+    loadParametersCachedMock.mockImplementation((scriptName) =>
+      Promise.resolve(
+        scriptName === "sqs-etl"
+          ? [requiredDescriptor("command"), requiredDescriptor("queueUrl")]
+          : [],
+      ),
+    );
+    const { context } = buildContext();
+
+    let thrown: unknown;
+    try {
+      await runFlowCommand(context, ["run", "dlq-reconcile"]);
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LCliError);
+    expect((thrown as M3LCliError).code).toBe("ERR_CLI_FLOW_PREFLIGHT_FAILED");
+    expect(writeFlowRunRecordMock).not.toHaveBeenCalled();
+  });
+
+  test("refuses under --dry-run too — the rehearsal must not start either", async () => {
+    armHappyPath();
+    loadParametersCachedMock.mockImplementation((scriptName) =>
+      Promise.resolve(
+        scriptName === "sqs-etl"
+          ? [requiredDescriptor("command"), requiredDescriptor("queueUrl")]
+          : [],
+      ),
+    );
+    const { context } = buildContext();
+
+    let thrown: unknown;
+    try {
+      await runFlowCommand(context, ["run", "dlq-reconcile", "--dry-run"]);
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LCliError);
+    expect((thrown as M3LCliError).code).toBe("ERR_CLI_FLOW_PREFLIGHT_FAILED");
+    expect(runFlowMock).not.toHaveBeenCalled();
+  });
+
+  /*
+   * The decisive regression test for issue #883's own false-positive risk:
+   * a step relying on an ambient AWS_PROFILE (never set in its own
+   * `parameters`) must NOT be refused, because the environment genuinely
+   * supplies it — `wouldEnvironmentSupply` derives `AWS_PROFILE` from the
+   * canonical name `aws.profile` via `Core.M3LEnvironmentConfigProvider`'s
+   * SCREAMING_SNAKE_CASE convention (ADR-0085/ADR-0055).
+   */
+  test("a step relying on an ambient AWS_PROFILE is not rejected (dlq-reconcile's own documented allowance)", async () => {
+    armHappyPath();
+    loadParametersCachedMock.mockImplementation((scriptName) =>
+      Promise.resolve(
+        scriptName === "sqs-etl"
+          ? [requiredDescriptor("command"), requiredDescriptor("aws.profile")]
+          : [],
+      ),
+    );
+    const { context } = buildContext(false, { AWS_PROFILE: "prod" });
+
+    const code = await runFlowCommand(context, ["run", "dlq-reconcile"]);
+
+    expect(code).toBe(0); // runResult() exits 0 — resolved, not rejected
+    expect(runFlowMock).toHaveBeenCalledTimes(1);
+  });
+
+  test("a resumed run is not re-failed by a step before the resume point", async () => {
+    armResumePath(
+      resumeRecord({ resumeStepId: "republish", stepExecutionCount: 3 }),
+    );
+    // "dump" (script "sqs-etl") sits BEFORE the resume point "republish" and
+    // is therefore unreachable; if the pre-flight checked unreachable steps
+    // too, this required-but-unsupplied parameter would wrongly refuse the
+    // run.
+    loadParametersCachedMock.mockImplementation((scriptName) =>
+      Promise.resolve(
+        scriptName === "sqs-etl"
+          ? [requiredDescriptor("command"), requiredDescriptor("queueUrl")]
+          : [],
+      ),
+    );
+    const { context } = buildContext();
+
+    await runFlowCommand(context, ["run", "dlq-reconcile", "--resume"]);
+
+    expect(runFlowMock).toHaveBeenCalledTimes(1);
+    const [, , options] = runFlowMock.mock.calls[0] as [
+      M3LCliFlowStepContext,
+      M3LCliFlowDefinition,
+      M3LCliFlowRunOptions | undefined,
+    ];
+    expect(options?.resumeFromStepId).toBe("republish");
+  });
+
+  /*
+   * Proves ORDERING: `validateResumeRecord` must refuse BEFORE
+   * `checkFlowPreflight` ever runs. `sqs-etl` ALSO declares a required,
+   * unsupplied parameter here — if pre-flight ran first (or instead), it
+   * would ALSO refuse the run, but with the wrong code. Only the resume
+   * code discriminates which guard actually fired.
+   */
+  test("a refused resume reports ERR_CLI_FLOW_RESUME_REFUSED, not the pre-flight code", async () => {
+    armHappyPath();
+    readFlowRunRecordMock.mockReturnValue(undefined);
+    loadParametersCachedMock.mockImplementation((scriptName) =>
+      Promise.resolve(
+        scriptName === "sqs-etl"
+          ? [requiredDescriptor("command"), requiredDescriptor("queueUrl")]
+          : [],
+      ),
+    );
+    const { context } = buildContext();
+
+    let thrown: unknown;
+    try {
+      await runFlowCommand(context, ["run", "dlq-reconcile", "--resume"]);
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LCliError);
+    expect((thrown as M3LCliError).code).toBe("ERR_CLI_FLOW_RESUME_REFUSED");
+  });
+
+  /*
+   * The silent-failure gap this fix closes: a script whose config.ts fails
+   * to load degrades to `parametersByScript.set(name, [])` in
+   * `buildParametersByScript` (so `loadFlowDefinition` still accepts the
+   * script name — see the "a script whose config will not load degrades..."
+   * test above), but that same degraded `[]` must NOT reach
+   * `checkFlowPreflight` as if the script genuinely declares zero
+   * parameters. `runFlowPreflightCheck` must be handed a map with NO key
+   * for "sqs-etl" at all, so `checkFlowPreflight`'s own `.has()` guard
+   * routes it to `report.unverified` instead of silently treating it as
+   * satisfied. The contrast case — a script that legitimately declares
+   * zero parameters (json-etl, via `loadParametersCachedMock` resolving
+   * `[]` rather than rejecting) producing NO such warning — is already
+   * established by the "builds M3LCliFlowValidationContext..." test above,
+   * where `json-etl` maps to `[]` and the run proceeds with nothing
+   * reported for it.
+   */
+  test("a step whose script's config failed to load is reported unverified by the pre-flight, never silently passed as requiring nothing", async () => {
+    discoverScriptsMock.mockReturnValue([
+      candidate("sqs-etl"),
+      candidate("json-etl"),
+    ]);
+    loadParametersCachedMock.mockImplementation((scriptName) =>
+      scriptName === "sqs-etl"
+        ? Promise.reject(
+            new M3LCliError("ERR_CLI_CONFIG_IMPORT", "config.ts is unreadable"),
+          )
+        : Promise.resolve([]),
+    );
+    listFlowsMock.mockReturnValue(["dlq-reconcile"]);
+    loadFlowDefinitionMock.mockReturnValue(definition());
+    runFlowMock.mockResolvedValue(runResult());
+    formatFlowRunLinesMock.mockReturnValue(["rendered"]);
+    const { context, errorLines } = buildContext();
+
+    const code = await runFlowCommand(context, ["run", "dlq-reconcile"]);
+
+    // Fail-open: an unknown-requirements script must never BLOCK the run,
+    // only warn — the pre-flight genuinely cannot know what it requires.
+    expect(code).toBe(0);
+    expect(runFlowMock).toHaveBeenCalledTimes(1);
+
+    // Reported as unverified, matching the exact stderr prefix
+    // `runFlowPreflightCheck` emits for each `report.unverified` entry.
+    const rendered = errorLines.join("\n");
+    expect(rendered).toContain(
+      "could not verify flow step 'dump' (sqs-etl) would receive its required parameters:",
+    );
+    expect(rendered).toContain("no known parameter descriptors");
   });
 });

@@ -529,15 +529,16 @@ steps in order. The engine drives whole scripts over the existing exit-code and
 `run-report.json` contract — it never reaches inside a running script, and it
 **never writes or rewrites a script's run report**.
 
-| Aspect         | Behaviour                                                                                                                                                                            |
-| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Branching      | each step declares `onSuccess`, `onFailure` and optionally `onPartial`, each `continue` \| `stop` \| `{ goto: <stepId> }`. `goto` may target a later step, an earlier one, or itself |
-| Classification | exit `0` → `onSuccess`; exit `6` (`PARTIAL`) **or** a `partial` report outcome → `onPartial`; anything else, including `128 + signal`, → `onFailure`                                 |
-| Exit code      | the **deciding** (last executed) step's own exit code, propagated unchanged — never clamped or remapped                                                                              |
-| Loop guard     | `maxStepExecutions` (default `50`) counts executions cumulatively across revisits; tripping it is a definition-authoring fault and exits `2`                                         |
-| `--dry-run`    | a **floor**, never lowered: it forces dry-run on every step, and a step declaring `dryRun: true` still runs dry without it                                                           |
-| Execution      | `execution: auto` (default) \| `in-process` \| `spawn`. `auto` resolves to **spawn**, because only the spawn path produces the `run-report.json` the engine reads                    |
-| Unknown flow   | exits `2` (`ERR_CLI_UNKNOWN_FLOW`) with Damerau–Levenshtein suggestions over the declared names                                                                                      |
+| Aspect         | Behaviour                                                                                                                                                                                                                        |
+| -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Branching      | each step declares `onSuccess`, `onFailure` and optionally `onPartial`, each `continue` \| `stop` \| `{ goto: <stepId> }`. `goto` may target a later step, an earlier one, or itself                                             |
+| Classification | exit `0` → `onSuccess`; exit `6` (`PARTIAL`) **or** a `partial` report outcome → `onPartial`; anything else, including `128 + signal`, → `onFailure`                                                                             |
+| Exit code      | the **deciding** (last executed) step's own exit code, propagated unchanged — never clamped or remapped                                                                                                                          |
+| Loop guard     | `maxStepExecutions` (default `50`) counts executions cumulatively across revisits; tripping it is a definition-authoring fault and exits `2`                                                                                     |
+| `--dry-run`    | a **floor**, never lowered: it forces dry-run on every step, and a step declaring `dryRun: true` still runs dry without it                                                                                                       |
+| Execution      | `execution: auto` (default) \| `in-process` \| `spawn`. `auto` resolves to **spawn**, because only the spawn path produces the `run-report.json` the engine reads                                                                |
+| Unknown flow   | exits `2` (`ERR_CLI_UNKNOWN_FLOW`) with Damerau–Levenshtein suggestions over the declared names                                                                                                                                  |
+| Pre-flight     | before step 1, every **reachable** step's required parameters must be supplied by the step's `parameters`, the inherited environment, or a declared default — otherwise the run is refused at exit `2` with **nothing executed** |
 
 **Definition faults are caught at load time, not mid-run.** `name` must match
 the filename stem (otherwise a renamed file silently shadows another flow);
@@ -549,6 +550,49 @@ both flow and step level**, which is what makes later additions to the format
 forward-safe. Step-level and `parameters` keys are screened for
 prototype-pollution vectors, because the YAML provider screens only top-level
 keys.
+
+**Resolution faults are caught before step 1, not mid-run.** A definition can
+pass every check above and still name a required parameter no step ever
+supplies — that failure used to surface mid-flow, after earlier steps had
+already run their side effects. `m3l flow run` now checks this before the
+first step: for every step reachable from the run's start point, each
+parameter the target script marks required must be supplied by the step's own
+`parameters` — under the same execution-mode-dependent rule the spawn path
+itself uses to build argv (a `false`/`null`/empty-list value supplies nothing
+on `spawn`/`auto`, but does on `in-process`, which never builds argv at all) —
+the inherited environment (a parameter's canonical name or any declared
+alias, including a derived `SCREAMING_SNAKE_CASE` form — `aws.profile`
+resolves `AWS_PROFILE`), or a declared default. A per-operation requirement
+(ADR-0055) applies only when the step pins a selector (any parameter
+declaring an operation set, e.g. `command`, `operation`) to a literal string
+naming a declared operation; a selector the step gives no own value for is
+reported as a warning, since its requirements can't be evaluated, but a
+non-string value or an unrecognized operation name is silently vacuous,
+matching the real per-operation validator's own behavior. **The check does not
+forbid an ambient-environment pattern** — the CLI's own environment and a
+declared alias are legitimate resolution sources, on purpose, so a flow may
+rely on them. Whether a _specific_ flow should is a separate, consumer-owned
+policy: the shipped `dlq-reconcile` flow, for instance, _forbids_ omitting
+`aws.profile` under its own stricter verifier
+(`scripts/agent-operator/src/lib/flow-definitions.ts`), precisely because that
+verifier needs every step's profile spelled out to grade it — a rule this
+engine-level check deliberately does not impose on every flow. A required
+parameter that might be supplied by a script's own `.env` file is one of
+several conditions this check reports as an advisory warning rather than a
+refusal — alongside a script this check has no descriptors for at all, and a
+selector or per-operation declaration it cannot resolve — since this check
+cannot read a file loaded into a spawned child's own process, and would
+rather warn than risk rejecting a flow that would have run correctly:
+deliberately **fail-open**, the inverse of the fail-closed posture above.
+`--dry-run` does **not** skip this check — a dry run still spawns every step,
+and each step's own config load would otherwise fail on exactly this
+condition, just later. `--resume` scopes the check to steps reachable from
+the resume point, so a step no longer reachable from there is never checked
+— though a backward `goto` can still make an earlier, already-run step
+reachable again, and it is re-checked in that case. A refusal is
+`ERR_CLI_FLOW_PREFLIGHT_FAILED` at exit `2` — the same class
+`ERR_CONFIG_MISSING` would exit with mid-run, just earlier and with nothing
+executed.
 
 **A run record is persisted** to `data/cache/m3l-cli/flows/<name>.json`: the run
 id, a canonical hash of the definition, the observed window, the status
@@ -791,6 +835,16 @@ belongs in the environment the spawned script already inherits, never in a
 committed file (ADR-0085). A value that is a list becomes a repeated
 `--name=<item>` flag, matching how the scripts declare array parameters.
 
+Every parameter the target script marks required must end up supplied — by
+this step's own `parameters`, the environment, or the script's own declared
+default — or the run is refused before it starts (see the pre-flight
+paragraph above). A `secret: true` required parameter can only ever be
+supplied by the environment, since the rule above forbids naming it here; set
+it as an environment variable, never in the file. Which parameter is required
+for which operation is documented per script, in its own parameter table's
+"Required for" column (e.g. `docs/reference/scripts/sqs-etl.md`'s `queueUrl`
+row).
+
 Branching is `onSuccess` / `onFailure` / `onPartial`, each `continue`, `stop`, or
 `{ goto: <stepId> }`. `onFailure` defaults to `stop`; an unset `onPartial`
 resolves to whatever `onFailure` is, because a partial outcome nobody accounted
@@ -837,10 +891,15 @@ m3l flow run sqs-roundtrip --dry-run
 
 Every step stops after its configuration checks and reports outcome `dry-run`,
 so the whole chain is exercised — argv construction, branch evaluation, the run
-record — with no live call. The committed definition's parameter names are
-guarded by a test that validates the real file against the scripts' declared
-parameters, so renaming a script parameter fails the suite rather than rotting
-the file silently.
+record — with no live call. Before any of that, the pre-flight check confirms
+every step would actually receive its required parameters; the committed
+definition supplies every one of them itself, with no reliance on an ambient
+environment variable or a `.env` file. The committed definition's parameter
+names are guarded by a test that validates the real file against the scripts'
+declared parameters — and, separately, against the pre-flight check itself —
+so renaming a script parameter, or a script's declared requirements drifting
+from what the file assumes, fails the suite rather than rotting the file
+silently.
 
 ## Completion
 
@@ -887,7 +946,7 @@ an error code is a compile error until its exit code is chosen.
 | ------- | ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `0`     | Success             | every happy path — including `list` with some configs unloadable, `doctor` with no `fail` row (a `warn` never affects the code), `wizard` declining "run now?", and an empty `presets` listing                                                                                                                                                                                          |
 | `1`     | Operational failure | `ERR_CLI_CONFIG_IMPORT`, `ERR_CLI_WORKSPACE_NOT_FOUND`, `ERR_CLI_SCRIPT_NOT_BUILT`, `ERR_CLI_SPAWN_FAILED`, `ERR_CLI_DOCTOR_FAILED`, `ERR_CLI_PRESET_INVALID`, `ERR_CLI_SCAFFOLD_FAILED`, `ERR_CLI_COMMAND_MODULE_INVALID`, `ERR_CLI_COMMAND_MODULE_IMPORT_FAILED`, `ERR_CLI_IN_PROCESS_FAILED`, `ERR_CLI_FLOW_RESUME_REFUSED` — and any non-`M3LCliError` value reaching the top level |
-| `2`     | Usage error         | `ERR_CLI_UNKNOWN_COMMAND`, `ERR_CLI_UNKNOWN_SCRIPT`, `ERR_CLI_UNKNOWN_PARAMETER`, `ERR_CLI_INVALID_PARAMETER_VALUE`, `ERR_CLI_SCAFFOLD_INVALID`, `ERR_CLI_SCAFFOLD_EXISTS`; a missing required positional; `wizard` on a non-interactive stdin                                                                                                                                          |
+| `2`     | Usage error         | `ERR_CLI_UNKNOWN_COMMAND`, `ERR_CLI_UNKNOWN_SCRIPT`, `ERR_CLI_UNKNOWN_PARAMETER`, `ERR_CLI_INVALID_PARAMETER_VALUE`, `ERR_CLI_SCAFFOLD_INVALID`, `ERR_CLI_SCAFFOLD_EXISTS`, `ERR_CLI_FLOW_PREFLIGHT_FAILED`; a missing required positional; `wizard` on a non-interactive stdin                                                                                                         |
 | child's | Passthrough         | `run <script>` and dynamic per-script dispatch return the child's code **verbatim**, preserving the ADR-0035 registry end-to-end                                                                                                                                                                                                                                                        |
 | `128+N` | Signal-terminated   | a signal-killed child, e.g. SIGTERM → `143`                                                                                                                                                                                                                                                                                                                                             |
 
