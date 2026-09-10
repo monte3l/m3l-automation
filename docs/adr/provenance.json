@@ -974,7 +974,7 @@
       },
       {
         "path": "docs/logs/README.md",
-        "blob": "da9c63436cac7d4ef3e88e8c161302d2bf0b9fe0"
+        "blob": "aa65e1976cfd5e13b0ebf2d8b65a75d1544a6a2c"
       },
       {
         "path": "docs/plans/IMPLEMENTATION.md",
@@ -1176,7 +1176,7 @@
       },
       {
         "path": "docs/reference/cli.md",
-        "blob": "81de5e18368a3781fd3f65823f3c5a414aa3b711"
+        "blob": "47eb90124cce003f9a022a269c17bc05aad65e43"
       },
       {
         "path": "docs/reference/core/config.md",
@@ -1414,7 +1414,7 @@
       },
       {
         "path": "docs/reference/cli.md",
-        "blob": "81de5e18368a3781fd3f65823f3c5a414aa3b711"
+        "blob": "47eb90124cce003f9a022a269c17bc05aad65e43"
       },
       {
         "path": "docs/ROADMAP.md",
@@ -1514,7 +1514,7 @@
     "sourceFiles": [
       {
         "path": "docs/reference/cli.md",
-        "blob": "81de5e18368a3781fd3f65823f3c5a414aa3b711"
+        "blob": "47eb90124cce003f9a022a269c17bc05aad65e43"
       }
     ],
     "verifiedAt": "2026-09-10"
@@ -2038,7 +2038,7 @@
       },
       {
         "path": "docs/reference/cli.md",
-        "blob": "81de5e18368a3781fd3f65823f3c5a414aa3b711"
+        "blob": "47eb90124cce003f9a022a269c17bc05aad65e43"
       },
       {
         "path": "packages/m3l-cli/src/cli/flags.ts",
@@ -2444,7 +2444,7 @@
       },
       {
         "path": "docs/logs/README.md",
-        "blob": "da9c63436cac7d4ef3e88e8c161302d2bf0b9fe0"
+        "blob": "aa65e1976cfd5e13b0ebf2d8b65a75d1544a6a2c"
       }
     ],
     "verifiedAt": "2026-09-10"
@@ -2453,7 +2453,7 @@
     "sourceFiles": [
       {
         "path": ".claude/rules/harness-artifacts.md",
-        "blob": "7d9ac9978820e3c478fc7ce3befea55c6b0b5317"
+        "blob": "e55474d406e69f89f890bda7259e49e9c46c792f"
       },
       {
         "path": ".claude/rules/tests.md",
@@ -2518,11 +2518,11 @@
       },
       {
         "path": "docs/reference/cli.md",
-        "blob": "81de5e18368a3781fd3f65823f3c5a414aa3b711"
+        "blob": "47eb90124cce003f9a022a269c17bc05aad65e43"
       },
       {
         "path": "packages/m3l-cli/src/flow/preflight.ts",
-        "blob": "7a300b04cb53ba69279fce0c596a82cd5ef8c787"
+        "blob": "1dba7d00712fc1e519480d1fe0d34cdaf98db33d"
       },
       {
         "path": "scripts/agent-operator/src/lib/flow-definitions.ts",

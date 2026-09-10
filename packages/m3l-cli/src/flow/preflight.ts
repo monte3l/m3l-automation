@@ -178,11 +178,13 @@ export interface M3LCliFlowPreflightContext {
    */
   readonly envFileReachByScript: ReadonlyMap<string, boolean>;
   /**
-   * The step id a resumed run would start from, mirroring `runFlow`'s own
-   * `resolveStartIndex`. Absent starts at the first declared step; a value
-   * naming no declared step treats every step as reachable, exactly like a
-   * resumed run that can no longer find its resume point falls back to
-   * running the whole flow.
+   * The step id a resumed run would start from. Absent starts at the first
+   * declared step; a value naming no declared step means reachability
+   * genuinely cannot be determined from it, so {@link checkFlowPreflight}
+   * reports no step as reachable and the run proceeds — `runFlow`'s own
+   * `resolveStartIndex` then throws the accurate `ERR_CLI_UNKNOWN_FLOW_STEP`
+   * itself, rather than this check guessing at a reachable set and
+   * potentially refusing the run for the wrong reason.
    */
   readonly startStepId?: string;
 }

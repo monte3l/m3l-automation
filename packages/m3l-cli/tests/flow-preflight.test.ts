@@ -1006,7 +1006,13 @@ describe("checkFlowPreflight — reachability scoping", () => {
     expect(checkFlowPreflight(definition, context).missing).toEqual([]);
   });
 
-  test("a startStepId naming no declared step treats ALL steps as reachable, mirroring runFlow's resolveStartIndex", () => {
+  test("a startStepId naming no declared step yields nothing to check — the run proceeds to runFlow's own accurate rejection", () => {
+    // "one" is broken (missing the required "flag" parameter) and WOULD be
+    // reported missing if it were reachable — it is not, because an
+    // unresolvable startStepId leaves reachability empty rather than
+    // guessing "everything reachable" and refusing the run for the wrong
+    // reason. The run instead proceeds to runFlow's own resolveStartIndex,
+    // which throws the accurate ERR_CLI_UNKNOWN_FLOW_STEP.
     const definition = flowDefinition([
       step({ id: "one", script: "s" }),
       step({ id: "two", script: "s" }),
@@ -1019,7 +1025,8 @@ describe("checkFlowPreflight — reachability scoping", () => {
     });
 
     const report = checkFlowPreflight(definition, context);
-    expect(report.missing.map((m) => m.stepId)).toEqual(["one", "two"]);
+    expect(report.missing).toEqual([]);
+    expect(report.unverified).toEqual([]);
   });
 
   test("an empty step list has nothing reachable", () => {

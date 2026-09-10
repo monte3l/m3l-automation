@@ -21,6 +21,7 @@ import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { Core } from "@m3l-automation/m3l-common";
 import { beforeAll, describe, expect, test } from "vitest";
 
 import { discoverScripts } from "../src/discovery/discover.js";
@@ -187,9 +188,16 @@ describe("the pre-flight's one documented blind spot (asyncFallback)", () => {
       let contents: string;
       try {
         contents = readFileSync(configPath, "utf8");
-      } catch {
-        // No src/config.ts for this script directory — nothing to check.
-        continue;
+      } catch (error) {
+        // A script directory with no src/config.ts is a legitimate case
+        // this loop must tolerate. Any other read failure (permissions,
+        // corruption, an unrelated I/O fault) must NOT be swallowed —
+        // silently skipping it would undermine the very guard this test
+        // exists to provide.
+        if (Core.isNodeError(error) && error.code === "ENOENT") {
+          continue;
+        }
+        throw error;
       }
       if (contents.includes("asyncFallback")) {
         offenders.push(directory.name);

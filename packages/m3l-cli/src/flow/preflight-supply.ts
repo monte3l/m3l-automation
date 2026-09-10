@@ -406,9 +406,12 @@ function pushReachableTargets(
  *
  * @param definition - The flow definition to walk.
  * @param startStepId - The step id to start from; a value naming no
- *   declared step treats every step as reachable (mirroring a resumed run
- *   whose resume point can no longer be found), and an empty `steps` array
- *   yields no reachable ids regardless.
+ *   declared step means reachability genuinely cannot be determined from it,
+ *   so this walk reports NO step as reachable — leaving the run to proceed
+ *   to `runFlow`'s own `resolveStartIndex`, which throws the accurate
+ *   `ERR_CLI_UNKNOWN_FLOW_STEP` rather than this check guessing at a
+ *   reachable set and potentially refusing the run for the wrong reason. An
+ *   empty `steps` array yields no reachable ids regardless.
  * @returns The set of reachable step ids.
  *
  * @example
@@ -427,7 +430,7 @@ export function resolveReachableStepIds(
   }
   const declaredIds = new Set(definition.steps.map((step) => step.id));
   if (startStepId !== undefined && !declaredIds.has(startStepId)) {
-    return declaredIds;
+    return new Set();
   }
 
   const stepById = new Map(definition.steps.map((step) => [step.id, step]));
