@@ -591,15 +591,25 @@ export function extractResultEnvelope(events) {
  * @returns {{ required: boolean, fired: boolean, routedTo: string | null, routedFired: boolean, met: boolean }}
  */
 export function evaluateSkillFired(skillName, invokedSkills, evalCase) {
+  // Trim-and-reject-blank matches discoverSkillEvalState's own normalization
+  // (bin/check-skill-evals.mjs) — without it, `expect_routed_to: ""` would
+  // silently disable the fired-skill requirement here (`required` false,
+  // `met` becomes `!fired`) while the checker's `expectRoutedTo` reads as
+  // `null` and neither of its two `expect_routed_to` guards would ever fire
+  // on the same blank value.
   const routedTo =
-    typeof evalCase.expect_routed_to === "string"
+    typeof evalCase.expect_routed_to === "string" &&
+    evalCase.expect_routed_to.trim() !== ""
       ? evalCase.expect_routed_to
       : null;
   // expect_routed_to implies the skill under test must NOT fire — it is a
   // distinct assertion from the plain opt-out, not an additional condition
-  // layered on top of it. Whether the NAMED sibling itself fired is reported
-  // as `routedFired` for visibility but is NOT part of `met` — see reason 4
-  // above for why that would over-constrain a single-turn advisory response.
+  // layered on top of it. Whether the NAMED sibling itself fired is returned
+  // as `routedFired` but is NOT part of `met` — see reason 4 above for why
+  // that would over-constrain a single-turn advisory response. No
+  // production caller currently reads `routedFired` (it exists for a
+  // future consumer and for direct unit-test assertion on this function);
+  // it does not appear in `runCase`'s returned verdict.
   const required = routedTo === null && evalCase.expect_skill_fired !== false;
   const fired = invokedSkills.includes(skillName);
   const routedFired = routedTo === null || invokedSkills.includes(routedTo);

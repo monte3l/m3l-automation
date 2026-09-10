@@ -1038,6 +1038,26 @@ describe("evaluateSkillFired", () => {
       ).toEqual(expected);
     });
 
+    test.each([
+      { label: "empty string", value: "" },
+      { label: "whitespace-only", value: "   " },
+    ])(
+      "expect_routed_to: $label is treated as absent, not a routing target — the skill under test is required to fire as normal",
+      ({ value }) => {
+        expect(
+          evaluateSkillFired("triaging-ci", [], {
+            expect_routed_to: value,
+          }),
+        ).toEqual({
+          required: true,
+          fired: false,
+          routedTo: null,
+          routedFired: true,
+          met: false,
+        });
+      },
+    );
+
     test("expect_routed_to takes precedence over an explicit expect_skill_fired: true — the routing assertion is the whole point of setting it", () => {
       expect(
         evaluateSkillFired("implementing-scripts", ["scaffolding-scripts"], {
