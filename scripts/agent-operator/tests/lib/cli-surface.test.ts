@@ -39,6 +39,7 @@ import {
   timedOutResult,
   truncatedResult,
 } from "../support/cliFakes.js";
+import { createPrototypePollutionHarness } from "../support/prototypePollution.js";
 
 /**
  * The surface's real constructor-options type. Earlier RED rounds mirrored
@@ -2212,58 +2213,34 @@ const OPTIONAL_CTOR_DEP_KEYS = [
 type OptionalCtorDepKey = (typeof OPTIONAL_CTOR_DEP_KEYS)[number];
 
 /**
- * Reads the value an own-property-less bag would INHERIT for `key`, without
- * asserting anything about how it got there. `undefined` is the only clean
- * state: `Object.prototype` carries none of these keys in a healthy run.
+ * Generalized `tests/support/prototypePollution.ts` harness, bound to this
+ * block's three optional ctor keys. `expectCtorPrototypeUnpolluted` and
+ * `withInheritedCtorDep` below are thin, name-preserving aliases onto it —
+ * every row's content and assertions are unchanged from before this
+ * extraction, this is a pure mechanical repoint.
  */
-function readInheritedCtorDep(key: OptionalCtorDepKey): unknown {
-  const bag: Record<string, unknown> = {};
-  return bag[key];
-}
+const ctorDepPollutionHarness =
+  createPrototypePollutionHarness<OptionalCtorDepKey>(OPTIONAL_CTOR_DEP_KEYS);
 
 /** Fails loudly, at the source, if a row leaked its pollution. */
 function expectCtorPrototypeUnpolluted(): void {
-  for (const key of OPTIONAL_CTOR_DEP_KEYS) {
-    expect(Object.hasOwn(Object.prototype, key)).toBe(false);
-    expect(readInheritedCtorDep(key)).toBeUndefined();
-  }
+  ctorDepPollutionHarness.expectUnpolluted();
 }
 
 /**
  * Installs `Object.prototype[key]` for the duration of `body` and removes it
- * unconditionally afterwards.
- *
- * Non-enumerable on purpose: an enumerable `Object.prototype` property would
- * also change every `for…in` and `JSON.stringify` in the process during the
- * window, which would make a failure inside `body` ambiguous between the
- * finding and the fixture. `configurable: true` is what makes the removal in
- * the `finally` guaranteed to succeed, and `Reflect.deleteProperty` keeps it
- * a static call rather than a dynamic `delete`.
- *
- * The inherited read is asserted INSIDE the `try`, before `body` runs: a
- * fixture whose `defineProperty` silently failed to take would otherwise let
- * a row pass for the wrong reason (rows 1–3 all assert an outcome that a
- * CLEAN prototype already produces).
+ * unconditionally afterwards. See
+ * `tests/support/prototypePollution.ts`'s `withInherited` for the full
+ * rationale (non-enumerable, `configurable: true`,
+ * `Reflect.deleteProperty` in `finally`, and the assert-inside-try
+ * ordering).
  */
 async function withInheritedCtorDep(
   key: OptionalCtorDepKey,
   value: unknown,
   body: () => Promise<void>,
 ): Promise<void> {
-  expectCtorPrototypeUnpolluted();
-  Object.defineProperty(Object.prototype, key, {
-    value,
-    writable: true,
-    enumerable: false,
-    configurable: true,
-  });
-  try {
-    expect(readInheritedCtorDep(key)).toBe(value);
-    await body();
-  } finally {
-    Reflect.deleteProperty(Object.prototype, key);
-  }
-  expectCtorPrototypeUnpolluted();
+  await ctorDepPollutionHarness.withInherited(key, value, body);
 }
 
 /** The options bag the surface hands its `runProcess` seam. */
