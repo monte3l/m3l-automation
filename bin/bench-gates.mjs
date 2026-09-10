@@ -103,6 +103,14 @@ import {
  * lanes also need `clearLaneCacheDir` to wipe the shared directory before a
  * true `--cold` measurement.
  *
+ * `lint:library:fast` and `lint:workspace:fast` (Phase 2 candidate #3 —
+ * `--cache --cache-strategy content` on the local-only `lint:fast` variant,
+ * never on `lint` itself) each write to their own file under
+ * `node_modules/.cache/eslint/`, unlike the shared `tsc` cache dir above —
+ * the two ESLint invocations lint disjoint file sets, so each lane's
+ * `cacheDir` names only its own cache file and clearing one never disturbs
+ * the other.
+ *
  * @type {Readonly<Record<string, Lane>>}
  */
 export const LANES = Object.freeze({
@@ -113,6 +121,16 @@ export const LANES = Object.freeze({
   },
   "lint:library": { command: "pnpm lint:library", turbo: false },
   "lint:workspace": { command: "pnpm lint:workspace", turbo: false },
+  "lint:library:fast": {
+    command: "pnpm lint:library:fast",
+    turbo: false,
+    cacheDir: "node_modules/.cache/eslint/library.eslintcache",
+  },
+  "lint:workspace:fast": {
+    command: "pnpm lint:workspace:fast",
+    turbo: false,
+    cacheDir: "node_modules/.cache/eslint/workspace.eslintcache",
+  },
   "turbo:typecheck": {
     command:
       "pnpm exec turbo run typecheck --concurrency=$(node bin/print-concurrency.mjs)",

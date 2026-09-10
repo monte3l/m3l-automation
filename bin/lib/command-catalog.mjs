@@ -51,6 +51,21 @@ export const COMMAND_CATALOG = [
       "Lints everything except packages/m3l-common (its own pass keeps that package's large TypeScript program from being loaded twice under --concurrency>1) at --concurrency=1.",
   },
   {
+    name: "lint:fast",
+    description:
+      "Local-only cached variant of `lint` (Phase 2 candidate #3, adaptive-host-budgeting). Runs lint:library:fast then lint:workspace:fast with --cache --cache-strategy content, each writing to its own node_modules/.cache/eslint/*.eslintcache file. Not used by pre-commit/pre-push/CI — those stay uncached for reproducibility.",
+  },
+  {
+    name: "lint:library:fast",
+    description:
+      "Cached variant of lint:library — same --concurrency=1 scope, plus --cache --cache-strategy content at node_modules/.cache/eslint/library.eslintcache.",
+  },
+  {
+    name: "lint:workspace:fast",
+    description:
+      "Cached variant of lint:workspace — same scope and heap sizing, plus --cache --cache-strategy content at node_modules/.cache/eslint/workspace.eslintcache.",
+  },
+  {
     name: "lint:commit",
     description:
       "Lints a commit message: `-- --edit <file>` (the commit-msg hook's mode) or `-- --from <sha> --to <sha>` to lint every subject in a range — e.g. `pnpm lint:commit -- --from origin/main --to HEAD` before opening a PR.",
