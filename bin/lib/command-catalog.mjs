@@ -113,7 +113,7 @@ export const COMMAND_CATALOG = [
   {
     name: "verify",
     description:
-      "Runs every ci.yml lane job's project-check steps locally in one command (bin/lib/verify-steps.mjs), fail-fast by default. `-- --continue` runs every step and summarises; `-- --full` also runs steps with no local equivalent by default (e.g. `pnpm check:hub-drift`, which needs a `gh`-authenticated session). Use before opening a PR to reproduce the CI gate ahead of time.",
+      "Runs every ci.yml lane job's project-check steps locally in concurrent ci.yml-job-derived lanes (bin/lib/verify-steps.mjs), fail-fast by default. `-- --jobs=N` bounds concurrent lanes (default: the host-derived budget, same as `pnpm build`/`pnpm typecheck`); `-- --continue` runs every step and summarises; `-- --full` also runs steps with no local equivalent by default (e.g. `pnpm check:hub-drift`, which needs a `gh`-authenticated session). Use before opening a PR to reproduce the CI gate ahead of time.",
   },
   {
     name: "commands",
