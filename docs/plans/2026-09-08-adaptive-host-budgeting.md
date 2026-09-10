@@ -51,7 +51,7 @@ table a submodule's reference page carries, gated by
 | P1    | `feat/host-profile`             | `bin/lib/host-profile.mjs` + `bin/bench-gates.mjs` (Stage 1)                                           | Done              |
 | P2    | `refactor/adaptive-concurrency` | Switch consumers to the derived budget; retire fixed caps (Stage 2)                                    | Done              |
 | P3.1  | `feat/prettier-cache`           | Phase 2 #1: Prettier `--cache --cache-strategy content` on `format`/`format:check` (Stage 3)           | Landed (PR #1145) |
-| P3.2  | —                               | Phase 2 #2: `incremental`/`tsBuildInfoFile` on the tooling tsconfigs + `bin/tsconfig.json` (Stage 3)   | To Do             |
+| P3.2  | `feat/tsc-incremental`          | Phase 2 #2: `incremental`/`tsBuildInfoFile` on the tooling tsconfigs + `bin/tsconfig.json` (Stage 3)   | Landed (PR #1156) |
 | P3.3  | —                               | Phase 2 #3: ESLint `--cache --cache-strategy content`, local-only via `lint:fast` (Stage 3)            | To Do             |
 | P3.4  | —                               | Phase 2 #4: `--jobs N` for `bin/verify-all.mjs` (Stage 3)                                              | To Do             |
 | P3.5  | —                               | Phase 2 #5: lane scheduling (`--concurrent` vs `--isolated`, lefthook seam) (Stage 3)                  | To Do             |
