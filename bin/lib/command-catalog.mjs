@@ -58,12 +58,12 @@ export const COMMAND_CATALOG = [
   {
     name: "lint:library:fast",
     description:
-      "Cached variant of lint:library — same --concurrency=1 scope, plus --cache --cache-strategy content at node_modules/.cache/eslint/library.eslintcache.",
+      "Cached variant of lint:library — same scope, plus --cache --cache-strategy content at node_modules/.cache/eslint/library.eslintcache and a host-derived --concurrency (bin/print-eslint-concurrency.mjs library, P3.6 of adaptive-host-budgeting) instead of the fixed 1 lint:library uses.",
   },
   {
     name: "lint:workspace:fast",
     description:
-      "Cached variant of lint:workspace — same scope and heap sizing, plus --cache --cache-strategy content at node_modules/.cache/eslint/workspace.eslintcache.",
+      "Cached variant of lint:workspace — same scope and heap sizing, plus --cache --cache-strategy content at node_modules/.cache/eslint/workspace.eslintcache and a host-derived --concurrency (bin/print-eslint-concurrency.mjs workspace, P3.6 of adaptive-host-budgeting) instead of the fixed 1 lint:workspace uses.",
   },
   {
     name: "lint:commit",

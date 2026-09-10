@@ -108,6 +108,21 @@ These land as part of the checked-in repo, not the per-host setup script:
   (Slices P1-P2) intends to fix generally, rather than special-casing this
   one script ahead of that work.
 
+- **`lint:library:fast`/`lint:workspace:fast`'s derived `--concurrency`**
+  (P3.6 of adaptive-host-budgeting) — `bin/print-eslint-concurrency.mjs
+<target>` derives each target's `--concurrency` from
+  `deriveBudget(detectHostProfile(), { perWorkerGiB })`, using that target's
+  own measured single-worker peak (`library`: ~3.1 GiB, `workspace`: ~3.8 GiB
+  — the same numbers documented in `.github/workflows/ci.yml`'s
+  `lint-library`/`lint-workspace` job comment) instead of `deriveBudget`'s
+  1 GiB default, since typescript-eslint's `projectService` duplicates the
+  entire typed-lint TS program per worker. Local-only, on purpose: the plain
+  `lint:library`/`lint:workspace` scripts (used by both pre-push and CI's
+  split jobs) stay pinned at `--concurrency=1` — CI's job split exists
+  specifically to avoid the OOM a prior unsplit `--concurrency=2` caused on a
+  fixed 4-vCPU/16GB runner (issue #734), and a fixed runner spec can't stand
+  in for a live host's actual available memory the way this host's own
+  `os.freemem()` reading can for a local `*:fast` run.
 - **Pinned `statusLine`** — `npx -y ccstatusline@latest` (user-level
   `~/.claude/settings.json`, not repo-tracked) re-resolves the npm registry and
   spawns a fresh `npm exec` supervisor on every render; pin it to a real
