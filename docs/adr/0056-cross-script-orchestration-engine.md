@@ -1,7 +1,7 @@
 # 0056. Cross-script orchestration engine in `m3l-cli` (`m3l flow`)
 
 - **Status:** Accepted
-- **Relations:** fires-trigger-of: 0047
+- **Relations:** fires-trigger-of: 0047, amended-by: 0101
 - **Date:** 2026-08-20
 - **Deciders:** Enrico Lionello (maintainer); Claude (design synthesis)
 
@@ -165,6 +165,15 @@ is size: the combined change is ~395,000 reviewable characters against
 review attempted. The reserved-name lockstep the doc worried about is real but
 binds only the final surface PR, where all nine sites move together.
 
+## Update 2026-09-10 — a pre-flight parameter-resolution check
+
+[ADR-0101](./0101-flow-preflight-parameter-resolution-check.md) amends this
+ADR: `m3l flow run` now performs a pre-flight check before step 1 executes,
+refusing the run when a reachable step would not receive a required
+parameter, rather than letting that surface as a late, mid-run failure.
+Nothing else in this ADR changes — the engine's placement, command name, and
+acceptance flow stand as decided.
+
 ## Links
 
 - Fires the trigger of: [ADR-0047](./0047-cross-script-orchestration-deferred.md)
@@ -174,3 +183,5 @@ binds only the final surface PR, where all nine sites move together.
 - Related: [ADR-0035 (exit codes + run report)](./0035-failure-reporting-and-diagnostics.md),
   [ADR-0029 (scripts stay mutually ignorant)](./0029-script-dependency-boundary.md),
   [ADR-0046 (the distinct in-script engine)](./0046-codified-procedure-engine.md).
+- Amended by: [ADR-0101](./0101-flow-preflight-parameter-resolution-check.md)
+  (the pre-flight parameter-resolution check).

@@ -17,17 +17,44 @@
  * `pnpm-workspace.yaml`'s MONOREPO mode, so that same root is also the
  * `workspaceRoot` `loadFlowDefinition` expects.
  */
+import { readFileSync, readdirSync } from "node:fs";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { beforeAll, describe, expect, test } from "vitest";
 
 import { discoverScripts } from "../src/discovery/discover.js";
+import type { M3LCliParameterDescriptor } from "../src/discovery/load-config.js";
 import { loadScriptParameters } from "../src/discovery/load-config.js";
 import { loadFlowDefinition } from "../src/flow/load.js";
+import { checkFlowPreflight } from "../src/flow/preflight.js";
 import type { M3LCliFlowValidationContext } from "../src/flow/validate.js";
 
 /** Three `..` up from `tests/flow-sqs-roundtrip.test.ts`: the repo root. */
 const REPO_ROOT = fileURLToPath(new URL("../../../", import.meta.url));
+
+/**
+ * Discovers every script and loads its REAL declared parameters, read
+ * straight from its own config module — the same discovery + load pass
+ * `commands/flow.ts`'s `buildParametersByScript` performs, minus the
+ * discovery-cache read/write. Shared by both the validation-context builder
+ * below and the pre-flight tests: both need "every script's real declared
+ * parameters", just wrapped in a different context shape.
+ */
+async function buildRealParametersByScript(): Promise<
+  ReadonlyMap<string, readonly M3LCliParameterDescriptor[]>
+> {
+  const candidates = discoverScripts(REPO_ROOT);
+  const parametersByScript = new Map<
+    string,
+    readonly M3LCliParameterDescriptor[]
+  >();
+  for (const candidate of candidates) {
+    const parameters = await loadScriptParameters(candidate.directory);
+    parametersByScript.set(candidate.name, parameters);
+  }
+  return parametersByScript;
+}
 
 /**
  * Builds the same validation context `m3l flow run` builds in
@@ -37,15 +64,7 @@ const REPO_ROOT = fileURLToPath(new URL("../../../", import.meta.url));
  * exactly as it would fail a real `m3l flow run`.
  */
 async function buildRealValidationContext(): Promise<M3LCliFlowValidationContext> {
-  const candidates = discoverScripts(REPO_ROOT);
-  const parametersByScript = new Map<
-    string,
-    readonly { readonly name: string; readonly secret: boolean }[]
-  >();
-  for (const candidate of candidates) {
-    const parameters = await loadScriptParameters(candidate.directory);
-    parametersByScript.set(candidate.name, parameters);
-  }
+  const parametersByScript = await buildRealParametersByScript();
   return { parametersByScript };
 }
 
@@ -98,5 +117,85 @@ describe("the shipped sqs-roundtrip flow definition", () => {
     expect(sharedValue).toBeDefined();
     expect(sharedValue).not.toBe("");
     expect(sharedValue).toBe(projectBody?.parameters["output"]);
+  });
+});
+
+describe("the shipped flow definitions pass the pre-flight resolution check (issue #883)", () => {
+  // Same real discovery + per-script config load as the describe block
+  // above — safe and cheap to share across both flows under test here.
+  let parametersByScript: ReadonlyMap<
+    string,
+    readonly M3LCliParameterDescriptor[]
+  >;
+
+  beforeAll(async () => {
+    parametersByScript = await buildRealParametersByScript();
+  });
+
+  test.each(["sqs-roundtrip", "dlq-reconcile"] as const)(
+    "%s supplies every required parameter from its own committed definition, with zero ambient environment or env-file reliance",
+    (flowName) => {
+      const definition = loadFlowDefinition(REPO_ROOT, flowName, {
+        parametersByScript,
+      });
+
+      // Deliberately the weakest possible context: no ambient environment
+      // variables at all, and an empty env-file-reach map so every script
+      // falls back to `false` via checkFlowPreflight's own `?? false` — zero
+      // benefit of the doubt from any of the check's own blind spots. If
+      // `report.missing` is non-empty under THIS context, the flow's own
+      // committed `parameters:` values alone do not satisfy its scripts'
+      // required parameters.
+      const report = checkFlowPreflight(definition, {
+        parametersByScript,
+        env: {},
+        envFileReachByScript: new Map(),
+      });
+
+      // If this ever fails: STOP. Do not edit the flow YAML or the
+      // preflight check to force it green — report the exact step/script/
+      // parameter finding back to the hub for investigation first, per this
+      // task's instructions.
+      expect(report.missing).toEqual([]);
+
+      // `report.unverified` is intentionally NOT asserted empty here — a
+      // flow may legitimately carry advisory findings (an unresolved
+      // ADR-0055 selector, a script the context has no descriptors for)
+      // while still having zero missing. Documented for a future reader
+      // rather than asserted away:
+      //   sqs-roundtrip: every step declares its own selector value
+      //     (`command`, `operation`) directly in `parameters`, so no
+      //     conditional-requirement selector is left unresolved.
+      //   dlq-reconcile: same — `command` is always given a literal value
+      //     on both steps.
+      // Both flows are therefore expected to report `unverified: []` too
+      // today, but that is not the guarantee this test exists to lock in.
+    },
+  );
+});
+
+describe("the pre-flight's one documented blind spot (asyncFallback)", () => {
+  test("no script declares an asyncFallback — the pre-flight's one blind spot has nothing to hide today", () => {
+    const scriptsRoot = join(REPO_ROOT, "scripts");
+    const scriptDirectories = readdirSync(scriptsRoot, {
+      withFileTypes: true,
+    }).filter((entry) => entry.isDirectory());
+
+    const offenders: string[] = [];
+    for (const directory of scriptDirectories) {
+      const configPath = join(scriptsRoot, directory.name, "src", "config.ts");
+      let contents: string;
+      try {
+        contents = readFileSync(configPath, "utf8");
+      } catch {
+        // No src/config.ts for this script directory — nothing to check.
+        continue;
+      }
+      if (contents.includes("asyncFallback")) {
+        offenders.push(directory.name);
+      }
+    }
+
+    expect(offenders).toEqual([]);
   });
 });

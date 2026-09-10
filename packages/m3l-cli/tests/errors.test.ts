@@ -10,7 +10,7 @@ import { exitCodeForError, M3LCliError } from "../src/cli/errors.js";
 import type { M3LCliErrorCode } from "../src/cli/errors.js";
 
 describe("M3LCliErrorCode", () => {
-  test("is the exact twenty-four-member union the contract declares (U7 adds ERR_CLI_COMMAND_MODULE_INVALID/ERR_CLI_IN_PROCESS_FAILED; a U7 follow-up splits off ERR_CLI_COMMAND_MODULE_IMPORT_FAILED for a genuine import failure, distinct from ERR_CLI_COMMAND_MODULE_INVALID's 'no adopted seam' case; a further U7 follow-up adds ERR_CLI_IN_PROCESS_UNSUPPORTED; U10 stage A adds ERR_CLI_FLOW_INVALID/ERR_CLI_UNKNOWN_FLOW for the m3l flow command; U10 stage B adds ERR_CLI_UNKNOWN_FLOW_STEP for resume-from step validation and ERR_CLI_FLOW_RECORD_WRITE_FAILED/ERR_CLI_FLOW_RECORD_INVALID for flow record persistence; a further U10 follow-up splits off ERR_CLI_FLOW_READ_FAILED as the machine-side counterpart to ERR_CLI_FLOW_INVALID; U11 adds ERR_CLI_FLOW_RESUME_REFUSED for a refused m3l flow --resume)", () => {
+  test("is the exact twenty-five-member union the contract declares (U7 adds ERR_CLI_COMMAND_MODULE_INVALID/ERR_CLI_IN_PROCESS_FAILED; a U7 follow-up splits off ERR_CLI_COMMAND_MODULE_IMPORT_FAILED for a genuine import failure, distinct from ERR_CLI_COMMAND_MODULE_INVALID's 'no adopted seam' case; a further U7 follow-up adds ERR_CLI_IN_PROCESS_UNSUPPORTED; U10 stage A adds ERR_CLI_FLOW_INVALID/ERR_CLI_UNKNOWN_FLOW for the m3l flow command; U10 stage B adds ERR_CLI_UNKNOWN_FLOW_STEP for resume-from step validation and ERR_CLI_FLOW_RECORD_WRITE_FAILED/ERR_CLI_FLOW_RECORD_INVALID for flow record persistence; a further U10 follow-up splits off ERR_CLI_FLOW_READ_FAILED as the machine-side counterpart to ERR_CLI_FLOW_INVALID; U11 adds ERR_CLI_FLOW_RESUME_REFUSED for a refused m3l flow --resume; a further U11 follow-up adds ERR_CLI_FLOW_PREFLIGHT_FAILED for a run refused before step 1 because a step would not receive a required parameter, issue #883)", () => {
     expectTypeOf<M3LCliErrorCode>().toEqualTypeOf<
       | "ERR_CLI_UNKNOWN_COMMAND"
       | "ERR_CLI_UNKNOWN_SCRIPT"
@@ -36,6 +36,7 @@ describe("M3LCliErrorCode", () => {
       | "ERR_CLI_FLOW_RECORD_WRITE_FAILED"
       | "ERR_CLI_FLOW_RECORD_INVALID"
       | "ERR_CLI_FLOW_RESUME_REFUSED"
+      | "ERR_CLI_FLOW_PREFLIGHT_FAILED"
     >();
   });
 });
@@ -169,6 +170,14 @@ describe("exitCodeForError", () => {
     // not a misspelled argument like ERR_CLI_UNKNOWN_FLOW_STEP (2), which is 2
     // precisely because a wrong step id IS the invocation's fault.
     ["ERR_CLI_FLOW_RESUME_REFUSED", 1],
+    // U11 follow-up (issue #883): a step dying on a missing required parameter
+    // throws M3LConfigMissingError (ERR_CONFIG_MISSING), catalogued
+    // origin: "caller", which exitCodeForError maps to CONFIG_USAGE (2). A
+    // pre-flight refusal reports the SAME exit code the run would have
+    // reported later — just earlier, and with no step executed. Not 1 like
+    // ERR_CLI_FLOW_RESUME_REFUSED: that is a state guard over a prior run's
+    // ledger, this is the invocation's own configuration being incomplete.
+    ["ERR_CLI_FLOW_PREFLIGHT_FAILED", 2],
   ] as const satisfies readonly (readonly [M3LCliErrorCode, number])[];
 
   test("codeExitCases covers every M3LCliErrorCode (exhaustiveness)", () => {

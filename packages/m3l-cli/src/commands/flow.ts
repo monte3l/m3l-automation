@@ -9,8 +9,9 @@
  *
  * Deliberately thin. Every decision lives one module down — `flow/load`
  * validates, `flow/run` branches, `flow/record` hashes and persists,
- * `flow/envelope` and `flow/render` format — so this module only orders those
- * calls and maps their results onto the writer facade and an exit code.
+ * `flow/preflight` pre-flights, `flow/envelope` and `flow/render` format —
+ * so this module only orders those calls and maps their results onto the
+ * writer facade and an exit code.
  *
  * **`--resume` (U11).** `runFlow` accepts `resumeFromStepId` and
  * `stepExecutionCount`; this module reads the saved run record and forwards
@@ -36,8 +37,14 @@ import { JSON_FLAG } from "../cli/flags.js";
 import { discoverScripts } from "../discovery/discover.js";
 import type { M3LCliScriptCandidate } from "../discovery/discover.js";
 import { loadParametersCached } from "../discovery/cached-load.js";
+import type { M3LCliParameterDescriptor } from "../discovery/load-config.js";
 import { buildFlowEnvelope, formatFlowEnvelope } from "../flow/envelope.js";
 import { listFlows, loadFlowDefinition } from "../flow/load.js";
+import {
+  checkFlowPreflight,
+  rejectFlowPreflight,
+  resolveEnvFileReach,
+} from "../flow/preflight.js";
 import {
   buildFlowRunRecord,
   readFlowRunRecord,
@@ -48,7 +55,6 @@ import { formatFlowListLines, formatFlowRunLines } from "../flow/render.js";
 import { runFlow } from "../flow/run.js";
 import type { M3LCliFlowRunResult } from "../flow/run.js";
 import type { M3LCliFlowDefinition } from "../flow/types.js";
-import type { M3LCliFlowValidationParameter } from "../flow/validate.js";
 
 /** Exit code for a usage error, mirroring `main.ts`'s own constant. */
 const USAGE_EXIT_CODE = 2;
@@ -244,10 +250,10 @@ function flowRecordPath(
 async function buildParametersByScript(
   context: M3LCliCommandContext,
   candidates: readonly M3LCliScriptCandidate[],
-): Promise<ReadonlyMap<string, readonly M3LCliFlowValidationParameter[]>> {
+): Promise<ReadonlyMap<string, readonly M3LCliParameterDescriptor[]>> {
   const parametersByScript = new Map<
     string,
-    readonly M3LCliFlowValidationParameter[]
+    readonly M3LCliParameterDescriptor[]
   >();
   for (const candidate of candidates) {
     try {
@@ -377,13 +383,70 @@ function emitFlowRun(
 }
 
 /**
+ * Runs the issue #883 pre-flight resolution check for a flow about to run,
+ * reporting every `unverified` finding on stderr as an advisory warning and
+ * refusing the run (via `rejectFlowPreflight`) when any step is provably
+ * missing a required parameter.
+ *
+ * Extracted from {@link runNamedFlow} to keep that function's line count
+ * within the project's allowed maximum, the same reason
+ * {@link dispatchFlowList} was split from {@link runFlowCommand}.
+ *
+ * @param context - The command context, for `env` and the writer facade.
+ * @param candidates - The discovered scripts, for `resolveEnvFileReach`.
+ * @param definition - The validated flow definition to check.
+ * @param parametersByScript - The SAME map `loadFlowDefinition` validated
+ *   against — reused rather than recomputed, so the pre-flight check can
+ *   never observe a different discovery/parameter snapshot than the one the
+ *   definition was actually checked with.
+ * @param resumeOptions - The resume options, when resuming; `undefined`
+ *   otherwise. Its `resumeFromStepId` becomes the pre-flight's `startStepId`
+ *   when present, spread conditionally rather than passed as an explicit
+ *   `undefined` (`exactOptionalPropertyTypes`).
+ * @returns Nothing on success; throws to refuse the run.
+ * @throws {@link M3LCliError} coded `ERR_CLI_FLOW_PREFLIGHT_FAILED` when a
+ *   step would not receive a required parameter.
+ */
+function runFlowPreflightCheck(
+  context: M3LCliCommandContext,
+  candidates: readonly M3LCliScriptCandidate[],
+  definition: M3LCliFlowDefinition,
+  parametersByScript: ReadonlyMap<string, readonly M3LCliParameterDescriptor[]>,
+  resumeOptions: { readonly resumeFromStepId: string } | undefined,
+): void {
+  const report = checkFlowPreflight(definition, {
+    parametersByScript,
+    env: context.env,
+    envFileReachByScript: resolveEnvFileReach(candidates, context.envFile),
+    ...(resumeOptions === undefined
+      ? {}
+      : { startStepId: resumeOptions.resumeFromStepId }),
+  });
+  for (const unverified of report.unverified) {
+    context.output.error(
+      `could not verify flow step '${unverified.stepId}' (${unverified.script}) would receive its required parameters: ${unverified.reason}`,
+    );
+  }
+  if (report.missing.length > 0) {
+    rejectFlowPreflight(definition.name, report.missing);
+  }
+}
+
+/**
  * Runs `m3l flow run <name>`.
  *
  * **Ordering.** Discovery and the cached parameter load build the validation
  * context, `loadFlowDefinition` validates, (optionally) the resume record is
- * read, `runFlow` executes, `buildFlowRunRecord` assembles the ledger, the
- * result is EMITTED, and only then is the ledger written. Nothing here
- * recomputes the definition hash the record already carries.
+ * read, the pre-flight resolution check (issue #883) runs, `runFlow`
+ * executes, `buildFlowRunRecord` assembles the ledger, the result is
+ * EMITTED, and only then is the ledger written. Nothing here recomputes the
+ * definition hash the record already carries. The pre-flight check sits
+ * AFTER the resume record is validated, so a refused resume always reports
+ * `ERR_CLI_FLOW_RESUME_REFUSED` rather than a pre-flight finding — by the
+ * time `checkFlowPreflight` runs, any resume options in play are already
+ * known-valid. It sits BEFORE `randomUUID()`/`runFlow`, so a pre-flight
+ * refusal (`rejectFlowPreflight` throws, never returns) mints no run id and
+ * writes no run record.
  *
  * **Resume.** When `resume` is true, the saved run record is read and
  * forwarded to `flow/record`'s `validateResumeRecord`, which enforces the
@@ -391,6 +454,17 @@ function emitFlowRun(
  * hash matches). Any violation throws `ERR_CLI_FLOW_RESUME_REFUSED`. A
  * corrupt record (`ERR_CLI_FLOW_RECORD_INVALID`) propagates UNCHANGED —
  * never caught here.
+ *
+ * **Pre-flight (issue #883).** `checkFlowPreflight` reuses the SAME
+ * `parametersByScript` map `loadFlowDefinition` validated against — recomputing
+ * it would risk observing a different discovery/parameter snapshot than the
+ * one the definition was actually checked with. A `startStepId` is passed
+ * only when resuming (spread conditionally, never as an explicit
+ * `undefined`, to satisfy `exactOptionalPropertyTypes`); otherwise
+ * `checkFlowPreflight` treats every step as reachable from the first. Every
+ * `unverified` finding is reported on stderr as an advisory warning and the
+ * run proceeds; a `missing` finding refuses the run outright via
+ * `rejectFlowPreflight`.
  *
  * The record write is not wrapped: `ERR_CLI_FLOW_RECORD_WRITE_FAILED`
  * propagates and DOES change the resolved exit code, the exact inverse of
@@ -408,7 +482,8 @@ function emitFlowRun(
  * @throws {@link M3LCliError} coded `ERR_CLI_UNKNOWN_FLOW` or
  *   `ERR_CLI_FLOW_INVALID` from validation, `ERR_CLI_FLOW_RESUME_REFUSED`
  *   when a resume precondition is not met, `ERR_CLI_FLOW_RECORD_INVALID`
- *   when the saved record is corrupt, `ERR_CLI_FLOW_RECORD_WRITE_FAILED`
+ *   when the saved record is corrupt, `ERR_CLI_FLOW_PREFLIGHT_FAILED` when a
+ *   step would not receive a required parameter, `ERR_CLI_FLOW_RECORD_WRITE_FAILED`
  *   when the resume ledger cannot be written, and whatever a step execution
  *   throws — each unchanged.
  */
@@ -420,8 +495,9 @@ async function runNamedFlow(
   resume: boolean,
 ): Promise<number> {
   const candidates = discoverScripts(context.workspaceRoot);
+  const parametersByScript = await buildParametersByScript(context, candidates);
   const definition = loadFlowDefinition(context.workspaceRoot, name, {
-    parametersByScript: await buildParametersByScript(context, candidates),
+    parametersByScript,
   });
 
   const resumeOptions = resume
@@ -430,6 +506,14 @@ async function runNamedFlow(
         definition,
       )
     : undefined;
+
+  runFlowPreflightCheck(
+    context,
+    candidates,
+    definition,
+    parametersByScript,
+    resumeOptions,
+  );
 
   const runId = randomUUID();
   const result = await runFlow(

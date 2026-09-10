@@ -857,7 +857,7 @@
       },
       {
         "path": "docs/adr/README.md",
-        "blob": "a39f61d852d75ac355642fc52dae39738c7625a3"
+        "blob": "cf4fe6719f9389b80053ce76e1cddc225f4e5d2b"
       },
       {
         "path": "docs/logs/2026-08-14-aws-rds-data.md",
@@ -1176,7 +1176,7 @@
       },
       {
         "path": "docs/reference/cli.md",
-        "blob": "dc64dc69fa84c58d906351210b2dcb677fbd1f1a"
+        "blob": "81de5e18368a3781fd3f65823f3c5a414aa3b711"
       },
       {
         "path": "docs/reference/core/config.md",
@@ -1191,7 +1191,7 @@
         "blob": "7585109b37476c97a740680dfbee343f9b65d3e1"
       }
     ],
-    "verifiedAt": "2026-09-09"
+    "verifiedAt": "2026-09-10"
   },
   "0043": {
     "sourceFiles": [
@@ -1414,14 +1414,14 @@
       },
       {
         "path": "docs/reference/cli.md",
-        "blob": "dc64dc69fa84c58d906351210b2dcb677fbd1f1a"
+        "blob": "81de5e18368a3781fd3f65823f3c5a414aa3b711"
       },
       {
         "path": "docs/ROADMAP.md",
         "blob": "290eff3616805df4c50d647e8ca37fa9060caa05"
       }
     ],
-    "verifiedAt": "2026-09-09"
+    "verifiedAt": "2026-09-10"
   },
   "0054": {
     "sourceFiles": [
@@ -1514,10 +1514,10 @@
     "sourceFiles": [
       {
         "path": "docs/reference/cli.md",
-        "blob": "dc64dc69fa84c58d906351210b2dcb677fbd1f1a"
+        "blob": "81de5e18368a3781fd3f65823f3c5a414aa3b711"
       }
     ],
-    "verifiedAt": "2026-09-06"
+    "verifiedAt": "2026-09-10"
   },
   "0064": {
     "sourceFiles": [
@@ -2038,7 +2038,7 @@
       },
       {
         "path": "docs/reference/cli.md",
-        "blob": "dc64dc69fa84c58d906351210b2dcb677fbd1f1a"
+        "blob": "81de5e18368a3781fd3f65823f3c5a414aa3b711"
       },
       {
         "path": "packages/m3l-cli/src/cli/flags.ts",
@@ -2053,7 +2053,7 @@
         "blob": "a554f625f8d023da5f84fa376e7d3853bb72b2e7"
       }
     ],
-    "verifiedAt": "2026-09-09"
+    "verifiedAt": "2026-09-10"
   },
   "0086": {
     "sourceFiles": [
@@ -2303,7 +2303,7 @@
       },
       {
         "path": "docs/adr/README.md",
-        "blob": "a39f61d852d75ac355642fc52dae39738c7625a3"
+        "blob": "cf4fe6719f9389b80053ce76e1cddc225f4e5d2b"
       },
       {
         "path": "docs/contributing/filing-work.md",
@@ -2314,7 +2314,7 @@
         "blob": "0915d8bc8a00fb43f0c943b5ccf8019d094a65cc"
       }
     ],
-    "verifiedAt": "2026-09-09"
+    "verifiedAt": "2026-09-10"
   },
   "0095": {
     "sourceFiles": [
@@ -2324,7 +2324,7 @@
       },
       {
         "path": "docs/adr/README.md",
-        "blob": "a39f61d852d75ac355642fc52dae39738c7625a3"
+        "blob": "cf4fe6719f9389b80053ce76e1cddc225f4e5d2b"
       },
       {
         "path": "docs/decision-notes/README.md",
@@ -2335,7 +2335,7 @@
         "blob": "0915d8bc8a00fb43f0c943b5ccf8019d094a65cc"
       }
     ],
-    "verifiedAt": "2026-09-09"
+    "verifiedAt": "2026-09-10"
   },
   "0096": {
     "sourceFiles": [
@@ -2502,6 +2502,27 @@
       {
         "path": "rules/02-testing.md",
         "blob": "eaf1052dd67488b727f6241d2bd2d1fd3abda8dc"
+      }
+    ],
+    "verifiedAt": "2026-09-10"
+  },
+  "0101": {
+    "sourceFiles": [
+      {
+        "path": "data/config/flows/dlq-reconcile.yaml",
+        "blob": "f734f047f90c0299c402b862b41c55f0395f30ad"
+      },
+      {
+        "path": "data/config/flows/sqs-roundtrip.yaml",
+        "blob": "6b1bc0a4cc1c98f863ba516cb4163296570bf294"
+      },
+      {
+        "path": "docs/reference/cli.md",
+        "blob": "81de5e18368a3781fd3f65823f3c5a414aa3b711"
+      },
+      {
+        "path": "scripts/agent-operator/src/lib/flow-definitions.ts",
+        "blob": "f261ace3a9713d01e2e8c69833fbe8f7d6bcde7c"
       }
     ],
     "verifiedAt": "2026-09-10"
