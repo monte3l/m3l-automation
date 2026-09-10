@@ -364,7 +364,14 @@ but the poll checking for completion must ALSO be detached or run via a
 `run_in_background` polling wrapper was killed too, even though it did
 negligible work itself, confirming the kill targets the session's tracked
 background jobs as a set rather than whichever process is actually heavy
-(`docs/logs/2026-09-07-lefthook-shim-fail-open.md`).
+(`docs/logs/2026-09-07-lefthook-shim-fail-open.md`). **Not push-specific,
+and not preventable by checking first**: the identical kill hit `pnpm
+verify` and `pnpm lint:workspace` runs in the same session, and
+`pnpm check:host-resources` reporting "mitigations in place" immediately
+beforehand gave no protection — that check reports static host
+configuration, not the harness's own live tracked-job accounting, so a
+clean report is not a signal it's safe to skip the detach
+(`docs/logs/2026-09-11-issue-1019-agent-operator-deps-boundary.md`).
 
 **Even a detached log can still go unreadable across a restart** — the
 session's own scratchpad path includes a session id that can rotate mid-task,
