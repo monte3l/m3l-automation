@@ -922,7 +922,7 @@
       },
       {
         "path": "bin/lib/command-catalog.mjs",
-        "blob": "ded2b4b6d0d55cc54a4dbe38c73df6919cbcebbd"
+        "blob": "bc613500c793973c31cac00d8f8728c0569d6e1b"
       },
       {
         "path": "bin/lib/hub-sync.mjs",
@@ -1901,7 +1901,7 @@
       },
       {
         "path": "bin/setup-host-resources.mjs",
-        "blob": "3194bb48d0b03159138541e5241e14bf4b3456d1"
+        "blob": "6e12408ebf7def9c2707f0049c0fc028d20eb0b1"
       },
       {
         "path": "bin/worktree-setup.mjs",
@@ -1913,7 +1913,7 @@
       },
       {
         "path": "docs/contributing/host-resources.md",
-        "blob": "b3060067cb3d71e980beab4539dd0d4f3cee7029"
+        "blob": "9646b3ffea474b6f8d8ecd7403f31146e930b58f"
       },
       {
         "path": "docs/logs/2026-08-19-check-test-counts-contention.md",
