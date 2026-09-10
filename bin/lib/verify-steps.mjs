@@ -639,6 +639,92 @@ export function parseCiJobStepNames(ciYamlText) {
 }
 
 /**
+ * Group {@link VERIFY_STEPS} into ci.yml-job-derived "lanes" for
+ * `bin/verify-all.mjs`'s `--jobs N` concurrency (P3.4 of
+ * adaptive-host-budgeting). Every lane job in ci.yml declares only
+ * `needs: changes` (see {@link parseVerifyNeeds}'s neighbouring comment in
+ * ci.yml itself) — none depends on another lane job — so ci.yml already runs
+ * every one of them concurrently today; steps in two different jobs are
+ * therefore already proven safe to run concurrently, with no new dependency
+ * metadata required. Steps within the SAME job keep that job's own ci.yml
+ * step order (not {@link VERIFY_STEPS}' incidental array order), preserving
+ * whatever intra-job sequencing its author relied on — e.g. `gates` builds
+ * the CLI before running the scaffold checkers that read its `dist/`.
+ *
+ * A step whose `ciStepName` isn't found in any ci.yml job (should not
+ * happen — `check:verify-parity` guards exactly this — but this function
+ * must not silently drop a step if it ever does) is appended as its own
+ * singleton lane, in {@link VERIFY_STEPS} order, after every job-derived
+ * lane.
+ *
+ * A handful of generic step names (e.g. "Cache turbo", "Build") are
+ * legitimately declared in more than one ci.yml job — `parseCiVerifyStepNames`'s
+ * own dedup test documents this. Each such name maps back to exactly one
+ * VERIFY_STEPS entry, so placing it in every job that names it would
+ * schedule the SAME step object more than once; this function places it
+ * only in the first (ci.yml job declaration order) lane that claims it, so
+ * a step can never appear — and never run — twice.
+ *
+ * A step with a real `cmd` that a LATER job loses this way is not merely
+ * skipped — that job relied on running it as its own prerequisite (e.g.
+ * ci.yml's `test` job re-runs "Build" because it executes on its own
+ * separate CI runner with no shared `dist/`; see that job's own comment).
+ * Locally there is one shared checkout, so re-running the same command a
+ * second time is redundant, not wrong — but the LOSING lane's own step
+ * that depended on it (`test-coverage` needing `packages/m3l-common`'s
+ * built `dist/`) must not start before the WINNING lane produces it. Every
+ * such lost step therefore adds the winning lane's `jobName` to the
+ * losing lane's `dependsOn`, so `bin/verify-all.mjs`'s scheduler can hold
+ * that lane back until its dependency lane has completed — this is the
+ * fix for a real, reproducible bug found in review: without it, the `test`
+ * lane's `test-coverage` step could run concurrently with (or before) the
+ * `build` lane's own `pnpm build`, against a stale or missing `dist/`.
+ * `skipReason`-only steps (e.g. "Cache turbo", no `cmd`) never create a
+ * dependency — they never actually run, so nothing depends on them.
+ *
+ * @param {string} ciYamlText
+ * @param {VerifyStep[]} [steps] defaults to {@link VERIFY_STEPS}
+ * @returns {{ jobName: string, steps: VerifyStep[], dependsOn: string[] }[]} in ci.yml job order
+ */
+export function groupStepsIntoLanes(ciYamlText, steps = VERIFY_STEPS) {
+  const jobStepNames = parseCiJobStepNames(ciYamlText);
+  const stepByName = new Map(steps.map((s) => [s.ciStepName, s]));
+  const claimedBy = new Map();
+  const lanes = [];
+
+  for (const [jobName, stepNames] of jobStepNames) {
+    const laneSteps = [];
+    const dependsOn = new Set();
+    for (const name of stepNames) {
+      const step = stepByName.get(name);
+      if (step === undefined) continue;
+      const owner = claimedBy.get(step.id);
+      if (owner !== undefined) {
+        if (step.cmd !== undefined) dependsOn.add(owner);
+        continue;
+      }
+      laneSteps.push(step);
+      claimedBy.set(step.id, jobName);
+    }
+    if (laneSteps.length > 0) {
+      lanes.push({ jobName, steps: laneSteps, dependsOn: [...dependsOn] });
+    }
+  }
+
+  for (const step of steps) {
+    if (!claimedBy.has(step.id)) {
+      lanes.push({
+        jobName: `unmatched:${step.id}`,
+        steps: [step],
+        dependsOn: [],
+      });
+    }
+  }
+
+  return lanes;
+}
+
+/**
  * Parse the required `verify` job's own `needs:` array from ci.yml — the
  * set of lane jobs whose failure fails the required status check.
  *

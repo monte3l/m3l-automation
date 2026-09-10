@@ -85,7 +85,7 @@
       },
       {
         "path": "bin/lib/verify-steps.mjs",
-        "blob": "98c6661c51b08ac9c7e9e3920ab7e6c872e280ff"
+        "blob": "fb0a9085bcc540ca012ee37a0165846e4e246c30"
       },
       {
         "path": "docs/contributing/contributing.md",
@@ -922,7 +922,7 @@
       },
       {
         "path": "bin/lib/command-catalog.mjs",
-        "blob": "7ff7d1a201740135345dd34ef39073a82b9308b4"
+        "blob": "ded2b4b6d0d55cc54a4dbe38c73df6919cbcebbd"
       },
       {
         "path": "bin/lib/hub-sync.mjs",
@@ -934,7 +934,7 @@
       },
       {
         "path": "bin/lib/verify-steps.mjs",
-        "blob": "98c6661c51b08ac9c7e9e3920ab7e6c872e280ff"
+        "blob": "fb0a9085bcc540ca012ee37a0165846e4e246c30"
       },
       {
         "path": "bin/lint-commit.mjs",
@@ -974,7 +974,7 @@
       },
       {
         "path": "docs/logs/README.md",
-        "blob": "aa65e1976cfd5e13b0ebf2d8b65a75d1544a6a2c"
+        "blob": "512a323e10a0c4e3c6ec8853ae26208cc3e13dc5"
       },
       {
         "path": "docs/plans/IMPLEMENTATION.md",
@@ -1868,7 +1868,7 @@
       },
       {
         "path": "bin/lib/verify-steps.mjs",
-        "blob": "98c6661c51b08ac9c7e9e3920ab7e6c872e280ff"
+        "blob": "fb0a9085bcc540ca012ee37a0165846e4e246c30"
       },
       {
         "path": "bin/sync-hub.mjs",
@@ -1883,7 +1883,7 @@
         "blob": "290eff3616805df4c50d647e8ca37fa9060caa05"
       }
     ],
-    "verifiedAt": "2026-09-09"
+    "verifiedAt": "2026-09-10"
   },
   "0080": {
     "sourceFiles": [
@@ -1925,7 +1925,7 @@
       },
       {
         "path": "docs/plans/2026-09-08-adaptive-host-budgeting.md",
-        "blob": "d1194ca79f43e2230352b86b9bb6912241781371"
+        "blob": "05afa74fb39de6388329502738c588b63779516d"
       },
       {
         "path": "package.json",
@@ -2444,7 +2444,7 @@
       },
       {
         "path": "docs/logs/README.md",
-        "blob": "aa65e1976cfd5e13b0ebf2d8b65a75d1544a6a2c"
+        "blob": "512a323e10a0c4e3c6ec8853ae26208cc3e13dc5"
       }
     ],
     "verifiedAt": "2026-09-10"
@@ -2453,7 +2453,7 @@
     "sourceFiles": [
       {
         "path": ".claude/rules/harness-artifacts.md",
-        "blob": "e55474d406e69f89f890bda7259e49e9c46c792f"
+        "blob": "286ceed05bf2fa7712ced61ab2fad9ffa755d2cb"
       },
       {
         "path": ".claude/rules/tests.md",
