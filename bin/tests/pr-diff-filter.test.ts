@@ -78,6 +78,15 @@ describe("filterChangedFiles", () => {
   test("returns an empty list for a docs-only change", () => {
     expect(filterChangedFiles("docs/a.md\nREADME.md\n")).toEqual([]);
   });
+
+  // A compare/diff that legitimately reports zero changed files (an empty
+  // commit) must resolve identically to a docs-only change — the guard step
+  // in claude-pr-review.yml relies on this to carry a prior PASS forward
+  // instead of escalating. See issue #1150.
+  test("returns an empty list for empty input", () => {
+    expect(filterChangedFiles("")).toEqual([]);
+    expect(filterChangedFiles("\n")).toEqual([]);
+  });
 });
 
 describe("filterPatch", () => {

@@ -152,10 +152,13 @@ jobs:
             review "gh pr diff --name-only failed — running review."
             exit 0
           fi
-          if [ -z "$full_files" ]; then
-            review "PR diff reports no changed files — running review."
-            exit 0
-          fi
+
+          # `gh pr diff --name-only` exits non-zero on failure (the
+          # `__ERROR__` branch above), so empty stdout with a zero exit means
+          # exactly one thing: the PR genuinely has zero changed files.
+          # Falling through rather than early-exiting into a real review
+          # lands it in the non_ignored_count -eq 0 skip below, the same
+          # branch a docs-only PR already takes — see issue #1150.
 
           # Fail-safe, like every other gate in this step: if the filter itself
           # fails, review rather than silently treating the PR as unreviewable
@@ -201,7 +204,7 @@ jobs:
 
           if [ "$non_ignored_count" -eq 0 ]; then
             echo "should_review=false" >> "$GITHUB_OUTPUT"
-            echo "Entire PR diff is docs/config-only — skipping review."
+            echo "Nothing reviewable in the PR diff — skipping review."
             exit 0
           fi
 
@@ -325,10 +328,17 @@ jobs:
             review_or_escalate "Compare API failed"
             exit 0
           fi
-          if [ -z "$files" ]; then
-            review_or_escalate "No compare data"
-            exit 0
-          fi
+
+          # A compare that succeeds with zero files is a legitimate, current
+          # PASS — an empty commit (the should-fix-ack gate's own documented
+          # remedy, ADR-0097) changes no files by definition. `--jq` exits
+          # non-zero on any unparseable response, so that case is already the
+          # `__ERROR__` branch above and empty stdout here means exactly
+          # `files: []`. Fall through rather than early-exit:
+          # filterChangedFiles() drops blank lines, so an empty list reaches
+          # the "nothing reviewable changed" carry-PASS branch below with no
+          # new code path. Treating it as ambiguity instead escalated a valid
+          # PASS to a round-limit FAIL — see issue #1150 / PR #1145.
 
           changed_reviewable="$(printf '%s\n' "$files" \
             | node "$GITHUB_WORKSPACE/bin/pr-diff-filter.mjs" reviewable \
@@ -364,7 +374,7 @@ jobs:
           fi
 
           echo "should_review=false" >> "$GITHUB_OUTPUT"
-          echo "Prior verdict PASS and only ignored files changed since $reviewed_sha — skipping review."
+          echo "Prior verdict PASS and nothing reviewable changed since $reviewed_sha — skipping review."
 
       # Pre-compute the diff once and hand it to Claude so the reviewer reads a
       # single patch file instead of burning turns rediscovering the diff via
