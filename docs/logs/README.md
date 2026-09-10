@@ -311,3 +311,4 @@ target was renamed is repaired via `RENAMED_TARGETS` in
 | 2026-09-09 | Prettier `--cache --cache-strategy content` — P3.1 of adaptive-host-budgeting wave (PR #1145)          | [prettier-cache](./2026-09-09-prettier-cache.md)                                           |
 | 2026-09-10 | `incremental`/`tsBuildInfoFile` on tooling tsconfigs — P3.2 of adaptive-host-budgeting wave (PR #1156) | [tsc-incremental](./2026-09-10-tsc-incremental.md)                                         |
 | 2026-09-10 | claude-pr-review.yml empty-compare guard fix — issue #1150 (PR #1158)                                  | [pr-review-empty-compare-fix](./2026-09-10-pr-review-empty-compare-fix.md)                 |
+| 2026-09-10 | Skill-eval routing debt — P1 of a 4-PR wave, `expect_routed_to` (issue #1087, PR #1161)                | [skill-eval-routing-debt](./2026-09-10-skill-eval-routing-debt.md)                         |

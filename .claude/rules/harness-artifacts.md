@@ -129,3 +129,20 @@ paths:
   matcher), re-derive what made the original complete and confirm the new
   context still has it — don't assume the shape alone carries the
   correctness.
+
+- **A skill-eval harness assertion whose correctness depends on model
+  behavior, not just code logic, needs a live probe before the test suite is
+  written around it.** `expect_routed_to`'s first design (requiring a named
+  sibling skill to itself fire, alongside the skill under test not firing)
+  was internally consistent and passed a logical read, but was empirically
+  wrong: two live probes against real skills
+  (`implementing-scripts#3`/`refreshing-anthropic-guidance#3`) showed a model
+  correctly recommending the sibling in prose — meeting every graded
+  criterion — without ever invoking that sibling's `Skill` tool inline,
+  since doing so would start executing the sibling's own write-capable
+  procedure mid-turn. The design was corrected only after the probe; the
+  test suite already written around the wrong semantics needed a follow-up
+  correction too (`docs/logs/2026-09-10-skill-eval-routing-debt.md`). A
+  $0.35-0.75 `pnpm eval:skills <name>` probe is cheap insurance against
+  building an assertion (and its tests) around a wrong assumption about what
+  a model actually does.

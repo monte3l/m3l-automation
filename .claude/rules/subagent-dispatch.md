@@ -44,6 +44,9 @@ paths:
   by concern once the diff exceeds ~3–4 files or a few hundred lines. Every
   review-spoke prompt also carries a **converge and report** instruction —
   stop once its checklist is answered rather than re-verifying indefinitely.
+- **Two files implementing the same field's normalization need that
+  cross-check named in the dispatch** — a per-file read can pass while both
+  disagree on an edge case (blank vs absent), missed here, caught by a bot.
 - **Pre-resolve the facts a writer would otherwise discover, not just its
   output scope.** Discovery, not writing, is what exhausts `maxTurns: 40`.
   Resolve the exact fixture contents, a collaborator's return shape, and the
