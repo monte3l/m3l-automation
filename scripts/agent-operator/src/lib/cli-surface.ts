@@ -1335,6 +1335,244 @@ function readOwnOptionalDep<
 }
 
 /**
+ * The closed set of {@link CreateAgentCliSurfaceOptions} keys
+ * {@link assertSurfaceDeps} validates. Mirrors `readOwnOptionalDep`'s
+ * `K extends ...` generic pattern, naming the ten REQUIRED keys instead of
+ * the three optional ones.
+ */
+type RequiredSurfaceDepKey =
+  | "entrypoint"
+  | "cwd"
+  | "nodeExecPath"
+  | "cliTimeoutMs"
+  | "dryRunTimeoutMs"
+  | "flowTimeoutMs"
+  | "maxOutputBytes"
+  | "dryRunAllowlist"
+  | "presetAllowlist"
+  | "flowAllowlist";
+
+/**
+ * Mints the fixed rejection for a required constructor dependency. One
+ * message and code cover every failure mode — absent, inherited from a
+ * polluted `Object.prototype`, and present-but-wrong-typed — so the text
+ * cannot be used to distinguish which of the three fired. The field NAME is
+ * interpolated (never the caller-supplied VALUE): the ten required keys are
+ * this module's OWN closed vocabulary, not caller-supplied text, so naming
+ * one is safe and is the whole diagnostic value — an operator reading this
+ * error needs to know WHICH dependency was rejected, not what value reached
+ * it.
+ */
+function buildDepError(field: RequiredSurfaceDepKey): M3LAgentOperatorCliError {
+  return new M3LAgentOperatorCliError(
+    `the required '${field}' dependency is missing, was inherited rather than an own property, or has an unexpected type`,
+    "ERR_AGENT_OPERATOR_CONFIG",
+    { context: { field } },
+  );
+}
+
+/**
+ * Reads ONE of `deps`' TEN required keys, gated on `Object.hasOwn` exactly
+ * as {@link readOwnOptionalDep} gates the three optional ones — a plain dot
+ * read walks the prototype chain, so `Object.prototype.<key> = value` would
+ * make every caller who never wrote `key` read `value` anyway (the same
+ * incident class {@link assertRunMode} documents for `options.mode`). Unlike
+ * `readOwnOptionalDep`, a required key has no absent-is-fine fallback: an
+ * own-property miss throws {@link buildDepError} rather than returning
+ * `undefined`.
+ *
+ * Returns `unknown`, not the field's declared type: the caller reached this
+ * state through a cast (issue #1019's whole premise), so the declared
+ * interface type is a claim the runtime value may not honour. Every
+ * `require*` helper built on this one re-validates the raw value with a real
+ * `typeof`/`instanceof` check rather than trusting the cast — an already
+ * `string`/`number`-typed return here would make that check read as
+ * statically unreachable to the linter, even though it is the whole point.
+ *
+ * @throws {@link M3LAgentOperatorCliError} coded `ERR_AGENT_OPERATOR_CONFIG`
+ *   when `bag` does not own `key`.
+ */
+function requireOwnDep(
+  bag: CreateAgentCliSurfaceOptions,
+  key: RequiredSurfaceDepKey,
+): unknown {
+  if (!Object.hasOwn(bag, key)) {
+    throw buildDepError(key);
+  }
+  return bag[key];
+}
+
+/**
+ * Validates one of the three path-shaped required keys (`entrypoint`, `cwd`,
+ * `nodeExecPath`): a non-empty string. Deliberately does NOT require an
+ * ABSOLUTE path — both this module's real construction sites and
+ * `config.ts` allow a relative `cliEntrypoint` in standalone mode, and
+ * enforcing absoluteness here would be a behaviour change beyond this
+ * guard's scope.
+ */
+function requireNonEmptyString(
+  bag: CreateAgentCliSurfaceOptions,
+  key: Extract<RequiredSurfaceDepKey, "entrypoint" | "cwd" | "nodeExecPath">,
+): string {
+  const raw = requireOwnDep(bag, key);
+  if (typeof raw !== "string" || raw.length === 0) {
+    throw buildDepError(key);
+  }
+  return raw;
+}
+
+/**
+ * Validates one of the four timeout/byte-cap required keys: a finite,
+ * strictly positive integer. `Number.isInteger` alone rejects `NaN` and
+ * `±Infinity` (neither is an integer) and any fraction; combined with the
+ * `> 0` check it also rejects zero and every negative value.
+ */
+function requirePositiveInteger(
+  bag: CreateAgentCliSurfaceOptions,
+  key: Extract<
+    RequiredSurfaceDepKey,
+    "cliTimeoutMs" | "dryRunTimeoutMs" | "flowTimeoutMs" | "maxOutputBytes"
+  >,
+): number {
+  const raw = requireOwnDep(bag, key);
+  if (typeof raw !== "number" || !Number.isInteger(raw) || raw <= 0) {
+    throw buildDepError(key);
+  }
+  return raw;
+}
+
+/**
+ * Validates one of the two `Set`-shaped required keys (`dryRunAllowlist`,
+ * `flowAllowlist`): the CONTAINER's identity, never its elements. Checking
+ * `instanceof Set` rather than duck-typing (e.g. a `.has` method) is
+ * load-bearing — a polluted `Object.prototype` can forge a `.has` method
+ * exactly as easily as any other property, so only a real identity check
+ * closes that gap. Element types are deliberately NOT checked here: every
+ * name reaching `.has()` is validated on its own path
+ * (`assertUsableScriptName`, `assertAllowedFlowName`), so re-checking each
+ * element here would only be a second, driftable copy of that check. Empty
+ * is legal — see `CreateAgentCliSurfaceOptions.presetAllowlist`'s own TSDoc
+ * on why a required-but-possibly-empty allowlist is a deliberate "declared
+ * closed" state, not an oversight; the same reasoning applies to both `Set`
+ * fields.
+ *
+ * Returns the SAME reference passed in, never a copy: a caller-constructed
+ * `Set` subclass with overridden behaviour must keep behaving that way
+ * through this surface, for the same reason {@link requireStringMap}
+ * preserves `presetAllowlist`'s identity.
+ */
+function requireStringSet(
+  bag: CreateAgentCliSurfaceOptions,
+  key: Extract<RequiredSurfaceDepKey, "dryRunAllowlist" | "flowAllowlist">,
+): ReadonlySet<string> {
+  const raw = requireOwnDep(bag, key);
+  if (!(raw instanceof Set)) {
+    throw buildDepError(key);
+  }
+  return raw;
+}
+
+/**
+ * Validates `presetAllowlist`: the CONTAINER's identity (`instanceof Map`),
+ * never its entries — `resolveAllowedPresetPath` already re-validates every
+ * entry's value at use time via `isDeclarablePresetPath`, so duplicating
+ * that check here would create a second, driftable copy of it. Empty is
+ * legal (see that field's own TSDoc).
+ *
+ * Returns the SAME reference passed in, never a copy into a fresh `Map`:
+ * `cli-surface.test.ts`'s "run() does not launder an unexpected internal
+ * error" regression test constructs a `ThrowingAllowlist extends Map` whose
+ * overridden `get()` throws a bare `TypeError` on purpose, and asserts that
+ * `TypeError` propagates unchanged. A snapshot built with
+ * `new Map(deps.presetAllowlist)` would silently defeat that override — the
+ * copy's `.get()` would be the ordinary `Map.prototype.get`, not the
+ * caller's — so identity must be preserved end to end.
+ */
+function requireStringMap(
+  bag: CreateAgentCliSurfaceOptions,
+  key: Extract<RequiredSurfaceDepKey, "presetAllowlist">,
+): ReadonlyMap<string, string> {
+  const raw = requireOwnDep(bag, key);
+  if (!(raw instanceof Map)) {
+    throw buildDepError(key);
+  }
+  return raw;
+}
+
+/**
+ * The construction-time snapshot of all TEN required
+ * {@link CreateAgentCliSurfaceOptions} keys, validated exactly once by
+ * {@link assertSurfaceDeps} and consumed by every method closure
+ * `createAgentCliSurface` returns — never `deps` again.
+ */
+interface ValidatedSurfaceDeps {
+  readonly entrypoint: string;
+  readonly cwd: string;
+  readonly nodeExecPath: string;
+  readonly cliTimeoutMs: number;
+  readonly dryRunTimeoutMs: number;
+  readonly flowTimeoutMs: number;
+  readonly maxOutputBytes: number;
+  readonly dryRunAllowlist: ReadonlySet<string>;
+  readonly presetAllowlist: ReadonlyMap<string, string>;
+  readonly flowAllowlist: ReadonlySet<string>;
+}
+
+/**
+ * Validates all TEN required {@link CreateAgentCliSurfaceOptions} keys and
+ * returns a frozen snapshot — the single read-and-validate pass that closes
+ * issue #1019.
+ *
+ * Why a snapshot, not "validate up front, then keep reading `deps`": a
+ * construction-time check and a later per-method read are two SEPARATE
+ * reads of the same property, and nothing forces them to agree. A getter
+ * can answer the construction-time check with an honest value and a later
+ * read with a hostile one; a caller holding the same object
+ * `createAgentCliSurface` was given can mutate it after construction
+ * returns. Reading each key exactly ONCE, here, and threading only the
+ * validated local onward through {@link ValidatedSurfaceDeps} is what makes
+ * "validated" and "used" the same read rather than two reads of a moving
+ * target — the same single-read invariant {@link assertRunMode} documents
+ * for `options.mode`.
+ *
+ * Every branch this function's own complexity would otherwise carry lives
+ * in the `require*` helpers above it instead: this function is ten
+ * straight-line declarations and a freeze, deliberately, to stay well under
+ * this file's `complexity`/`max-depth`/`max-lines-per-function` ESLint caps.
+ *
+ * Field order matches {@link CreateAgentCliSurfaceOptions}'s own declaration
+ * order — the ordering carries no runtime significance (every one of the ten
+ * checks is independent), but keeping it fixed makes a diff against the
+ * interface easy to eyeball.
+ */
+function assertSurfaceDeps(
+  deps: CreateAgentCliSurfaceOptions,
+): ValidatedSurfaceDeps {
+  const entrypoint = requireNonEmptyString(deps, "entrypoint");
+  const cwd = requireNonEmptyString(deps, "cwd");
+  const nodeExecPath = requireNonEmptyString(deps, "nodeExecPath");
+  const cliTimeoutMs = requirePositiveInteger(deps, "cliTimeoutMs");
+  const dryRunTimeoutMs = requirePositiveInteger(deps, "dryRunTimeoutMs");
+  const flowTimeoutMs = requirePositiveInteger(deps, "flowTimeoutMs");
+  const maxOutputBytes = requirePositiveInteger(deps, "maxOutputBytes");
+  const dryRunAllowlist = requireStringSet(deps, "dryRunAllowlist");
+  const presetAllowlist = requireStringMap(deps, "presetAllowlist");
+  const flowAllowlist = requireStringSet(deps, "flowAllowlist");
+  return Object.freeze({
+    entrypoint,
+    cwd,
+    nodeExecPath,
+    cliTimeoutMs,
+    dryRunTimeoutMs,
+    flowTimeoutMs,
+    maxOutputBytes,
+    dryRunAllowlist,
+    presetAllowlist,
+    flowAllowlist,
+  });
+}
+
+/**
  * Creates the typed, model-safe {@link AgentCliSurface} adapter over the
  * `m3l` CLI. Every method validates its script-name argument (and, for
  * `dryRun`, the `dryRunAllowlist`; for `run` and `triageRun` alike, the
@@ -1343,8 +1581,22 @@ function readOwnOptionalDep<
  * `runCliProcess`.
  *
  * @param deps - Spawn configuration, timeouts, the two allowlists, and an
- *   optional `runProcess` test seam.
- * @returns The six-method {@link AgentCliSurface}.
+ *   optional `runProcess` test seam. All ten required keys are read and
+ *   validated exactly once, here, by {@link assertSurfaceDeps} — every
+ *   returned method consumes that one validated snapshot, never `deps`
+ *   itself, so neither a prototype-inherited value nor reassigning one of
+ *   the ten required properties on `deps` after construction can reach a
+ *   later call. That snapshot holds each allowlist `Set`/`Map` by
+ *   reference, not by copy — deliberately, so a `Map` subclass with a
+ *   live-overridden `get` keeps working through `run`/`flowRun` — so a
+ *   caller that retains and later mutates the CONTENTS of an allowlist it
+ *   passed in (`.set(...)`, `.add(...)`, `.delete(...)`, `.clear()`) DOES
+ *   reach a later call. Treat every `Set`/`Map` handed to this constructor
+ *   as owned by the returned surface for its lifetime.
+ * @returns The seven-method {@link AgentCliSurface}.
+ * @throws {@link M3LAgentOperatorCliError} coded `ERR_AGENT_OPERATOR_CONFIG`
+ *   when a required dependency is missing (including one only present via
+ *   `Object.prototype`) or is present but wrong-typed.
  * @example
  * ```ts
  * import { createAgentCliSurface } from "./cli-surface.js";
@@ -1374,11 +1626,15 @@ function readOwnOptionalDep<
 export function createAgentCliSurface(
   deps: CreateAgentCliSurfaceOptions,
 ): AgentCliSurface {
+  // FIRST statement — throws before anything else touches `deps`. Every
+  // downstream read below consumes `validated`, never `deps` again; see
+  // `assertSurfaceDeps`'s own TSDoc for why that single read is the fix.
+  const validated = assertSurfaceDeps(deps);
   const ctx: SurfaceRunContext = {
-    entrypoint: deps.entrypoint,
-    cwd: deps.cwd,
-    nodeExecPath: deps.nodeExecPath,
-    maxOutputBytes: deps.maxOutputBytes,
+    entrypoint: validated.entrypoint,
+    cwd: validated.cwd,
+    nodeExecPath: validated.nodeExecPath,
+    maxOutputBytes: validated.maxOutputBytes,
     // The three OPTIONAL keys go through `readOwnOptionalDep`, so an
     // inherited value cannot stand in for one the caller omitted; see its
     // TSDoc for the two harms that made this more than hygiene.
@@ -1388,31 +1644,37 @@ export function createAgentCliSurface(
   };
 
   return {
-    list: () => runList(ctx, deps.cliTimeoutMs),
-    doctor: () => runDoctor(ctx, deps.cliTimeoutMs),
-    inspect: (scriptName) => runInspect(ctx, deps.cliTimeoutMs, scriptName),
+    list: () => runList(ctx, validated.cliTimeoutMs),
+    doctor: () => runDoctor(ctx, validated.cliTimeoutMs),
+    inspect: (scriptName) =>
+      runInspect(ctx, validated.cliTimeoutMs, scriptName),
     dryRun: (scriptName) =>
-      runDryRun(ctx, deps.dryRunTimeoutMs, scriptName, deps.dryRunAllowlist),
+      runDryRun(
+        ctx,
+        validated.dryRunTimeoutMs,
+        scriptName,
+        validated.dryRunAllowlist,
+      ),
     // `run` shares `dryRunTimeoutMs`, not `cliTimeoutMs`: like `dryRun` it
     // spawns a whole script, whose config load and work dwarf a `list`.
     run: (scriptName, presetName, options) =>
       runRun(
         ctx,
-        deps.dryRunTimeoutMs,
+        validated.dryRunTimeoutMs,
         scriptName,
         presetName,
-        deps.presetAllowlist,
+        validated.presetAllowlist,
         options,
       ),
     // Same reason as `run` above: `triageRun` also spawns a whole script.
     triageRun: (scriptName, presetName, operatorProfile) =>
       runTriageRun(
         ctx,
-        deps.dryRunTimeoutMs,
+        validated.dryRunTimeoutMs,
         scriptName,
         presetName,
         operatorProfile,
-        deps.presetAllowlist,
+        validated.presetAllowlist,
       ),
     // `flowRun` uses its own `flowTimeoutMs`, not `dryRunTimeoutMs`: a flow
     // spawns N scripts sequentially, so the single-script budget the other
@@ -1420,10 +1682,10 @@ export function createAgentCliSurface(
     flowRun: (flowName, options) =>
       runFlowRun(
         ctx,
-        deps.flowTimeoutMs,
+        validated.flowTimeoutMs,
         flowName,
         options,
-        deps.flowAllowlist,
+        validated.flowAllowlist,
       ),
   };
 }

@@ -922,7 +922,7 @@
       },
       {
         "path": "bin/lib/command-catalog.mjs",
-        "blob": "bc613500c793973c31cac00d8f8728c0569d6e1b"
+        "blob": "d9f4d3d66ce3cd568e279a399d0219ce1db107a8"
       },
       {
         "path": "bin/lib/hub-sync.mjs",
@@ -974,7 +974,7 @@
       },
       {
         "path": "docs/logs/README.md",
-        "blob": "51ebe9b2ff0a77bfe1d0cc31884f69f27ad87cb8"
+        "blob": "f3863ed8135cec61b8898ec141c675530d3fa319"
       },
       {
         "path": "docs/plans/IMPLEMENTATION.md",
@@ -1925,7 +1925,7 @@
       },
       {
         "path": "docs/plans/2026-09-08-adaptive-host-budgeting.md",
-        "blob": "aaf6eebd066371fbe25552d91c72b0513ae29809"
+        "blob": "833facae3e7753b54b6ec1cd7949c3b9ea4d7b01"
       },
       {
         "path": "package.json",
@@ -2130,7 +2130,7 @@
       },
       {
         "path": "bin/run-skill-evals.mjs",
-        "blob": "61da75bf07a280e241bf6c0b8cd40845101b2f49"
+        "blob": "d386c94eb3054cbff8fb9d2aa54c1d02ded252d9"
       },
       {
         "path": "CLAUDE.md",
@@ -2444,7 +2444,7 @@
       },
       {
         "path": "docs/logs/README.md",
-        "blob": "51ebe9b2ff0a77bfe1d0cc31884f69f27ad87cb8"
+        "blob": "f3863ed8135cec61b8898ec141c675530d3fa319"
       }
     ],
     "verifiedAt": "2026-09-10"
