@@ -43,4 +43,4 @@ table a submodule's reference page carries, gated by
 | P1    | `fix/skill-eval-routing-assertions`     | `expect_routed_to` + fix the 12 always-failing cases + 3 static gate checks (Stage 1) | Landed (PR #1161) |
 | P2    | `fix/skill-eval-flaky-negative-routing` | Audit and fix the flaky-50 tail for the same negative-routing defect (Stage 2)        | Landed (PR #1165) |
 | P3    | `fix/raise-skill-eval-pass-rate-floor`  | Raise `MIN_PASS_RATE`; one deliberate `workflow_dispatch` run on `main` (Stage 3)     | Landed (PR #1170) |
-| P4    | `fix/main-health-skill-evals-coverage`  | `main-health.yml` coverage for a red scheduled `skill-evals` run (Stage 4)            | In Progress       |
+| P4    | `fix/main-health-skill-evals-coverage`  | `main-health.yml` coverage for a red scheduled `skill-evals` run (Stage 4)            | Landed (PR #1173) |
