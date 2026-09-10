@@ -146,3 +146,12 @@ paths:
   $0.35-0.75 `pnpm eval:skills <name>` probe is cheap insurance against
   building an assertion (and its tests) around a wrong assumption about what
   a model actually does.
+
+- **A duplicate-declared-name shape only shows up from a live read, never
+  from imagining fixtures — and deduplicating it can hide a real ordering
+  need, not just remove waste.** A ci.yml-job-grouping scheduler, run
+  against the live file, found the same step name declared in two jobs
+  twice over — one harmless, the other a real bug (a job's own rebuild
+  step, dropped, that a sibling still needed ordered before it)
+  (`docs/logs/2026-09-10-verify-jobs.md`). Run a new `bin/**` parser
+  against live input before writing tests, same as the bullet above.
