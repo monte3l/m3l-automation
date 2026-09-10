@@ -245,16 +245,29 @@ function flowRecordPath(
  *
  * @param context - The command context.
  * @param candidates - The discovered scripts.
- * @returns Declared parameters by script name.
+ * @returns Two views from one walk. `parametersByScript` is the degraded
+ *   view `loadFlowDefinition` needs (an unloadable script's entry is `[]`, so
+ *   its name still validates). `unloadableScripts` names every script whose
+ *   `[]` is that degradation, not a genuine empty declaration — the
+ *   pre-flight check drops these from its own copy of the map before calling
+ *   `checkFlowPreflight`, or its `.has()` guard never fires and a step whose
+ *   real requirements are unknown silently reports nothing missing.
  */
 async function buildParametersByScript(
   context: M3LCliCommandContext,
   candidates: readonly M3LCliScriptCandidate[],
-): Promise<ReadonlyMap<string, readonly M3LCliParameterDescriptor[]>> {
+): Promise<{
+  readonly parametersByScript: ReadonlyMap<
+    string,
+    readonly M3LCliParameterDescriptor[]
+  >;
+  readonly unloadableScripts: ReadonlySet<string>;
+}> {
   const parametersByScript = new Map<
     string,
     readonly M3LCliParameterDescriptor[]
   >();
+  const unloadableScripts = new Set<string>();
   for (const candidate of candidates) {
     try {
       const parameters = await loadParametersCached(
@@ -270,9 +283,10 @@ async function buildParametersByScript(
         }`,
       );
       parametersByScript.set(candidate.name, []);
+      unloadableScripts.add(candidate.name);
     }
   }
-  return parametersByScript;
+  return { parametersByScript, unloadableScripts };
 }
 
 /**
@@ -397,8 +411,12 @@ function emitFlowRun(
  * @param definition - The validated flow definition to check.
  * @param parametersByScript - The SAME map `loadFlowDefinition` validated
  *   against — reused rather than recomputed, so the pre-flight check can
- *   never observe a different discovery/parameter snapshot than the one the
- *   definition was actually checked with.
+ *   never observe a different snapshot than the one the definition was
+ *   checked with. Filtered below before use — see `unloadableScripts`.
+ * @param unloadableScripts - Scripts whose `parametersByScript` entry is a
+ *   degraded `[]`, not a genuine empty declaration. Dropped from the copy
+ *   handed to `checkFlowPreflight` so its `.has()` guard still routes them to
+ *   `report.unverified`, not "declares nothing".
  * @param resumeOptions - The resume options, when resuming; `undefined`
  *   otherwise. Its `resumeFromStepId` becomes the pre-flight's `startStepId`
  *   when present, spread conditionally rather than passed as an explicit
@@ -412,10 +430,19 @@ function runFlowPreflightCheck(
   candidates: readonly M3LCliScriptCandidate[],
   definition: M3LCliFlowDefinition,
   parametersByScript: ReadonlyMap<string, readonly M3LCliParameterDescriptor[]>,
+  unloadableScripts: ReadonlySet<string>,
   resumeOptions: { readonly resumeFromStepId: string } | undefined,
 ): void {
+  const preflightParametersByScript =
+    unloadableScripts.size === 0
+      ? parametersByScript
+      : new Map(
+          [...parametersByScript].filter(
+            ([scriptName]) => !unloadableScripts.has(scriptName),
+          ),
+        );
   const report = checkFlowPreflight(definition, {
-    parametersByScript,
+    parametersByScript: preflightParametersByScript,
     env: context.env,
     envFileReachByScript: resolveEnvFileReach(candidates, context.envFile),
     ...(resumeOptions === undefined
@@ -446,7 +473,10 @@ function runFlowPreflightCheck(
  * time `checkFlowPreflight` runs, any resume options in play are already
  * known-valid. It sits BEFORE `randomUUID()`/`runFlow`, so a pre-flight
  * refusal (`rejectFlowPreflight` throws, never returns) mints no run id and
- * writes no run record.
+ * writes no run record. The pre-flight context's `parametersByScript` is a
+ * FILTERED view, not the map validation used — an unloadable script must
+ * reach `checkFlowPreflight` as UNKNOWN, never as "declares nothing", or a
+ * step's real requirements would go unchecked.
  *
  * **Resume.** When `resume` is true, the saved run record is read and
  * forwarded to `flow/record`'s `validateResumeRecord`, which enforces the
@@ -455,16 +485,17 @@ function runFlowPreflightCheck(
  * corrupt record (`ERR_CLI_FLOW_RECORD_INVALID`) propagates UNCHANGED —
  * never caught here.
  *
- * **Pre-flight (issue #883).** `checkFlowPreflight` reuses the SAME
- * `parametersByScript` map `loadFlowDefinition` validated against — recomputing
- * it would risk observing a different discovery/parameter snapshot than the
- * one the definition was actually checked with. A `startStepId` is passed
- * only when resuming (spread conditionally, never as an explicit
- * `undefined`, to satisfy `exactOptionalPropertyTypes`); otherwise
- * `checkFlowPreflight` treats every step as reachable from the first. Every
- * `unverified` finding is reported on stderr as an advisory warning and the
- * run proceeds; a `missing` finding refuses the run outright via
- * `rejectFlowPreflight`.
+ * **Pre-flight (issue #883).** `checkFlowPreflight` is handed a filtered copy
+ * of the SAME `parametersByScript` map `loadFlowDefinition` validated against
+ * — filtered, inside {@link runFlowPreflightCheck}, to drop any script whose
+ * entry is a degraded `[]` rather than a genuine empty declaration, so its
+ * `.has()` guard still routes an unloadable script to `report.unverified`
+ * instead of reading it as "declares nothing". A `startStepId` is passed only
+ * when resuming (spread conditionally, never as an explicit `undefined`, to
+ * satisfy `exactOptionalPropertyTypes`); otherwise every step is reachable
+ * from the first. Every `unverified` finding is reported on stderr as an
+ * advisory warning and the run proceeds; a `missing` finding refuses the run
+ * outright via `rejectFlowPreflight`.
  *
  * The record write is not wrapped: `ERR_CLI_FLOW_RECORD_WRITE_FAILED`
  * propagates and DOES change the resolved exit code, the exact inverse of
@@ -495,7 +526,8 @@ async function runNamedFlow(
   resume: boolean,
 ): Promise<number> {
   const candidates = discoverScripts(context.workspaceRoot);
-  const parametersByScript = await buildParametersByScript(context, candidates);
+  const { parametersByScript, unloadableScripts } =
+    await buildParametersByScript(context, candidates);
   const definition = loadFlowDefinition(context.workspaceRoot, name, {
     parametersByScript,
   });
@@ -512,6 +544,7 @@ async function runNamedFlow(
     candidates,
     definition,
     parametersByScript,
+    unloadableScripts,
     resumeOptions,
   );
 

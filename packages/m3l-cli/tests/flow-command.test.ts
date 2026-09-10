@@ -1581,4 +1581,55 @@ describe("runFlowCommand — flow run: the pre-flight resolution check (issue #8
     expect(thrown).toBeInstanceOf(M3LCliError);
     expect((thrown as M3LCliError).code).toBe("ERR_CLI_FLOW_RESUME_REFUSED");
   });
+
+  /*
+   * The silent-failure gap this fix closes: a script whose config.ts fails
+   * to load degrades to `parametersByScript.set(name, [])` in
+   * `buildParametersByScript` (so `loadFlowDefinition` still accepts the
+   * script name — see the "a script whose config will not load degrades..."
+   * test above), but that same degraded `[]` must NOT reach
+   * `checkFlowPreflight` as if the script genuinely declares zero
+   * parameters. `runFlowPreflightCheck` must be handed a map with NO key
+   * for "sqs-etl" at all, so `checkFlowPreflight`'s own `.has()` guard
+   * routes it to `report.unverified` instead of silently treating it as
+   * satisfied. The contrast case — a script that legitimately declares
+   * zero parameters (json-etl, via `loadParametersCachedMock` resolving
+   * `[]` rather than rejecting) producing NO such warning — is already
+   * established by the "builds M3LCliFlowValidationContext..." test above,
+   * where `json-etl` maps to `[]` and the run proceeds with nothing
+   * reported for it.
+   */
+  test("a step whose script's config failed to load is reported unverified by the pre-flight, never silently passed as requiring nothing", async () => {
+    discoverScriptsMock.mockReturnValue([
+      candidate("sqs-etl"),
+      candidate("json-etl"),
+    ]);
+    loadParametersCachedMock.mockImplementation((scriptName) =>
+      scriptName === "sqs-etl"
+        ? Promise.reject(
+            new M3LCliError("ERR_CLI_CONFIG_IMPORT", "config.ts is unreadable"),
+          )
+        : Promise.resolve([]),
+    );
+    listFlowsMock.mockReturnValue(["dlq-reconcile"]);
+    loadFlowDefinitionMock.mockReturnValue(definition());
+    runFlowMock.mockResolvedValue(runResult());
+    formatFlowRunLinesMock.mockReturnValue(["rendered"]);
+    const { context, errorLines } = buildContext();
+
+    const code = await runFlowCommand(context, ["run", "dlq-reconcile"]);
+
+    // Fail-open: an unknown-requirements script must never BLOCK the run,
+    // only warn — the pre-flight genuinely cannot know what it requires.
+    expect(code).toBe(0);
+    expect(runFlowMock).toHaveBeenCalledTimes(1);
+
+    // Reported as unverified, matching the exact stderr prefix
+    // `runFlowPreflightCheck` emits for each `report.unverified` entry.
+    const rendered = errorLines.join("\n");
+    expect(rendered).toContain(
+      "could not verify flow step 'dump' (sqs-etl) would receive its required parameters:",
+    );
+    expect(rendered).toContain("no known parameter descriptors");
+  });
 });

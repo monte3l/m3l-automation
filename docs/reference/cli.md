@@ -557,23 +557,42 @@ supplies — that failure used to surface mid-flow, after earlier steps had
 already run their side effects. `m3l flow run` now checks this before the
 first step: for every step reachable from the run's start point, each
 parameter the target script marks required must be supplied by the step's own
-`parameters`, the inherited environment (including a derived
-`SCREAMING_SNAKE_CASE` form — `aws.profile` resolves `AWS_PROFILE`), or a
-declared default; a per-operation requirement (ADR-0055) applies only when the
-step pins its selector — `command`, `operation` — to a literal string naming a
-declared operation. A step may legitimately omit `aws.profile` and rely on an
-ambient `AWS_PROFILE`; the shipped `dlq-reconcile` flow's own header documents
-this. A required parameter that might be supplied by a script's own `.env`
-file is reported as a warning on stderr rather than a refusal — this check
-cannot read a file loaded into a spawned child's own process, so it is
-deliberately **fail-open** on that one blind spot rather than risk rejecting a
-flow that would have run correctly. `--dry-run` does **not** skip this check —
-a dry run still spawns every step, and each step's own config load would
-otherwise fail on exactly this condition, just later. `--resume` scopes the
-check to steps reachable from the resume point, so an already-completed step
-is never re-checked. A refusal is `ERR_CLI_FLOW_PREFLIGHT_FAILED` at exit `2`
-— the same class `ERR_CONFIG_MISSING` would exit with mid-run, just earlier
-and with nothing executed.
+`parameters` — under the same execution-mode-dependent rule the spawn path
+itself uses to build argv (a `false`/`null`/empty-list value supplies nothing
+on `spawn`/`auto`, but does on `in-process`, which never builds argv at all) —
+the inherited environment (a parameter's canonical name or any declared
+alias, including a derived `SCREAMING_SNAKE_CASE` form — `aws.profile`
+resolves `AWS_PROFILE`), or a declared default. A per-operation requirement
+(ADR-0055) applies only when the step pins a selector (any parameter
+declaring an operation set, e.g. `command`, `operation`) to a literal string
+naming a declared operation; a selector the step gives no own value for is
+reported as a warning, since its requirements can't be evaluated, but a
+non-string value or an unrecognized operation name is silently vacuous,
+matching the real per-operation validator's own behavior. **The check does not
+forbid an ambient-environment pattern** — the CLI's own environment and a
+declared alias are legitimate resolution sources, on purpose, so a flow may
+rely on them. Whether a _specific_ flow should is a separate, consumer-owned
+policy: the shipped `dlq-reconcile` flow, for instance, _forbids_ omitting
+`aws.profile` under its own stricter verifier
+(`scripts/agent-operator/src/lib/flow-definitions.ts`), precisely because that
+verifier needs every step's profile spelled out to grade it — a rule this
+engine-level check deliberately does not impose on every flow. A required
+parameter that might be supplied by a script's own `.env` file is one of
+several conditions this check reports as an advisory warning rather than a
+refusal — alongside a script this check has no descriptors for at all, and a
+selector or per-operation declaration it cannot resolve — since this check
+cannot read a file loaded into a spawned child's own process, and would
+rather warn than risk rejecting a flow that would have run correctly:
+deliberately **fail-open**, the inverse of the fail-closed posture above.
+`--dry-run` does **not** skip this check — a dry run still spawns every step,
+and each step's own config load would otherwise fail on exactly this
+condition, just later. `--resume` scopes the check to steps reachable from
+the resume point, so a step no longer reachable from there is never checked
+— though a backward `goto` can still make an earlier, already-run step
+reachable again, and it is re-checked in that case. A refusal is
+`ERR_CLI_FLOW_PREFLIGHT_FAILED` at exit `2` — the same class
+`ERR_CONFIG_MISSING` would exit with mid-run, just earlier and with nothing
+executed.
 
 **A run record is persisted** to `data/cache/m3l-cli/flows/<name>.json`: the run
 id, a canonical hash of the definition, the observed window, the status
@@ -823,7 +842,8 @@ paragraph above). A `secret: true` required parameter can only ever be
 supplied by the environment, since the rule above forbids naming it here; set
 it as an environment variable, never in the file. Which parameter is required
 for which operation is documented per script, in its own parameter table's
-Operations column (e.g. `docs/reference/scripts/sqs-etl.md`'s `queueUrl` row).
+"Required for" column (e.g. `docs/reference/scripts/sqs-etl.md`'s `queueUrl`
+row).
 
 Branching is `onSuccess` / `onFailure` / `onPartial`, each `continue`, `stop`, or
 `{ goto: <stepId> }`. `onFailure` defaults to `stop`; an unset `onPartial`
