@@ -4,6 +4,7 @@
     {
       "id": 1,
       "prompt": "Open a PR for this branch. I've implemented the core/errors submodule — typed error hierarchy with M3LError, M3LNotFoundError, and M3LResult, plus tests. Everything passes locally.",
+      "expect_skill_fired": false,
       "expected_output": "A structured plan emitting WOULD-RUN lines for the preflight check, rebase-staleness check, quality gates, push, and gh pr create, plus a drafted PR body with ## Summary naming the actual exported symbols, ## Test plan with checklist items, and ## Notes stating feat: → minor bump.",
       "files": [
         {
@@ -23,6 +24,7 @@
     {
       "id": 2,
       "prompt": "Make a PR — I renamed M3LPaths.outputDir to M3LPaths.archiveDir across the codebase. This is a breaking change; consumers need to update after upgrading.",
+      "expect_skill_fired": false,
       "expected_output": "A WOULD-RUN sequence for gates and push, plus a drafted PR with a feat!: title of 70 characters or fewer, ## Summary naming both the old and new property, ## Test plan with a typecheck step to catch stale call-sites, and ## Notes citing major bump with migration instructions.",
       "files": [
         {
@@ -41,6 +43,7 @@
     {
       "id": 3,
       "prompt": "Ship this for review — I updated the claude-pr-review.yml workflow to skip Dependabot PRs. Only CI files changed, no library source code.",
+      "expect_skill_fired": false,
       "expected_output": "A WOULD-RUN sequence covering preflight, gates, and push; a WOULD-DISPATCH line for docs-consistency-reviewer (not code-reviewer) because no src/** files changed; and a drafted PR with a ci: title, ## Summary naming the workflow file, and ## Notes stating no release.",
       "files": [
         {
@@ -70,6 +73,7 @@
     {
       "id": 5,
       "prompt": "Get this merged — I opened the PR for the retry submodule (src/core/retry/index.ts) a few minutes ago and it's mergeable. The review hasn't posted a verdict yet.",
+      "expect_skill_fired": false,
       "expected_output": "The skill treats Step 15's merge-path decision as reaching this src/**-touching PR while a review round is still expected, and defaults to waiting for the verdict then merging with a plain squash — never arming auto-merge for a PR carrying library source changes with no verdict yet.",
       "files": [
         {

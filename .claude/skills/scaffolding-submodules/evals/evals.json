@@ -43,6 +43,7 @@
       "id": 3,
       "prompt": "Scaffold a new core/polling submodule.",
       "expected_output": "Skill detects the seeded docs/reference/core/polling.md spec page already exists and stops, redirecting to implementing-submodules rather than creating any scaffold files.",
+      "expect_routed_to": "implementing-submodules",
       "files": [
         {
           "path": "docs/reference/core/polling.md",

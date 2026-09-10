@@ -314,3 +314,4 @@ target was renamed is repaired via `RENAMED_TARGETS` in
 | 2026-09-10 | claude-pr-review.yml empty-compare guard fix — issue #1150 (PR #1158)                                   | [pr-review-empty-compare-fix](./2026-09-10-pr-review-empty-compare-fix.md)                 |
 | 2026-09-10 | Skill-eval routing debt — P1 of a 4-PR wave, `expect_routed_to` (issue #1087, PR #1161)                 | [skill-eval-routing-debt](./2026-09-10-skill-eval-routing-debt.md)                         |
 | 2026-09-10 | ESLint `--cache --cache-strategy content`, local-only — P3.3 of adaptive-host-budgeting wave (PR #1159) | [eslint-cache](./2026-09-10-eslint-cache.md)                                               |
+| 2026-09-10 | Skill-eval routing debt — P2 of a 4-PR wave, flaky-50 audit (issue #1087, PR #1165)                     | [skill-eval-flaky-negative-routing](./2026-09-10-skill-eval-flaky-negative-routing.md)     |

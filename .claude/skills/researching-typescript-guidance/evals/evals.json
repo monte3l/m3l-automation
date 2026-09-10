@@ -23,6 +23,7 @@
     {
       "id": 2,
       "prompt": "did TypeScript 7 break anything we'd care about? we're on 6.0.3. give me the actual list of breaking changes, and tell me where you got it from",
+      "expect_skill_fired": false,
       "expected_output": "The response emits at least 3 distinct WOULD-DISPATCH: Explore lines across different facets of the 6-to-7 delta (compiler defaults, removed options/targets, module-resolution changes), at least one brief names devblogs.microsoft.com/typescript or github.com/microsoft/TypeScript/releases as a first-class source to fetch directly, and the response explicitly states the Breaking-Changes wiki is stale at TS 4.9 and must not be used as the source for current breaking changes.",
       "expectations": [
         "Response emits at least 3 distinct WOULD-DISPATCH: Explore lines, each scoped to a different facet of the 6-to-7 delta -- compiler defaults, removed options/targets, and module-resolution changes are the minimum expected facets.",
@@ -35,6 +36,7 @@
     {
       "id": 3,
       "prompt": "can we drop the .js extensions from our relative imports now that node strips types natively? and do we need erasableSyntaxOnly? I want to know who actually decides this before we touch tsconfig",
+      "expect_skill_fired": false,
       "expected_output": "The response emits at least 3 distinct WOULD-DISPATCH: Explore lines across Node's type-stripping semantics, TypeScript's erasableSyntaxOnly/rewriteRelativeImportExtensions flags, and NodeNext resolution's extension requirement, with at least one brief targeting nodejs.org/api/typescript.html and the response stating Node is co-normative T1 on the runtime boundary rather than subordinate to Microsoft.",
       "expectations": [
         "Response emits at least 3 distinct WOULD-DISPATCH: Explore lines, each scoped to a different facet -- Node's type-stripping semantics, TypeScript's erasableSyntaxOnly/rewriteRelativeImportExtensions flags, and NodeNext resolution's extension requirement must each appear as a separate dispatch.",
