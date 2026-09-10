@@ -1,5 +1,9 @@
 import { describe, expect, test } from "vitest";
-import { parseJobsArg, selectReadyLaneIndex } from "../../bin/verify-all.mjs";
+import {
+  parseJobsArg,
+  selectReadyLaneIndex,
+  resolveJobsMode,
+} from "../../bin/verify-all.mjs";
 
 // bin/verify-all.mjs's effectful top-level work (resolveBaseRef, the ci.yml
 // read, the classification loop, runLanesConcurrently, etc.) lives inside an
@@ -96,5 +100,34 @@ describe("selectReadyLaneIndex", () => {
 
   test("an empty queue returns -1", () => {
     expect(selectReadyLaneIndex([], new Set())).toBe(-1);
+  });
+});
+
+describe("resolveJobsMode", () => {
+  test.each([[4], [1]])(
+    "--isolated alone returns 1 regardless of defaultJobs=%i",
+    (defaultJobs) => {
+      expect(resolveJobsMode(["--isolated"], defaultJobs)).toBe(1);
+    },
+  );
+
+  test("--isolated combined with an explicit --jobs=8 still returns 1 (isolated wins)", () => {
+    expect(resolveJobsMode(["--isolated", "--jobs=8"], 4)).toBe(1);
+  });
+
+  test("--concurrent alone, no other flags, returns defaultJobs unchanged", () => {
+    expect(resolveJobsMode(["--concurrent"], 4)).toBe(4);
+  });
+
+  test("--jobs=6 explicit, no mode flag, delegates to parseJobsArg and returns 6", () => {
+    expect(resolveJobsMode(["--jobs=6"], 4)).toBe(6);
+  });
+
+  test("no flags at all returns defaultJobs", () => {
+    expect(resolveJobsMode([], 4)).toBe(4);
+  });
+
+  test("--concurrent combined with an explicit --jobs=6 returns 6 (concurrent has no special branch, doesn't block --jobs)", () => {
+    expect(resolveJobsMode(["--concurrent", "--jobs=6"], 4)).toBe(6);
   });
 });

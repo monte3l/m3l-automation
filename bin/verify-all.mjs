@@ -37,10 +37,22 @@
 //                the same default `pnpm build`/`pnpm typecheck` already use
 //                via bin/print-concurrency.mjs. `--jobs=1` reproduces the
 //                previous fully-sequential behaviour.
+//   --isolated   Named alias for `--jobs=1`, i.e. fully sequential, one lane
+//                at a time (P3.5 of adaptive-host-budgeting). Takes
+//                precedence over `--jobs=N`/`--concurrent` when more than
+//                one is passed — an explicit request for full isolation
+//                (a resource-constrained host, a flaky-under-contention
+//                debug session) is not something a later flag should
+//                silently override.
+//   --concurrent Named alias for the default host-derived `--jobs` budget —
+//                a no-op if no other mode flag is passed, but makes the
+//                intent legible at the call site rather than relying on the
+//                absence of a flag to mean "concurrent."
 //
 // Usage:
-//   node bin/verify-all.mjs [--continue] [--full] [--jobs=N]
+//   node bin/verify-all.mjs [--continue] [--full] [--jobs=N | --isolated | --concurrent]
 //   pnpm verify [-- --continue --full --jobs=4]
+//   pnpm verify -- --isolated
 //
 // `main()` only runs when this file is executed directly (the
 // `process.argv[1] === fileURLToPath(import.meta.url)` guard below, same
@@ -96,6 +108,26 @@ export function selectReadyLaneIndex(queue, completedJobNames) {
   return queue.findIndex((lane) =>
     lane.dependsOn.every((d) => completedJobNames.has(d)),
   );
+}
+
+/**
+ * Resolve the effective lane concurrency from argv, honoring the explicit
+ * `--isolated`/`--concurrent` mode flags ahead of `--jobs=N`/the derived
+ * default (P3.5 of adaptive-host-budgeting). `--isolated` names the same
+ * fully-sequential behaviour `--jobs=1` already produced, giving it an
+ * explicit intent rather than leaving it an emergent side effect of a
+ * specific number; it wins over `--jobs=N` and `--concurrent` when more
+ * than one is passed. `--concurrent` needs no special handling — it's an
+ * explicit synonym for whatever {@link parseJobsArg} already resolves to
+ * when no mode flag is passed at all.
+ *
+ * @param {string[]} argv
+ * @param {number} defaultJobs
+ * @returns {number}
+ */
+export function resolveJobsMode(argv, defaultJobs) {
+  if (argv.includes("--isolated")) return 1;
+  return parseJobsArg(argv, defaultJobs);
 }
 
 /**
@@ -157,7 +189,7 @@ async function main() {
   const runContinue = args.includes("--continue");
   const runFull = args.includes("--full");
   const defaultJobs = deriveBudget(detectHostProfile()).concurrentLaneWorkers;
-  const jobs = parseJobsArg(args, defaultJobs);
+  const jobs = resolveJobsMode(args, defaultJobs);
   const baseRef = resolveBaseRef(root);
 
   /** @type {{ id: string, ciStepName: string, status: "pass" | "fail" | "skip" }[]} */
