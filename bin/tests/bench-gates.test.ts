@@ -22,6 +22,8 @@ describe("LANES", () => {
         "format",
         "lint:library",
         "lint:workspace",
+        "lint:library:fast",
+        "lint:workspace:fast",
         "turbo:typecheck",
         "tsc:bin",
         "build",
@@ -75,24 +77,56 @@ describe("LANES", () => {
     );
   });
 
-  // Regression test: `format`, `turbo:typecheck`, and `tsc:bin` are the
-  // lanes with a `cacheDir` — `--cold` needs it so each lane measures a
-  // true uncached run rather than silently reusing a previous invocation's
-  // cache. `turbo:typecheck` and `tsc:bin` share the SAME cache directory
-  // (their underlying `tsc` invocations each write their own
-  // `.tsbuildinfo` file into it), so clearing it once before either lane's
-  // `--cold` run is correct.
-  test("format, turbo:typecheck, and tsc:bin are the lanes with a cacheDir, each pointing at the right cache location", () => {
+  // Regression test: `format`, `lint:library:fast`, `lint:workspace:fast`,
+  // `turbo:typecheck`, and `tsc:bin` are the lanes with a `cacheDir` —
+  // `--cold` needs it so each lane measures a true uncached run rather than
+  // silently reusing a previous invocation's cache. `turbo:typecheck` and
+  // `tsc:bin` share the SAME cache directory (their underlying `tsc`
+  // invocations each write their own `.tsbuildinfo` file into it), so
+  // clearing it once before either lane's `--cold` run is correct.
+  test("format, lint:library:fast, lint:workspace:fast, turbo:typecheck, and tsc:bin are the lanes with a cacheDir, each pointing at the right cache location", () => {
     expect(LANES["format"]?.cacheDir).toBe("node_modules/.cache/prettier");
     expect(LANES["format"]?.command).toBe("pnpm format:check");
     expect(LANES["format"]?.turbo).toBe(false);
+    expect(LANES["lint:library:fast"]?.cacheDir).toBe(
+      "node_modules/.cache/eslint/library.eslintcache",
+    );
+    expect(LANES["lint:workspace:fast"]?.cacheDir).toBe(
+      "node_modules/.cache/eslint/workspace.eslintcache",
+    );
     expect(LANES["turbo:typecheck"]?.cacheDir).toBe("node_modules/.cache/tsc");
     expect(LANES["tsc:bin"]?.cacheDir).toBe("node_modules/.cache/tsc");
-    const cachedLaneNames = new Set(["format", "turbo:typecheck", "tsc:bin"]);
+    const cachedLaneNames = new Set([
+      "format",
+      "lint:library:fast",
+      "lint:workspace:fast",
+      "turbo:typecheck",
+      "tsc:bin",
+    ]);
     for (const [name, lane] of Object.entries(LANES)) {
       if (cachedLaneNames.has(name)) continue;
       expect(lane.cacheDir).toBeUndefined();
     }
+  });
+
+  // Regression test: unlike `turbo:typecheck`/`tsc:bin` (which intentionally
+  // SHARE one cacheDir, `node_modules/.cache/tsc`, because both underlying
+  // `tsc` invocations write into the same directory), `lint:library:fast`
+  // and `lint:workspace:fast` lint DISJOINT file sets and each write to
+  // their own cache FILE — a future editor "fixing" what looks like an
+  // inconsistency by pointing both at a shared `node_modules/.cache/eslint/`
+  // directory the way the tsc lanes share theirs would silently break the
+  // cold-isolation property (live-verified: clearing one lane's cache left
+  // the other's mtime untouched). This asserts the two ESLint cache lanes'
+  // commands and their cacheDir values are distinct from each other.
+  test("lint:library:fast and lint:workspace:fast have distinct commands and do not share a cacheDir with each other", () => {
+    expect(LANES["lint:library:fast"]?.command).toBe("pnpm lint:library:fast");
+    expect(LANES["lint:workspace:fast"]?.command).toBe(
+      "pnpm lint:workspace:fast",
+    );
+    expect(LANES["lint:library:fast"]?.cacheDir).not.toBe(
+      LANES["lint:workspace:fast"]?.cacheDir,
+    );
   });
 });
 
