@@ -172,9 +172,11 @@ export const DEFAULT_MAX_BUDGET_USD = 0.5;
  * health is a review-time reading of the failure lines, not this gate.
  *
  * Re-measure after any corpus change — `check:skill-evals` requires >= 3
- * cases per skill, so ONE new skill can move the rate ~3 points at N=98,
- * which is more than the headroom above. Adding a skill and re-baselining
- * this constant belong in the same PR.
+ * cases per skill, so ONE new skill can move the rate ~3 points at N=98. A
+ * single addition fits inside the ~14-point headroom above, but that
+ * headroom is a fixed budget, not a per-skill allowance: a few skills added
+ * across several PRs without re-measuring can still exhaust it. Adding a
+ * skill and re-baselining this constant belong in the same PR regardless.
  *
  * Override with `M3L_EVAL_MIN_PASS_RATE` (a fraction, not a percentage). This
  * floor governs the FULL suite only — a single-skill run requires every case
@@ -184,10 +186,10 @@ export const DEFAULT_MAX_BUDGET_USD = 0.5;
  * Prior calibration for 0.60 (2026-09-05 through 2026-09-07, the window the
  * data below was collected in — 0.60 itself was in effect through
  * 2026-09-10): 15 CI runs on the then-23-skill / 92-case / 432-criterion
- * corpus scored 58/92 = 63.0% (run
- * 34064682457) to 69/92 = 75.0% (run 34028636084), mean ~68.6%, with ~93-95%
- * of every failure the routing assertion rather than a criterion verdict.
- * Full history: `docs/decision-notes/0004-skill-eval-pass-rate-floor.md`.
+ * corpus scored 58/92 = 63.0% (run 34064682457) to 69/92 = 75.0% (run
+ * 34028636084), mean ~68.6%, with ~93-95% of every failure the routing
+ * assertion rather than a criterion verdict. Full history:
+ * `docs/decision-notes/0004-skill-eval-pass-rate-floor.md`.
  */
 export const MIN_PASS_RATE = 0.65;
 
@@ -653,9 +655,10 @@ export function evaluateSkillFired(skillName, invokedSkills, evalCase) {
  * - A FILTERED run is a developer probe, not the gate, and requires EVERY
  *   case to pass — the script's original behaviour, unchanged. A rate floor
  *   needs N: at the 3-5 cases `check:skill-evals` guarantees per skill the
- *   quantum is 20-33 points, so 0.60 would fail `pnpm eval:skills
- *   writing-commits` for behaving exactly as the full suite it belongs to
- *   does, and a gate that fails on correct behaviour gets routed around.
+ *   quantum is 20-33 points, so {@link MIN_PASS_RATE} would fail `pnpm
+ *   eval:skills writing-commits` for behaving exactly as the full suite it
+ *   belongs to does, and a gate that fails on correct behaviour gets routed
+ *   around.
  *   The env override deliberately does NOT loosen this: it governs the
  *   suite-wide floor only, so a probe can never be talked into reporting
  *   green on a case it actually failed.
