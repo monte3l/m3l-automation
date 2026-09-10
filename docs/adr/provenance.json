@@ -2521,6 +2521,10 @@
         "blob": "81de5e18368a3781fd3f65823f3c5a414aa3b711"
       },
       {
+        "path": "packages/m3l-cli/src/flow/preflight.ts",
+        "blob": "7a300b04cb53ba69279fce0c596a82cd5ef8c787"
+      },
+      {
         "path": "scripts/agent-operator/src/lib/flow-definitions.ts",
         "blob": "f261ace3a9713d01e2e8c69833fbe8f7d6bcde7c"
       }
