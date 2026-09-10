@@ -316,3 +316,4 @@ target was renamed is repaired via `RENAMED_TARGETS` in
 | 2026-09-10 | ESLint `--cache --cache-strategy content`, local-only — P3.3 of adaptive-host-budgeting wave (PR #1159)                 | [eslint-cache](./2026-09-10-eslint-cache.md)                                               |
 | 2026-09-10 | Skill-eval routing debt — P2 of a 4-PR wave, flaky-50 audit (issue #1087, PR #1165)                                     | [skill-eval-flaky-negative-routing](./2026-09-10-skill-eval-flaky-negative-routing.md)     |
 | 2026-09-10 | `pnpm verify` runs in ci.yml-job-derived concurrent lanes, `--jobs N` — P3.4 of adaptive-host-budgeting wave (PR #1167) | [verify-jobs](./2026-09-10-verify-jobs.md)                                                 |
+| 2026-09-10 | Skill-eval routing debt — P3 of a 4-PR wave, raise `MIN_PASS_RATE` to 0.65 (issue #1087, PR #1170)                      | [skill-eval-pass-rate-floor-raise](./2026-09-10-skill-eval-pass-rate-floor-raise.md)       |
