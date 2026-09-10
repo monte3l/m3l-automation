@@ -121,13 +121,17 @@ In **Settings → Branches → Branch protection rules**, add a rule for `main`:
 
     **When it's skipped** (the verdict is written as `PASS` directly, or
     carried forward from a prior `PASS`), in two cases: the PR's entire diff
-    is docs/config-only per `bin/lib/pr-diff-filter.mjs`'s ignore set (nothing
-    to review at all), or the latest verdict was `PASS` and only files that
-    same ignore set matches changed since the reviewed commit, tracked via
-    the `claude-review-sha` marker. Any reviewable change re-triggers a full
-    review. None of this weakens the fail-closed gate. A third, unrelated
-    skip case — the round limit below — is deliberately **not** included
-    here, since it writes `FAIL`, not `PASS`.
+    is docs/config-only (or empty — e.g. an empty commit) per
+    `bin/lib/pr-diff-filter.mjs`'s ignore set (nothing to review at all), or
+    the latest verdict was `PASS` and either nothing or only files that same
+    ignore set matches changed since the reviewed commit, tracked via the
+    `claude-review-sha` marker. A compare/diff that legitimately reports zero
+    files is treated the same as a docs-only diff, not as an error — an empty
+    response with a successful exit code is unambiguous, since a genuine `gh`
+    failure is already caught separately (issue #1150). Any reviewable change
+    re-triggers a full review. None of this weakens the fail-closed gate. A
+    third, unrelated skip case — the round limit below — is deliberately
+    **not** included here, since it writes `FAIL`, not `PASS`.
 
     **Loop economics: delta re-review and the round bound.** When a
     reviewable file changes after a prior `PASS` (the guard step's second
