@@ -1076,19 +1076,19 @@ describe("evaluateSkillFired", () => {
 });
 
 describe("MIN_PASS_RATE", () => {
-  test("pins the collapse floor calibrated from the 15-run 63.0-75.0% band", () => {
-    expect(MIN_PASS_RATE).toBe(0.6);
+  test("pins the collapse floor calibrated from the 2-run 79.6-81.6% post-fix band", () => {
+    expect(MIN_PASS_RATE).toBe(0.65);
   });
 
-  test("requires 56 of the corpus's 92 cases, two below the observed 58/92 minimum", () => {
-    // The TSDoc claims a case count, not just a fraction. 0.6 * 92 = 55.2, so
-    // 55 scores 59.8% and FAILS — pin the count so prose and arithmetic
+  test("requires 64 of the corpus's 98 cases, ~14 below the observed 78/98 minimum", () => {
+    // The TSDoc claims a case count, not just a fraction. 0.65 * 98 = 63.7,
+    // so 63 scores 64.3% and FAILS — pin the count so prose and arithmetic
     // cannot drift apart.
-    expect(Math.ceil(MIN_PASS_RATE * 92)).toBe(56);
-    expect(evaluateSuiteOutcome({ totalCases: 92, passed: 55 }).met).toBe(
+    expect(Math.ceil(MIN_PASS_RATE * 98)).toBe(64);
+    expect(evaluateSuiteOutcome({ totalCases: 98, passed: 63 }).met).toBe(
       false,
     );
-    expect(evaluateSuiteOutcome({ totalCases: 92, passed: 56 }).met).toBe(true);
+    expect(evaluateSuiteOutcome({ totalCases: 98, passed: 64 }).met).toBe(true);
   });
 });
 
@@ -1240,11 +1240,11 @@ describe("evaluateSuiteOutcome", () => {
   test("defaults minPassRate to MIN_PASS_RATE when the caller omits it", () => {
     // The only test binding the constant to the decision — every table row
     // above hands the threshold in by hand.
-    expect(evaluateSuiteOutcome({ totalCases: 92, passed: 55 })).toMatchObject({
+    expect(evaluateSuiteOutcome({ totalCases: 98, passed: 63 })).toMatchObject({
       met: false,
       minPassRate: MIN_PASS_RATE,
     });
-    expect(evaluateSuiteOutcome({ totalCases: 92, passed: 56 })).toMatchObject({
+    expect(evaluateSuiteOutcome({ totalCases: 98, passed: 64 })).toMatchObject({
       met: true,
       minPassRate: MIN_PASS_RATE,
     });
@@ -1291,13 +1291,17 @@ describe("formatSuiteSummary", () => {
   });
 
   test("states the pass rate and that the floor was met", () => {
-    const lines = summary({ totalCases: 92, passed: 62 });
+    // minPassRate is pinned explicitly here — this is a formatting test, not
+    // a binding to the real MIN_PASS_RATE constant's current value.
+    const lines = summary({ totalCases: 92, passed: 62, minPassRate: 0.6 });
     expect(lines).toContain("Pass rate:    67.4% (62/92)");
     expect(lines).toContain("Floor:        60.0% — met");
   });
 
   test("says NOT met when the run is below the floor", () => {
-    const lines = summary({ totalCases: 92, passed: 55 });
+    // minPassRate is pinned explicitly here — this is a formatting test, not
+    // a binding to the real MIN_PASS_RATE constant's current value.
+    const lines = summary({ totalCases: 92, passed: 55, minPassRate: 0.6 });
     expect(lines).toContain("Pass rate:    59.8% (55/92)");
     expect(lines).toContain("Floor:        60.0% — NOT met");
   });

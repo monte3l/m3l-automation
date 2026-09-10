@@ -141,14 +141,24 @@ export const DEFAULT_MAX_BUDGET_USD = 0.5;
  * The suite-wide pass-rate floor below which `pnpm eval:skills` exits 1 —
  * a HARNESS-COLLAPSE detector, not a corpus-quality gate.
  *
- * Calibrated against measurement, not guessed: across the 15 CI runs on the
- * current 23-skill / 92-case / 432-criterion corpus (2026-09-05 through
- * 2026-09-07, all `pull_request`) the suite scored 58/92 = 63.0% (run
- * 34064682457) to 69/92 = 75.0% (run 34028636084), mean ~68.6%. At 0.60 a
- * 92-case run needs 56 passes to clear the floor (`0.6 * 92 = 55.2`, so 55
- * scores 59.8% and FAILS) — two cases below the observed minimum. That is
- * deliberately thin headroom on a wide band: enough that the measured spread
- * cannot trip it, close enough that a real collapse cannot hide under it.
+ * Raised from 0.60 (2026-09-10) as issue 1087's exit criterion once its
+ * routing debt was fixed: PR 1161 repaired 12 always-failing
+ * `expect_skill_fired` cases and PR 1165 fixed 18 more flaky ones across 7
+ * skills, both mis-specified-corpus-data defects rather than genuine routing
+ * regressions (`docs/logs/2026-09-10-skill-eval-flaky-negative-routing.md`).
+ * Calibrated against measurement, not guessed: the two full-suite runs on the
+ * fully-fixed 25-skill / 98-case / 468-criterion corpus (2026-09-10) scored
+ * 78/98 = 79.6% (PR 1165's own CI run, `pull_request`) and 80/98 = 81.6% (a
+ * deliberate `workflow_dispatch` run on `main` fired for this calibration).
+ * At 0.65 a 98-case run needs 64 passes to clear the floor (`0.65 * 98 =
+ * 63.7`, so 63 scores 64.3% and FAILS) — roughly 14 cases below the observed
+ * minimum. That margin is deliberately wider than the prior floor's ~2-case
+ * headroom: two runs is a far thinner sample than the 15-run window 0.60 was
+ * calibrated from, and this session's own audit found a case that passed 2/2
+ * independent probes still fail the same {@link evaluateSkillFired} pattern
+ * on a 3rd run — true variance is wider than two data points can show, so
+ * this floor is set with real headroom rather than calculated to the exact
+ * observed rate.
  *
  * What it CATCHES is the harness measuring nothing: every case failing on one
  * shared cause, as in the #808 `--restricted` regression (CI run 33390425486
@@ -157,26 +167,31 @@ export const DEFAULT_MAX_BUDGET_USD = 0.5;
  * Both scored 0%. A discovery break that finds no cases at all fails too,
  * rather than reporting a vacuous 0/0 pass — see {@link evaluateSuiteOutcome}.
  *
- * What it does NOT catch is any single skill's regression. At N=92 one case is
- * 1.1 points, so a skill going 5/5 to 0/5 stays inside the band; per-skill
- * health is a review-time reading of the failure lines, not this gate. The
- * floor sits far below the ~69% typical run on purpose: ~93% of every failure
- * in the calibration window is the {@link evaluateSkillFired} routing
- * assertion rather than a criterion verdict (criterion failures per run: 0-3),
- * and 50 of the 92 cases flip between runs. Gating near the observed rate
- * would make every unrelated `.claude/**` PR a coin flip.
+ * What it does NOT catch is any single skill's regression. At N=98 one case is
+ * ~1.0 points, so a skill going 5/5 to 0/5 stays inside the band; per-skill
+ * health is a review-time reading of the failure lines, not this gate.
  *
  * Re-measure after any corpus change — `check:skill-evals` requires >= 3
- * cases per skill, so ONE new skill can move the rate ~3 points at N=92,
- * which is more than the headroom above. Adding a skill and re-baselining
- * this constant belong in the same PR.
+ * cases per skill, so ONE new skill can move the rate ~3 points at N=98. A
+ * single addition fits inside the ~14-point headroom above, but that
+ * headroom is a fixed budget, not a per-skill allowance: a few skills added
+ * across several PRs without re-measuring can still exhaust it. Adding a
+ * skill and re-baselining this constant belong in the same PR regardless.
  *
  * Override with `M3L_EVAL_MIN_PASS_RATE` (a fraction, not a percentage). This
  * floor governs the FULL suite only — a single-skill run requires every case
  * to pass instead, and the override cannot loosen that. See
  * {@link resolveMinPassRate}.
+ *
+ * Prior calibration for 0.60 (2026-09-05 through 2026-09-07, the window the
+ * data below was collected in — 0.60 itself was in effect through
+ * 2026-09-10): 15 CI runs on the then-23-skill / 92-case / 432-criterion
+ * corpus scored 58/92 = 63.0% (run 34064682457) to 69/92 = 75.0% (run
+ * 34028636084), mean ~68.6%, with ~93-95% of every failure the routing
+ * assertion rather than a criterion verdict. Full history:
+ * `docs/decision-notes/0004-skill-eval-pass-rate-floor.md`.
  */
-export const MIN_PASS_RATE = 0.6;
+export const MIN_PASS_RATE = 0.65;
 
 /**
  * How much of a failing envelope's own `result` text to quote back in the
@@ -640,9 +655,10 @@ export function evaluateSkillFired(skillName, invokedSkills, evalCase) {
  * - A FILTERED run is a developer probe, not the gate, and requires EVERY
  *   case to pass — the script's original behaviour, unchanged. A rate floor
  *   needs N: at the 3-5 cases `check:skill-evals` guarantees per skill the
- *   quantum is 20-33 points, so 0.60 would fail `pnpm eval:skills
- *   writing-commits` for behaving exactly as the full suite it belongs to
- *   does, and a gate that fails on correct behaviour gets routed around.
+ *   quantum is 20-33 points, so {@link MIN_PASS_RATE} would fail `pnpm
+ *   eval:skills writing-commits` for behaving exactly as the full suite it
+ *   belongs to does, and a gate that fails on correct behaviour gets routed
+ *   around.
  *   The env override deliberately does NOT loosen this: it governs the
  *   suite-wide floor only, so a probe can never be talked into reporting
  *   green on a case it actually failed.

@@ -63,11 +63,49 @@ blast radius and is cheaply reversible — change one number, or re-add
 `continue-on-error: true` — and nothing else in the repo depends on its exact
 form.
 
+## 2026-09-10 addendum — floor raised to 0.65
+
+Issue 1087 tracked the routing debt this note flagged as the reason the floor
+sat far below the ~69% typical run. PR 1161 repaired the 12 cases that failed
+in every run and added `expect_routed_to`; PR 1165 audited the flaky tail and
+fixed 18 more cases across 7 skills, both mis-specified corpus data (a case
+whose graded-correct behavior never invokes the `Skill` tool at all) rather
+than genuine routing regressions. Both PRs touch `.claude/**`, so their own CI
+runs measured the fixed corpus for free: `pnpm eval:skills` scored 68/98 =
+69.4% and 65/98 = 66.3% on the PR-1161-only corpus (2026-09-10, before PR 1165
+landed), then 78/98 = 79.6% once PR 1165's fixes were included. A third PR
+(this one, `fix/raise-skill-eval-pass-rate-floor`) fired the deliberate
+`workflow_dispatch` run on `main` this note's original text flagged as never
+having happened, scoring 80/98 = 81.6% on the fully-fixed corpus — the
+workflow's first-ever `workflow_dispatch` run and only its second-ever `main`
+run.
+
+`MIN_PASS_RATE` moved from 0.60 to 0.65 on those two fully-fixed-corpus data
+points (78/98, 80/98): 0.65 requires 64 of 98 passes (`0.65 * 98 = 63.7`),
+~14 cases below the observed 78/98 minimum. That margin is deliberately wider
+than the original floor's ~2-case headroom on a 15-run band, because two runs
+is a far thinner sample: PR 1165's own audit found a case
+(`creating-prs#5`) that passed 2/2 independent live probes still fail a 3rd
+run on the identical `evaluateSkillFired` pattern the fixes target, meaning
+the true variance on this corpus is wider than two data points alone can
+show. The choice is deliberately conservative rather than tight — raising the
+floor to close issue 1087's exit criterion, not to track the measured rate as
+closely as the original 0.60 did.
+
+The pre-fix 92-case calibration above stays as the historical record of why
+0.60 was chosen; it is not re-derived against the now-larger 98-case corpus,
+since that window's numbers describe a corpus that no longer exists in that
+form. Issue 1087's exit criterion (raising `MIN_PASS_RATE`) is met by this
+change; the issue remains open only for its separate main-health.yml
+coverage gap (its own gap #1), tracked as a follow-up PR against the same
+issue.
+
 ## Links
 
-- Related: issue 809 (item 5, closed by this change), issue 1087 (the routing
-  debt that keeps the floor low; raising `MIN_PASS_RATE` is its exit
-  criterion)
+- Related: issue 809 (item 5, closed by the original change), issue 1087 (the
+  routing debt that kept the floor low; raising `MIN_PASS_RATE` was its exit
+  criterion — met by the 2026-09-10 addendum above; the issue stays open for
+  its separate main-health.yml coverage gap)
 - Related: `bin/run-skill-evals.mjs` — `MIN_PASS_RATE`,
   `evaluateSuiteOutcome`, `formatSuiteSummary`, `gateFailureMessage`
 - Related: `.github/workflows/skill-evals.yml` header, and the
