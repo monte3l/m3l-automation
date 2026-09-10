@@ -1,12 +1,17 @@
-# Opens, updates, or closes a single tracking issue when CI or Pages fails
-# (or recovers) on `main`. Neither watched workflow can alert on itself going
-# red — this closes the gap seven consecutive red pushes over 2.5 hours went
-# unremarked by any automation before this (2026-08-26). `hub-alarm`
-# (ci.yml, ADR-0079) deliberately does NOT trigger this: it carries
-# `continue-on-error: true`, so a workflow_run event for the parent `CI` run
-# still reports `success` even when hub-alarm itself failed — that is by
-# design (a non-blocking alarm, not a required check), not a gap this
-# workflow needs to separately cover.
+# Opens, updates, or closes a single tracking issue when CI, Pages, or the
+# scheduled Skill Evals run fails (or recovers) on `main`. None of the three
+# watched workflows can alert on itself going red — this closes the gap seven
+# consecutive red pushes over 2.5 hours went unremarked by any automation
+# before this (2026-08-26). `hub-alarm` (ci.yml, ADR-0079) deliberately does
+# NOT trigger this: it carries `continue-on-error: true`, so a workflow_run
+# event for the parent `CI` run still reports `success` even when hub-alarm
+# itself failed — that is by design (a non-blocking alarm, not a required
+# check), not a gap this workflow needs to separately cover.
+#
+# Skill Evals (issue #1087, gap #1) added 2026-09-10: it never runs on
+# `push` — only `pull_request`, the weekly `schedule` cron, and a deliberate
+# `workflow_dispatch` — so the `if:` below accepts those two events too, per
+# workflow (see the job-level comment for why the trust boundary still holds).
 #
 # No pnpm install: bin/notify-main-health.mjs and bin/lib/main-health.mjs use
 # only node builtins plus each other and bin/lib/report.mjs (also
@@ -15,20 +20,22 @@ name: Main health
 
 on:
   workflow_run:
-    workflows: [CI, Pages]
+    workflows: [CI, Pages, Skill Evals]
     types: [completed]
 
 permissions:
   contents: read
   issues: write
 
-# CI and Pages both run on every push to main — if both fail on one push,
-# two workflow_run completed events fire two notify jobs. Without this, both
-# could concurrently see "no existing tracking issue" and both create one,
-# leaving a permanent duplicate that findTrackingIssue's single-match lookup
-# can never fully reconcile. Queuing (not cancelling) the second run means
-# it re-reads live issue state AFTER the first run's write lands, so it
-# correctly finds the issue the first run just created instead of racing it.
+# CI and Pages both run on every push to main, and Skill Evals' weekly
+# schedule can complete around the same time as either — if two or more
+# watched workflows conclude close together, several workflow_run completed
+# events fire several notify jobs. Without this, they could concurrently see
+# "no existing tracking issue" and each create one, leaving a permanent
+# duplicate that findTrackingIssue's single-match lookup can never fully
+# reconcile. Queuing (not cancelling) each subsequent run means it re-reads
+# live issue state AFTER the prior run's write lands, so it correctly finds
+# the issue an earlier run already created instead of racing it.
 concurrency:
   group: main-health
   cancel-in-progress: false
@@ -43,13 +50,32 @@ jobs:
     # even though the run was against the fork, not this repo's real
     # `main`. Given this job's `issues: write` permission, that PR run's
     # conclusion could otherwise spuriously open/comment on — or, worse,
-    # silently close — the real tracking issue. Both conditions below are
-    # required: `event == 'push'` rules out every pull_request-triggered
-    # run of CI/Pages (a fork PR run always reports `event ==
-    # 'pull_request'`), and the repository-identity check rules out a push
-    # to a fork's own `main`, which `event == 'push'` alone would not.
+    # silently close — the real tracking issue. The event-type check below
+    # (`push`, `schedule`, or `workflow_dispatch`) rules out every
+    # pull_request-triggered run of CI/Pages/Skill Evals (a fork PR run
+    # always reports `event == 'pull_request'`) — `schedule` and
+    # `workflow_dispatch` are added here only for Skill Evals, which never
+    # runs on `push` at all, and neither event type is reachable from a
+    # fork PR the way `pull_request` is. The repository-identity check does
+    # the remaining trust work for every accepted event type: it rules out a
+    # push to a fork's own `main` (which `event == 'push'` alone would not),
+    # and equally rules out a fork's own schedule/workflow_dispatch run,
+    # since `head_repository.full_name` there can never equal this repo's.
+    #
+    # Accepting `workflow_dispatch` does widen who can trigger this job's
+    # `issues: write` mutation: previously only an actual `push` to `main`
+    # (gated by branch protection/PR review) could; now any collaborator
+    # with plain write access can manually dispatch `skill-evals.yml` on
+    # `main` and have its conclusion open/close the tracking issue. That is
+    # accepted as in-scope for this repo's trust model — the same
+    # collaborators already have `issues: write` themselves — but it is a
+    # real widening, not a free side effect of "closes the last gap."
     if: |
-      github.event.workflow_run.event == 'push' &&
+      (
+        github.event.workflow_run.event == 'push' ||
+        github.event.workflow_run.event == 'schedule' ||
+        github.event.workflow_run.event == 'workflow_dispatch'
+      ) &&
       github.event.workflow_run.head_branch == 'main' &&
       github.event.workflow_run.head_repository.full_name == github.repository
     runs-on: ubuntu-latest
