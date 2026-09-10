@@ -38,7 +38,7 @@ Skills used: starting-work, creating-prs, syncing-docs,
 resolving-pr-comments, finishing-work, writing-commits (invoked inline by
 several of the above), writing-work-logs.
 
-Spoke incidents: 1 stall / 0 truncations / 2 resumes — the
+Spoke incidents: 1 stall / 0 truncations / 3 resumes — the
 `docs-consistency-reviewer` pre-push review spoke hit its 40-turn limit
 mid-review and was resumed once to converge; the `test-author` spoke was
 resumed twice more for its own follow-up corrections (a design-semantics fix
