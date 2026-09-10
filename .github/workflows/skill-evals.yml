@@ -7,24 +7,26 @@
 # stale unnoticed.
 #
 # GATING since 2026-09-07 — but as a COLLAPSE DETECTOR, not a corpus gate. The
-# job fails when the suite-wide pass rate falls below MIN_PASS_RATE (0.60) in
+# job fails when the suite-wide pass rate falls below MIN_PASS_RATE (0.65) in
 # bin/run-skill-evals.mjs, when a case produces no verdict at all, when no case
 # runs, or when M3L_EVAL_MIN_PASS_RATE is set to something outside [0, 1] (it
 # fails closed rather than guessing). With continue-on-error gone, a step
-# failure of any other kind now fails the job too. Calibrated from all 15 CI runs on the current 23-skill /
-# 92-case / 432-criterion corpus (2026-09-05 to 2026-09-07): min 58/92 = 63.0%
-# (run 34064682457), max 69/92 = 75.0% (run 34028636084), mean ~68.6%. At 0.60
-# a 92-case run needs 56 passes, two below that minimum — thin headroom on a
-# wide band, so the measured spread cannot trip it but a collapse cannot hide
-# under it either.
+# failure of any other kind now fails the job too. RAISED from 0.60
+# (2026-09-10) once issue 1087's routing debt was fixed (PRs 1161, 1165) — on
+# the current 25-skill / 98-case / 468-criterion corpus, the two full-suite
+# runs on the fully-fixed corpus scored 78/98 = 79.6% (PR 1165's own CI run)
+# and 80/98 = 81.6% (a deliberate workflow_dispatch run on main fired for this
+# calibration). At 0.65 a 98-case run needs 64 passes, ~14 below that
+# minimum — wide headroom given the two-run sample size, deliberately wider
+# than the prior floor's ~2-case margin on a 15-run band.
 #
-# It is deliberately NOT a "the corpus should pass" gate: ~93-95% of every
-# failure in that window is the expect_skill_fired routing assertion rather
-# than a criterion verdict, 12 cases fail in every run and 50 of 92 flip
-# between runs. Issue 1087 tracks that debt, and raising MIN_PASS_RATE is its
-# exit criterion. Full rationale: docs/decision-notes/0004-skill-eval-pass-
-# rate-floor.md and the skill-evals.yml row in docs/contributing/ci-cd.md —
-# NOT docs/plans/IMPLEMENTATION.md, which this comment used to point at and
+# It is deliberately NOT a "the corpus should pass" gate. Issue 1087's own
+# exit criterion — raising MIN_PASS_RATE off the routing-debt-depressed 0.60 —
+# is now met; the issue stays open only for its separate main-health.yml
+# coverage gap. Full rationale, including the prior 0.60 calibration (15 runs,
+# 63.0-75.0% on the then-92-case corpus): docs/decision-notes/0004-skill-eval-
+# pass-rate-floor.md and the skill-evals.yml row in docs/contributing/ci-cd.md
+# — NOT docs/plans/IMPLEMENTATION.md, which this comment used to point at and
 # which has never carried a skill-evals row.
 #
 # Why not the two-consecutive-green-`main`-runs baseline that issue 809 item 5
