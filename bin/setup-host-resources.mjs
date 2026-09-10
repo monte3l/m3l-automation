@@ -39,10 +39,13 @@
  *      — never the repo-tracked settings.json, since the number is derived
  *      from THIS host's RAM).
  *   7. lefthook-local.yml — forces `pre-push: parallel: false` when the
- *      SAME derived host budget `bin/verify-all.mjs`'s own `--jobs` default
- *      resolves to (deriveBudget(detectHostProfile()).concurrentLaneWorkers,
- *      P3.5 of adaptive-host-budgeting) comes out to 1 concurrent lane
- *      worker, via lefthook's own documented local-override mechanism
+ *      SAME `deriveBudget()` formula `bin/verify-all.mjs`'s own `--jobs`
+ *      default resolves through (`concurrentLaneWorkers`, P3.5 of
+ *      adaptive-host-budgeting) comes out to 1 concurrent lane worker for
+ *      the `--sessions`-budgeted profile this script builds (not
+ *      necessarily identical to verify-all.mjs's own live-session-count
+ *      default — see `shouldSerializePrePush`'s doc comment), via
+ *      lefthook's own documented local-override mechanism
  *      (https://lefthook.dev/examples/lefthook-local, gitignored).
  *      `pre-push`'s heavy lanes (test/typecheck/build-exports) each cap
  *      their own internal fan-out (turbo/vitest, both 50%), but three
@@ -276,14 +279,19 @@ export function buildLefthookLocalOverride(budget) {
 /**
  * Whether this host's derived lane budget is thin enough that `pre-push`
  * should be forced serial. Previously a static RAM-only threshold; now
- * reads the SAME live host-budget signal `bin/verify-all.mjs`'s own
- * `--jobs` default resolves to
- * (`deriveBudget(detectHostProfile()).concurrentLaneWorkers`, P3.5 of
- * adaptive-host-budgeting) — so the two decisions (`pnpm verify`'s lane
- * concurrency and pre-push's) can never disagree, and this reacts to
- * live conditions the host-profile module already tracks (concurrent
- * Claude sessions, effective cores, memory) rather than total RAM alone.
- * Pure predicate, exported for unit testing.
+ * reads the SAME `deriveBudget()` formula `bin/verify-all.mjs`'s own
+ * `--jobs` default resolves to (P3.5 of adaptive-host-budgeting) — so
+ * this reacts to live conditions the host-profile module already tracks
+ * (concurrent Claude sessions, effective cores, memory) rather than total
+ * RAM alone. NOT the same *input*, though: this caller passes
+ * `detectHostProfile({ sessions: opts.sessions })` — `opts.sessions`
+ * defaults to 2, an explicit "plan for N sessions" budget (see
+ * `parseSessionsFlag`) — while `bin/verify-all.mjs` calls
+ * `detectHostProfile()` with no override, so `resolveSessions` falls back
+ * to the LIVE process count. The two decisions can therefore still
+ * diverge on a host whose live session count differs from the planned
+ * `--sessions` budget; they share a formula, not a live guarantee of
+ * agreement. Pure predicate, exported for unit testing.
  *
  * @param {import("./lib/host-profile.mjs").HostBudget} budget
  * @returns {boolean}
