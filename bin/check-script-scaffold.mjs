@@ -160,7 +160,11 @@ for (const name of scriptNames) {
       );
       continue;
     }
-    for (const problem of tsconfigShapeErrors(parsedTsconfig, templateName)) {
+    for (const problem of tsconfigShapeErrors(
+      parsedTsconfig,
+      templateName,
+      name,
+    )) {
       report(`scripts/${name}/${tsconfigFile}: ${problem}`, tsconfigRel);
     }
   }

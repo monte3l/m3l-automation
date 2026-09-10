@@ -5,7 +5,9 @@
     "composite": false,
     "declaration": false,
     "declarationMap": false,
-    "noEmit": true
+    "noEmit": true,
+    "incremental": true,
+    "tsBuildInfoFile": "../../node_modules/.cache/tsc/rds-data-sql.tsbuildinfo"
   },
   "references": [{ "path": "../../packages/m3l-common/tsconfig.build.json" }],
   "include": ["src/**/*.ts", "tests/**/*.ts"],

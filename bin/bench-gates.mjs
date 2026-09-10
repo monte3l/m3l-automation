@@ -41,7 +41,9 @@
  *   --lane=<name>        repeatable; defaults to every lane in LANES
  *   --warm | --cold      default warm; --cold forces turbo-backed lanes
  *                        (build, turbo:typecheck) to bypass their cache,
- *                        and removes the format lane's Prettier cache dir
+ *                        and removes each lane's own cacheDir (format's
+ *                        Prettier cache, tsc:bin/turbo:typecheck's shared
+ *                        tsc incremental cache under node_modules/.cache/tsc)
  *   --isolated|--concurrent  default isolated (one lane at a time)
  *   --repeat=N           default 1; report the median across N runs
  *   --sessions=N         pins the session count in the printed profile/
@@ -92,6 +94,15 @@ import {
  * lane measures a true uncached run instead of silently reusing whatever the
  * previous invocation left behind.
  *
+ * `turbo:typecheck` and `tsc:bin` share `node_modules/.cache/tsc/` (Phase 2
+ * candidate #2 — `incremental`/`tsBuildInfoFile` on every tooling tsconfig,
+ * one `.tsbuildinfo` file per project under that one directory). `--force`
+ * on `turbo:typecheck` alone only bypasses turbo's own cache layer — each
+ * package's `tsc -p tsconfig.json` invocation underneath would still reuse
+ * its persisted `.tsbuildinfo` state even on a forced turbo re-run, so both
+ * lanes also need `clearLaneCacheDir` to wipe the shared directory before a
+ * true `--cold` measurement.
+ *
  * @type {Readonly<Record<string, Lane>>}
  */
 export const LANES = Object.freeze({
@@ -106,8 +117,13 @@ export const LANES = Object.freeze({
     command:
       "pnpm exec turbo run typecheck --concurrency=$(node bin/print-concurrency.mjs)",
     turbo: true,
+    cacheDir: "node_modules/.cache/tsc",
   },
-  "tsc:bin": { command: "pnpm exec tsc -p bin/tsconfig.json", turbo: false },
+  "tsc:bin": {
+    command: "pnpm exec tsc -p bin/tsconfig.json",
+    turbo: false,
+    cacheDir: "node_modules/.cache/tsc",
+  },
   build: {
     command:
       "pnpm exec turbo run build --concurrency=$(node bin/print-concurrency.mjs)",
@@ -229,9 +245,11 @@ export function buildLaneCommand(lane, mode) {
  * the catch branch without needing a real permission-denied directory,
  * which isn't portably reproducible in a sandboxed test run.
  *
- * `format` is the only lane with a `cacheDir` today; Phase 2 candidate #2
- * (tsc `incremental`) will need one of its own once its `.tsbuildinfo`
- * output exists.
+ * `turbo:typecheck` and `tsc:bin` share one `cacheDir` (`node_modules/.cache/tsc`)
+ * rather than each getting their own — both lanes' underlying `tsc`
+ * invocations write into that one directory (one `.tsbuildinfo` file per
+ * project), so clearing it once before either lane's cold run is correct
+ * and cheaper than tracking per-project paths here.
  *
  * @param {Lane} lane
  * @param {"warm" | "cold"} mode

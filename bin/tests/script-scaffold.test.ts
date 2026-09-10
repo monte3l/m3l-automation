@@ -647,12 +647,20 @@ describe("tsconfigShapeErrors", () => {
   const EXPECTED_EXTENDS = "../../tsconfig.base.json";
   const EXPECTED_REFERENCE_PATH =
     "../../packages/m3l-common/tsconfig.build.json";
+  // A stand-in scaffolded script name: EXPECTED_COMPILER_OPTIONS below
+  // represents an already-substituted, conformant script's tsconfig.json
+  // (not the raw template, which still carries the literal `__SCRIPT_NAME__`
+  // token), so `tsBuildInfoFile` is built from this name the same way
+  // `expectedTsconfigShape`'s `scriptName` substitution does.
+  const EXAMPLE_SCRIPT_NAME = "example-script";
   const EXPECTED_COMPILER_OPTIONS = {
     "tsconfig.json.tmpl": {
       composite: false,
       declaration: false,
       declarationMap: false,
       noEmit: true,
+      incremental: true,
+      tsBuildInfoFile: `../../node_modules/.cache/tsc/${EXAMPLE_SCRIPT_NAME}.tsbuildinfo`,
     },
     "tsconfig.build.json.tmpl": {
       rootDir: "src",
@@ -680,9 +688,18 @@ describe("tsconfigShapeErrors", () => {
   test.each(["tsconfig.json.tmpl", "tsconfig.build.json.tmpl"] as const)(
     "returns no errors for a conformant tsconfig checked against %s",
     (templateName) => {
-      expect(
-        tsconfigShapeErrors(conformantTsconfig(templateName), templateName),
-      ).toEqual([]);
+      // Only tsconfig.json.tmpl carries the `__SCRIPT_NAME__` token
+      // (tsBuildInfoFile), so only it needs the substituted-name argument —
+      // tsconfig.build.json.tmpl's fixture matches the raw template as-is.
+      const errors =
+        templateName === "tsconfig.json.tmpl"
+          ? tsconfigShapeErrors(
+              conformantTsconfig(templateName),
+              templateName,
+              EXAMPLE_SCRIPT_NAME,
+            )
+          : tsconfigShapeErrors(conformantTsconfig(templateName), templateName);
+      expect(errors).toEqual([]);
     },
   );
 
@@ -691,7 +708,9 @@ describe("tsconfigShapeErrors", () => {
       ...conformantTsconfig("tsconfig.json.tmpl"),
       extends: "../wrong/base.json",
     };
-    expect(tsconfigShapeErrors(tsconfig, "tsconfig.json.tmpl")).toEqual([
+    expect(
+      tsconfigShapeErrors(tsconfig, "tsconfig.json.tmpl", EXAMPLE_SCRIPT_NAME),
+    ).toEqual([
       `"extends" must be ${JSON.stringify(EXPECTED_EXTENDS)} (got ${JSON.stringify("../wrong/base.json")})`,
     ]);
   });
@@ -701,7 +720,9 @@ describe("tsconfigShapeErrors", () => {
       ...conformantTsconfig("tsconfig.json.tmpl"),
       references: [],
     };
-    expect(tsconfigShapeErrors(tsconfig, "tsconfig.json.tmpl")).toEqual([
+    expect(
+      tsconfigShapeErrors(tsconfig, "tsconfig.json.tmpl", EXAMPLE_SCRIPT_NAME),
+    ).toEqual([
       `"references" must include { "path": ${JSON.stringify(EXPECTED_REFERENCE_PATH)} } (from tsconfig.json.tmpl) so tsc -b resolves the library`,
     ]);
   });
@@ -719,10 +740,67 @@ describe("tsconfigShapeErrors", () => {
   test("does not throw when references is entirely absent, treating it as empty and reporting the missing-reference error", () => {
     const { references: _references, ...rest } =
       conformantTsconfig("tsconfig.json.tmpl");
-    expect(() => tsconfigShapeErrors(rest, "tsconfig.json.tmpl")).not.toThrow();
-    expect(tsconfigShapeErrors(rest, "tsconfig.json.tmpl")).toEqual([
+    expect(() =>
+      tsconfigShapeErrors(rest, "tsconfig.json.tmpl", EXAMPLE_SCRIPT_NAME),
+    ).not.toThrow();
+    expect(
+      tsconfigShapeErrors(rest, "tsconfig.json.tmpl", EXAMPLE_SCRIPT_NAME),
+    ).toEqual([
       `"references" must include { "path": ${JSON.stringify(EXPECTED_REFERENCE_PATH)} } (from tsconfig.json.tmpl) so tsc -b resolves the library`,
     ]);
+  });
+
+  test("flags a tsBuildInfoFile that drifts from the script's own substituted name", () => {
+    // The direct regression case for "a scaffolded script's tsBuildInfoFile
+    // drifts from its own name" (e.g. copy-pasted from a different script) —
+    // tsconfigShapeErrors must name the value expected for THIS script, not
+    // just detect that something differs.
+    const conformant = conformantTsconfig("tsconfig.json.tmpl");
+    const tsconfig = {
+      ...conformant,
+      compilerOptions: {
+        ...conformant.compilerOptions,
+        tsBuildInfoFile:
+          "../../node_modules/.cache/tsc/some-other-script.tsbuildinfo",
+      },
+    };
+    const expectedValue = `../../node_modules/.cache/tsc/${EXAMPLE_SCRIPT_NAME}.tsbuildinfo`;
+    expect(
+      tsconfigShapeErrors(tsconfig, "tsconfig.json.tmpl", EXAMPLE_SCRIPT_NAME),
+    ).toEqual([
+      `"compilerOptions.tsBuildInfoFile" must be ${JSON.stringify(expectedValue)} (from tsconfig.json.tmpl, got ${JSON.stringify("../../node_modules/.cache/tsc/some-other-script.tsbuildinfo")})`,
+    ]);
+  });
+
+  test("flags a missing tsBuildInfoFile, naming the substituted expected value", () => {
+    const conformant = conformantTsconfig("tsconfig.json.tmpl");
+    const {
+      compilerOptions: { tsBuildInfoFile: _dropped, ...withoutFlag },
+      ...rest
+    } = conformant;
+    const tsconfig = { ...rest, compilerOptions: withoutFlag };
+    const expectedValue = `../../node_modules/.cache/tsc/${EXAMPLE_SCRIPT_NAME}.tsbuildinfo`;
+    expect(
+      tsconfigShapeErrors(tsconfig, "tsconfig.json.tmpl", EXAMPLE_SCRIPT_NAME),
+    ).toEqual([
+      `"compilerOptions.tsBuildInfoFile" must be ${JSON.stringify(expectedValue)} (from tsconfig.json.tmpl, got undefined)`,
+    ]);
+  });
+
+  test("without a scriptName argument, compares tsBuildInfoFile against the literal unsubstituted __SCRIPT_NAME__ token", () => {
+    // Documents the fallback in expectedTsconfigShape: omitting scriptName
+    // leaves the raw template's `__SCRIPT_NAME__` token in place, so only an
+    // unsubstituted fixture (the template's own conformance case) matches.
+    const conformant = conformantTsconfig("tsconfig.json.tmpl");
+    const tsconfig = {
+      ...conformant,
+      compilerOptions: {
+        ...conformant.compilerOptions,
+        tsBuildInfoFile:
+          "../../node_modules/.cache/tsc/__SCRIPT_NAME__.tsbuildinfo",
+      },
+    };
+    expect(tsconfigShapeErrors(tsconfig, "tsconfig.json.tmpl")).toEqual([]);
   });
 
   test("collects both the extends and references errors when both are wrong at once", () => {
