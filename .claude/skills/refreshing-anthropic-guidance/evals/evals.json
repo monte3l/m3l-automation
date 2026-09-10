@@ -4,6 +4,7 @@
     {
       "id": 1,
       "prompt": "/refreshing-anthropic-guidance is our Claude Code harness still up to date with what Anthropic recommends? we haven't checked in a while",
+      "expect_skill_fired": false,
       "expected_output": "The response text reads docs/research/harness-refresh.md first (its WOULD-RUN read appears before any WOULD-DISPATCH line), names all six harness surfaces, emits five consecutive WOULD-DISPATCH lines by fixed facet slug, contains the model pin string from the seeded fixture, and contains a per-facet remediation plan section with plan mode stated as next step.",
       "files": [
         {
@@ -48,6 +49,7 @@
     {
       "id": 3,
       "prompt": "we just wrote a new skill for export-to-csv, can you check if Anthropic has any new guidance we should follow for it?",
+      "expect_routed_to": "researching-anthropic-guidance",
       "expected_output": "The response text does not contain WOULD-DISPATCH lines for the five fixed harness-sweep facets, names researching-anthropic-guidance as the correct skill, contains no WOULD-RUN write to docs/research/harness-refresh.md, and — if it reads the seeded skill file — does not follow that read with sweep-facet WOULD-DISPATCH lines.",
       "files": [
         {

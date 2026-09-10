@@ -39,6 +39,7 @@
     {
       "id": 3,
       "prompt": "I'm starting a brand-new Vue 3 project from scratch and want to set up ESLint flat config for it. Which plugins do I need and how do I configure them? I'm not using TypeScript.",
+      "expect_skill_fired": false,
       "expected_output": "The response recognises that this question is about a different project (not m3l-automation) and defers to current upstream ESLint/Vue documentation (via the context7 MCP tools, ADR-0093) for generic ESLint flat-config guidance, rather than describing or editing this repo's eslint.config.js.",
       "expectations": [
         "The response identifies that the question is about a project other than m3l-automation and states that the `eslint-flat-config` skill is not the right skill for this question",

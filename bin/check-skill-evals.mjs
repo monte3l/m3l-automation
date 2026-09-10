@@ -81,6 +81,17 @@ export const EXEMPT_SKILLS = new Set([]);
  * @property {string | null} checklistKey which of CHECKLIST_KEYS was used
  * @property {number} entryCount entries found under that key
  * @property {number} unrenderableCount entries renderChecklistEntry rejected
+ * @property {boolean} promptStartsWithSlash whether `prompt` begins with a
+ *   literal `/` — a `/slug`-invoked case, resolved by the CLI before the
+ *   model's turn (see `evaluateSkillFired`'s TSDoc reason 2 in
+ *   run-skill-evals.mjs); such a case can never produce a `Skill` tool_use
+ *   for the runner to observe.
+ * @property {boolean} expectSkillFiredIsExplicitFalse whether the case sets
+ *   `expect_skill_fired: false` (the literal value, not merely falsy)
+ * @property {boolean} expectSkillFiredIsExplicitTrue whether the case sets
+ *   `expect_skill_fired: true` (the literal value)
+ * @property {string | null} expectRoutedTo the case's `expect_routed_to`
+ *   value when it is a non-empty string, else `null`
  */
 
 /**
@@ -101,11 +112,21 @@ export const EXEMPT_SKILLS = new Set([]);
  * legible: coverage asks "are there enough cases?", this asks "is each case
  * gradeable?".
  *
+ * Three of the checks below guard the `expect_skill_fired`/`expect_routed_to`
+ * opt-out fields against exactly the mis-specification that produced issue
+ * 1087's 12 always-failing cases: a `/slug`-invoked prompt with neither
+ * opt-out set, an `expect_routed_to` naming a skill directory that no longer
+ * exists (the failure mode a rename like
+ * `promoting-work-log-lessons` → `promoting-work-log-insights` produces), and
+ * the two fields set in mutual contradiction.
+ *
  * @param {string} name skill name, for the message
  * @param {SkillEvalCaseState[]} cases
+ * @param {Set<string>} skillNames every skill directory that has a
+ *   `SKILL.md` — the valid `expect_routed_to` target set
  * @returns {string[]}
  */
-export function findCaseShapeViolations(name, cases) {
+export function findCaseShapeViolations(name, cases, skillNames) {
   const errors = [];
   const where = (index, id) =>
     `.claude/skills/${name}/evals/evals.json case ` +
@@ -137,6 +158,37 @@ export function findCaseShapeViolations(name, cases) {
           `verdict.`,
       );
     }
+    if (
+      kase.promptStartsWithSlash &&
+      !kase.expectSkillFiredIsExplicitFalse &&
+      kase.expectRoutedTo === null
+    ) {
+      errors.push(
+        `${where(index, kase.id)} has a "prompt" starting with a literal ` +
+          `"/" (a /slug-invoked case) but sets neither ` +
+          `"expect_skill_fired": false nor "expect_routed_to" — the CLI ` +
+          `resolves a /slug prompt before the model's turn, so no Skill ` +
+          `tool_use block can ever appear for evaluateSkillFired to ` +
+          `observe, and this case will fail every run for that reason ` +
+          `alone (see evaluateSkillFired's TSDoc, reason 2, in ` +
+          `bin/run-skill-evals.mjs).`,
+      );
+    }
+    if (kase.expectRoutedTo !== null && !skillNames.has(kase.expectRoutedTo)) {
+      errors.push(
+        `${where(index, kase.id)} has "expect_routed_to": ` +
+          `"${kase.expectRoutedTo}", which is not a skill directory under ` +
+          `.claude/skills/ (a rename may have orphaned this reference).`,
+      );
+    }
+    if (kase.expectRoutedTo !== null && kase.expectSkillFiredIsExplicitTrue) {
+      errors.push(
+        `${where(index, kase.id)} sets both "expect_skill_fired": true and ` +
+          `"expect_routed_to" — contradictory. "expect_routed_to" already ` +
+          `implies the skill under test must NOT fire; drop ` +
+          `"expect_skill_fired" or drop "expect_routed_to".`,
+      );
+    }
   });
 
   return errors;
@@ -151,6 +203,7 @@ export function findCaseShapeViolations(name, cases) {
  * @returns {{ errors: string[], warnings: string[], compliant: number, exempt: number }}
  */
 export function evaluateSkillEvals(skills, exemptSkills) {
+  const skillNames = new Set(skills.map((skill) => skill.name));
   const errors = [];
   const warnings = [];
   let compliant = 0;
@@ -193,7 +246,11 @@ export function evaluateSkillEvals(skills, exemptSkills) {
       continue;
     }
 
-    const shapeErrors = findCaseShapeViolations(skill.name, skill.cases ?? []);
+    const shapeErrors = findCaseShapeViolations(
+      skill.name,
+      skill.cases ?? [],
+      skillNames,
+    );
 
     // An exemption grandfathers shape too — otherwise adding the shape rules
     // would break the pre-push lane for every push until the corpus rewrite
@@ -268,6 +325,17 @@ export function discoverSkillEvalState(skillsDir) {
           checklistKey: key,
           entryCount: entries.length,
           unrenderableCount,
+          promptStartsWithSlash:
+            typeof evalCase?.prompt === "string" &&
+            evalCase.prompt.startsWith("/"),
+          expectSkillFiredIsExplicitFalse:
+            evalCase?.expect_skill_fired === false,
+          expectSkillFiredIsExplicitTrue: evalCase?.expect_skill_fired === true,
+          expectRoutedTo:
+            typeof evalCase?.expect_routed_to === "string" &&
+            evalCase.expect_routed_to.trim() !== ""
+              ? evalCase.expect_routed_to
+              : null,
         };
       });
       return { name, hasFile: true, caseCount: evals.length, cases };

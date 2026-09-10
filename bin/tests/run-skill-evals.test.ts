@@ -915,26 +915,50 @@ describe("evaluateSkillFired", () => {
       label: "required and fired",
       evalCase: {},
       invokedSkills: ["triaging-ci"],
-      expected: { required: true, fired: true, met: true },
+      expected: {
+        required: true,
+        fired: true,
+        routedTo: null,
+        routedFired: true,
+        met: true,
+      },
     },
     {
       label: "required and not fired",
       evalCase: {},
       invokedSkills: [],
-      expected: { required: true, fired: false, met: false },
+      expected: {
+        required: true,
+        fired: false,
+        routedTo: null,
+        routedFired: true,
+        met: false,
+      },
     },
     {
       label: "opted out (expect_skill_fired: false) and fired anyway",
       evalCase: { expect_skill_fired: false },
       invokedSkills: ["triaging-ci"],
-      expected: { required: false, fired: true, met: true },
+      expected: {
+        required: false,
+        fired: true,
+        routedTo: null,
+        routedFired: true,
+        met: true,
+      },
     },
     {
       label:
         "opted out (expect_skill_fired: false) and not fired — the deliberate skip case",
       evalCase: { expect_skill_fired: false },
       invokedSkills: [],
-      expected: { required: false, fired: false, met: true },
+      expected: {
+        required: false,
+        fired: false,
+        routedTo: null,
+        routedFired: true,
+        met: true,
+      },
     },
   ])("$label", ({ evalCase, invokedSkills, expected }) => {
     expect(evaluateSkillFired("triaging-ci", invokedSkills, evalCase)).toEqual(
@@ -947,7 +971,87 @@ describe("evaluateSkillFired", () => {
       evaluateSkillFired("starting-work", ["starting-work"], {
         expect_skill_fired: true,
       }),
-    ).toEqual({ required: true, fired: true, met: true });
+    ).toEqual({
+      required: true,
+      fired: true,
+      routedTo: null,
+      routedFired: true,
+      met: true,
+    });
+  });
+
+  describe("expect_routed_to — negative-routing cases", () => {
+    test.each([
+      {
+        label:
+          "under-test skill correctly did not fire, and the named sibling did — met",
+        invokedSkills: ["scaffolding-scripts"],
+        expected: {
+          required: false,
+          fired: false,
+          routedTo: "scaffolding-scripts",
+          routedFired: true,
+          met: true,
+        },
+      },
+      {
+        label:
+          "under-test skill fired anyway (should have routed away) — not met, regardless of the sibling",
+        invokedSkills: ["implementing-scripts", "scaffolding-scripts"],
+        expected: {
+          required: false,
+          fired: true,
+          routedTo: "scaffolding-scripts",
+          routedFired: true,
+          met: false,
+        },
+      },
+      {
+        label:
+          "under-test skill correctly did not fire — met regardless of whether the named sibling did",
+        invokedSkills: [],
+        expected: {
+          required: false,
+          fired: false,
+          routedTo: "scaffolding-scripts",
+          routedFired: false,
+          met: true,
+        },
+      },
+      {
+        label:
+          "under-test skill fired AND the sibling never did — the worst case, still not met",
+        invokedSkills: ["implementing-scripts"],
+        expected: {
+          required: false,
+          fired: true,
+          routedTo: "scaffolding-scripts",
+          routedFired: false,
+          met: false,
+        },
+      },
+    ])("$label", ({ invokedSkills, expected }) => {
+      expect(
+        evaluateSkillFired("implementing-scripts", invokedSkills, {
+          expect_routed_to: "scaffolding-scripts",
+        }),
+      ).toEqual(expected);
+    });
+
+    test("expect_routed_to takes precedence over an explicit expect_skill_fired: true — the routing assertion is the whole point of setting it", () => {
+      expect(
+        evaluateSkillFired("implementing-scripts", ["scaffolding-scripts"], {
+          expect_skill_fired: true,
+          expect_routed_to: "scaffolding-scripts",
+        }),
+      ).toEqual({
+        required: false,
+        fired: false,
+        routedTo: "scaffolding-scripts",
+        routedFired: true,
+        met: true,
+      });
+    });
   });
 });
 

@@ -224,6 +224,10 @@ describe("discoverSkillEvalState", () => {
         checklistKey: null,
         entryCount: 0,
         unrenderableCount: 0,
+        promptStartsWithSlash: false,
+        expectSkillFiredIsExplicitFalse: false,
+        expectSkillFiredIsExplicitTrue: false,
+        expectRoutedTo: null,
       },
       {
         id: 2,
@@ -232,6 +236,10 @@ describe("discoverSkillEvalState", () => {
         checklistKey: null,
         entryCount: 0,
         unrenderableCount: 0,
+        promptStartsWithSlash: false,
+        expectSkillFiredIsExplicitFalse: false,
+        expectSkillFiredIsExplicitTrue: false,
+        expectRoutedTo: null,
       },
       {
         id: 3,
@@ -240,6 +248,10 @@ describe("discoverSkillEvalState", () => {
         checklistKey: null,
         entryCount: 0,
         unrenderableCount: 0,
+        promptStartsWithSlash: false,
+        expectSkillFiredIsExplicitFalse: false,
+        expectSkillFiredIsExplicitTrue: false,
+        expectRoutedTo: null,
       },
     ]);
   });
@@ -270,6 +282,10 @@ type CaseState = {
   checklistKey: string | null;
   entryCount: number;
   unrenderableCount: number;
+  promptStartsWithSlash: boolean;
+  expectSkillFiredIsExplicitFalse: boolean;
+  expectSkillFiredIsExplicitTrue: boolean;
+  expectRoutedTo: string | null;
 };
 
 /** A case shape with every field valid; spread and override to make one bad. */
@@ -280,6 +296,10 @@ const goodCase: CaseState = {
   checklistKey: "expectations",
   entryCount: 3,
   unrenderableCount: 0,
+  promptStartsWithSlash: false,
+  expectSkillFiredIsExplicitFalse: false,
+  expectSkillFiredIsExplicitTrue: false,
+  expectRoutedTo: null,
 };
 
 describe("MIN_CHECKLIST_ENTRIES", () => {
@@ -290,13 +310,21 @@ describe("MIN_CHECKLIST_ENTRIES", () => {
 
 describe("findCaseShapeViolations", () => {
   test("accepts a fully-formed case", () => {
-    expect(findCaseShapeViolations("some-skill", [goodCase])).toEqual([]);
+    expect(
+      findCaseShapeViolations(
+        "some-skill",
+        [goodCase],
+        new Set(["some-skill"]),
+      ),
+    ).toEqual([]);
   });
 
   test("rejects a case with no checklist key at all (syncing-docs)", () => {
-    const errors = findCaseShapeViolations("syncing-docs", [
-      { ...goodCase, checklistKey: null, entryCount: 0 },
-    ]);
+    const errors = findCaseShapeViolations(
+      "syncing-docs",
+      [{ ...goodCase, checklistKey: null, entryCount: 0 }],
+      new Set(["syncing-docs"]),
+    );
 
     expect(errors).toHaveLength(1);
     expect(errors[0]).toContain("no usable checklist");
@@ -305,9 +333,11 @@ describe("findCaseShapeViolations", () => {
   });
 
   test("rejects a case whose checklist key exists but yields zero entries", () => {
-    const errors = findCaseShapeViolations("some-skill", [
-      { ...goodCase, entryCount: 0 },
-    ]);
+    const errors = findCaseShapeViolations(
+      "some-skill",
+      [{ ...goodCase, entryCount: 0 }],
+      new Set(["some-skill"]),
+    );
 
     expect(errors).toHaveLength(1);
     expect(errors[0]).toContain('"expectations" yields 0 renderable entries');
@@ -317,9 +347,11 @@ describe("findCaseShapeViolations", () => {
     // entryCount:3, unrenderableCount:1 → 2 usable entries < MIN_CHECKLIST_ENTRIES(3).
     // With MIN ratcheted to 3, the below-floor rule fires alongside the
     // unrenderable rule, producing two distinct errors.
-    const errors = findCaseShapeViolations("some-skill", [
-      { ...goodCase, entryCount: 3, unrenderableCount: 1 },
-    ]);
+    const errors = findCaseShapeViolations(
+      "some-skill",
+      [{ ...goodCase, entryCount: 3, unrenderableCount: 1 }],
+      new Set(["some-skill"]),
+    );
 
     expect(errors).toHaveLength(2);
     expect(errors[0]).toContain("1 checklist entry the runner cannot render");
@@ -328,9 +360,11 @@ describe("findCaseShapeViolations", () => {
   });
 
   test("rejects a case where every entry is unrenderable, on both counts", () => {
-    const errors = findCaseShapeViolations("some-skill", [
-      { ...goodCase, entryCount: 2, unrenderableCount: 2 },
-    ]);
+    const errors = findCaseShapeViolations(
+      "some-skill",
+      [{ ...goodCase, entryCount: 2, unrenderableCount: 2 }],
+      new Set(["some-skill"]),
+    );
 
     // Both the "cannot render" rule and the "nothing usable left" rule fire.
     expect(errors).toHaveLength(2);
@@ -340,18 +374,22 @@ describe("findCaseShapeViolations", () => {
     { field: "hasPrompt", needle: 'no non-empty "prompt"' },
     { field: "hasExpectedOutput", needle: 'no non-empty "expected_output"' },
   ])("rejects a case missing $field", ({ field, needle }) => {
-    const errors = findCaseShapeViolations("some-skill", [
-      { ...goodCase, [field]: false },
-    ]);
+    const errors = findCaseShapeViolations(
+      "some-skill",
+      [{ ...goodCase, [field]: false }],
+      new Set(["some-skill"]),
+    );
 
     expect(errors).toHaveLength(1);
     expect(errors[0]).toContain(needle);
   });
 
   test("names a case by index when it declares no id", () => {
-    const errors = findCaseShapeViolations("some-skill", [
-      { ...goodCase, id: undefined, entryCount: 0 },
-    ]);
+    const errors = findCaseShapeViolations(
+      "some-skill",
+      [{ ...goodCase, id: undefined, entryCount: 0 }],
+      new Set(["some-skill"]),
+    );
 
     expect(errors[0]).toContain("case #0 (no id)");
   });
@@ -360,9 +398,11 @@ describe("findCaseShapeViolations", () => {
   // These two cases sit on either side of the new floor and are the
   // regression guard for future changes to the constant.
   test("rejects a case with exactly 2 usable checklist entries (one below the floor of 3)", () => {
-    const errors = findCaseShapeViolations("some-skill", [
-      { ...goodCase, entryCount: 2, unrenderableCount: 0 },
-    ]);
+    const errors = findCaseShapeViolations(
+      "some-skill",
+      [{ ...goodCase, entryCount: 2, unrenderableCount: 0 }],
+      new Set(["some-skill"]),
+    );
     expect(errors).toHaveLength(1);
     expect(errors[0]).toContain('"expectations" yields 0 renderable entries');
     expect(errors[0]).toContain("no usable checklist");
@@ -370,10 +410,96 @@ describe("findCaseShapeViolations", () => {
 
   test("accepts a case with exactly 3 usable checklist entries (at the floor of 3)", () => {
     expect(
-      findCaseShapeViolations("some-skill", [
-        { ...goodCase, entryCount: 3, unrenderableCount: 0 },
-      ]),
+      findCaseShapeViolations(
+        "some-skill",
+        [{ ...goodCase, entryCount: 3, unrenderableCount: 0 }],
+        new Set(["some-skill"]),
+      ),
     ).toEqual([]);
+  });
+
+  describe("expect_skill_fired / expect_routed_to opt-out validation", () => {
+    test("rejects a /slug prompt that sets neither expect_skill_fired: false nor expect_routed_to", () => {
+      const errors = findCaseShapeViolations(
+        "some-skill",
+        [{ ...goodCase, promptStartsWithSlash: true }],
+        new Set(["some-skill"]),
+      );
+      expect(errors).toHaveLength(1);
+      expect(errors[0]).toContain("/slug-invoked case");
+      expect(errors[0]).toContain("expect_skill_fired");
+      expect(errors[0]).toContain("expect_routed_to");
+    });
+
+    test("accepts a /slug prompt that opts out via expect_skill_fired: false", () => {
+      expect(
+        findCaseShapeViolations(
+          "some-skill",
+          [
+            {
+              ...goodCase,
+              promptStartsWithSlash: true,
+              expectSkillFiredIsExplicitFalse: true,
+            },
+          ],
+          new Set(["some-skill"]),
+        ),
+      ).toEqual([]);
+    });
+
+    test("accepts a /slug prompt that opts out via expect_routed_to", () => {
+      expect(
+        findCaseShapeViolations(
+          "some-skill",
+          [
+            {
+              ...goodCase,
+              promptStartsWithSlash: true,
+              expectRoutedTo: "sibling-skill",
+            },
+          ],
+          new Set(["some-skill", "sibling-skill"]),
+        ),
+      ).toEqual([]);
+    });
+
+    test("rejects an expect_routed_to naming a skill directory that does not exist", () => {
+      const errors = findCaseShapeViolations(
+        "some-skill",
+        [{ ...goodCase, expectRoutedTo: "renamed-away-skill" }],
+        new Set(["some-skill"]),
+      );
+      expect(errors).toHaveLength(1);
+      expect(errors[0]).toContain('"expect_routed_to": "renamed-away-skill"');
+      expect(errors[0]).toContain("not a skill directory");
+    });
+
+    test("accepts an expect_routed_to naming a skill directory that does exist", () => {
+      expect(
+        findCaseShapeViolations(
+          "some-skill",
+          [{ ...goodCase, expectRoutedTo: "sibling-skill" }],
+          new Set(["some-skill", "sibling-skill"]),
+        ),
+      ).toEqual([]);
+    });
+
+    test("rejects expect_skill_fired: true set alongside expect_routed_to as contradictory", () => {
+      const errors = findCaseShapeViolations(
+        "some-skill",
+        [
+          {
+            ...goodCase,
+            expectRoutedTo: "sibling-skill",
+            expectSkillFiredIsExplicitTrue: true,
+          },
+        ],
+        new Set(["some-skill", "sibling-skill"]),
+      );
+      expect(errors).toHaveLength(1);
+      expect(errors[0]).toContain("sets both");
+      expect(errors[0]).toContain("contradictory");
+    });
   });
 });
 
