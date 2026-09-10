@@ -4,6 +4,7 @@
     {
       "id": 1,
       "prompt": "Implement the core/config submodule. Its spec is at docs/reference/core/config.md and its status in docs/implementation-status.md is 'documented'.",
+      "expect_skill_fired": false,
       "expected_output": "A step-by-step coordination plan that emits WOULD-DISPATCH lines in exact phase order — spec-conformance-reviewer first, then test-author, then code-implementer, then code-reviewer and spec-conformance-reviewer in parallel — with no direct edits to src/ or tests/ proposed.",
       "files": [
         {
@@ -24,6 +25,7 @@
       "id": 2,
       "prompt": "Let's do the retry stuff — implement exponential back-off retries.",
       "expected_output": "Hub resolves the casual phrase to core/retry, reads docs/implementation-status.md and docs/reference/core/retry.md, finds the spec page absent, and stops — recommending scaffolding-submodules be run first. No WOULD-DISPATCH: test-author or WOULD-DISPATCH: code-implementer lines appear.",
+      "expect_routed_to": "scaffolding-submodules",
       "expectations": [
         "Resolves the casual phrase 'retry stuff' or 'exponential back-off retries' to the module identifier `core/retry`",
         "Attempts to verify that `docs/reference/core/retry.md` exists (or reads `docs/implementation-status.md` to check module status) before dispatching any spoke",
@@ -34,6 +36,7 @@
     {
       "id": 3,
       "prompt": "Implement core/storage — it needs better-sqlite3 as a runtime dependency.",
+      "expect_skill_fired": false,
       "expected_output": "Hub stops at the dependency gate, lists better-sqlite3 with a one-line rationale, and explicitly waits for user approval. No WOULD-RUN: pnpm add line appears as an action to take immediately, and no WOULD-DISPATCH: test-author or WOULD-DISPATCH: code-implementer appears before the gate is cleared.",
       "expectations": [
         "Identifies `better-sqlite3` as a required runtime dependency and provides a one-line rationale (e.g. SQLite access layer for the storage submodule)",

@@ -4,6 +4,7 @@
     {
       "id": 1,
       "prompt": "Set up a new automation script called 's3-export' — it reads records, batches them, and writes an export file. It needs AWS access via a profile.",
+      "expect_skill_fired": false,
       "expected_output": "States that /starting-work is invoked first, emits `WOULD-RUN: pnpm scaffold:script s3-export --purpose \"...\"` before the install and build lines, names the generated files including `scripts/s3-export/src/config.ts` (with `AWS_PROFILE_PARAM_NAME`) and `scripts/s3-export/src/main.ts` (thin composition root), and states the handoff to `implementing-scripts` as the final step.",
       "expectations": [
         "Mentions invoking the `/starting-work` skill as the first step before emitting any `WOULD-RUN` line for the generator, install, or build",
@@ -17,6 +18,7 @@
     {
       "id": 2,
       "prompt": "Add a report-generator automation under scripts/ — CLI only, no AWS. It should take a batchSize config parameter.",
+      "expect_skill_fired": false,
       "expected_output": "Emits `WOULD-RUN: pnpm scaffold:script report-generator --purpose \"...\"` before the install and build lines, names `scripts/report-generator/src/config.ts` with a `batchSize` parameter and no AWS profile parameter, and states the handoff to `implementing-scripts`.",
       "expectations": [
         "Emits a line beginning `WOULD-RUN: pnpm scaffold:script report-generator` that includes a `--purpose` flag, and this line appears before any `WOULD-RUN: pnpm install` line",
@@ -30,6 +32,7 @@
       "id": 3,
       "prompt": "Scaffold a new script called s3-export — the batching logic and AWS wiring.",
       "expected_output": "Skill detects scripts/s3-export/ already exists and stops, telling the user to implement/edit the existing script directly rather than re-scaffolding it.",
+      "expect_routed_to": "implementing-scripts",
       "files": [
         {
           "path": "scripts/s3-export/package.json",

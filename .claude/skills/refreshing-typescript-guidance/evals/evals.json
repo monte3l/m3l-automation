@@ -4,6 +4,7 @@
     {
       "id": 1,
       "prompt": "we haven't looked at our typescript setup against upstream in ages -- is any of it stale?",
+      "expect_skill_fired": false,
       "expected_output": "The response reads docs/research/typescript/refresh.md first, reports its recorded last-verified date and typescript-version, builds a release delta from devblogs.microsoft.com/typescript or github.com/microsoft/TypeScript/releases newer than that recorded version, then emits exactly five WOULD-DISPATCH lines -- one per fixed facet slug -- passing the delta into all five rather than treating it as a sixth facet, and writes no file other than the tracker.",
       "files": [
         {
@@ -31,6 +32,7 @@
     {
       "id": 2,
       "prompt": "our typescript-configuration skill has a reference snapshot stamped against typescript 6.0.3 and check:reference-freshness passes. is that snapshot actually current?",
+      "expect_skill_fired": false,
       "expected_output": "The response explains that check:reference-freshness compares the stamp's tracks= value against the local package.json only and therefore cannot detect that both the pin and the snapshot are behind upstream, still dispatches all five fixed facets rather than a subset, names the seeded reference-freshness stamp's concrete values, and states that re-stamping is a plan item routed through the existing context7/ADR-0093 mechanism rather than something this skill does directly.",
       "files": [
         {
