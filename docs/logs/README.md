@@ -310,3 +310,4 @@ target was renamed is repaired via `RENAMED_TARGETS` in
 | 2026-09-09 | Test-I/O sandbox isolation policy — 2-PR sequence (issue #862, PR #1148/#1149)                         | [issue-862-test-fs-sandbox-isolation](./2026-09-09-issue-862-test-fs-sandbox-isolation.md) |
 | 2026-09-09 | Prettier `--cache --cache-strategy content` — P3.1 of adaptive-host-budgeting wave (PR #1145)          | [prettier-cache](./2026-09-09-prettier-cache.md)                                           |
 | 2026-09-10 | `incremental`/`tsBuildInfoFile` on tooling tsconfigs — P3.2 of adaptive-host-budgeting wave (PR #1156) | [tsc-incremental](./2026-09-10-tsc-incremental.md)                                         |
+| 2026-09-10 | claude-pr-review.yml empty-compare guard fix — issue #1150 (PR #1158)                                  | [pr-review-empty-compare-fix](./2026-09-10-pr-review-empty-compare-fix.md)                 |
