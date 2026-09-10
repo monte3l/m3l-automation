@@ -1,4 +1,6 @@
-import { join } from "node:path";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, test, vi } from "vitest";
 import {
   LANES,
@@ -13,6 +15,11 @@ import {
   computeCpuEfficiency,
   pressureDeltaMs,
 } from "../../bin/bench-gates.mjs";
+
+// bin/bench-gates.mjs computes `cwd` via repoRoot(import.meta.url) from
+// bin/bench-gates.mjs itself (one level under the repo root); this test file
+// sits one level deeper, under bin/tests/, so it needs one extra dirname().
+const repoRootDir = dirname(dirname(dirname(fileURLToPath(import.meta.url))));
 
 describe("LANES", () => {
   test("is a plain object with exactly the expected lane names", () => {
@@ -127,6 +134,38 @@ describe("LANES", () => {
     expect(LANES["lint:library:fast"]?.cacheDir).not.toBe(
       LANES["lint:workspace:fast"]?.cacheDir,
     );
+  });
+
+  // Regression test: `lint:library:fast` and `lint:workspace:fast`'s
+  // `cacheDir` values are free-standing string literals in bench-gates.mjs
+  // that duplicate the `--cache-location` path baked into the matching
+  // `package.json` script string — nothing cross-checks the two today.
+  // Renaming the cache file in `package.json` alone would leave
+  // `clearLaneCacheDir` deleting a path that no longer exists; `{ force:
+  // true }` makes that a silent no-op, so a `--cold` run would report
+  // warm-cache numbers with no error. Scoped to exactly these two lanes:
+  // they are the only ones whose `cacheDir` is a single file path tied to
+  // one script's own CLI flag — `format`/`turbo:typecheck`/`tsc:bin`'s
+  // cacheDirs are directories shared across differently-shaped commands, so
+  // a generic substring check would be wrong for them.
+  test("lint:library:fast and lint:workspace:fast cacheDir values appear literally in their package.json script's --cache-location", () => {
+    const packageJson = JSON.parse(
+      readFileSync(join(repoRootDir, "package.json"), "utf8"),
+    ) as { scripts: Record<string, string> };
+
+    for (const laneName of [
+      "lint:library:fast",
+      "lint:workspace:fast",
+    ] as const) {
+      const cacheDir = LANES[laneName]?.cacheDir;
+      const script = packageJson.scripts[laneName];
+      expect(cacheDir).toBeDefined();
+      expect(script).toBeDefined();
+      if (cacheDir === undefined || script === undefined) {
+        continue;
+      }
+      expect(script).toContain(cacheDir);
+    }
   });
 });
 
