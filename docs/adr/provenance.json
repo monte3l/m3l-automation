@@ -85,7 +85,7 @@
       },
       {
         "path": "bin/lib/verify-steps.mjs",
-        "blob": "fb0a9085bcc540ca012ee37a0165846e4e246c30"
+        "blob": "3e784e5d436bcc5850185d378766dbe2362d12b0"
       },
       {
         "path": "docs/contributing/contributing.md",
@@ -934,7 +934,7 @@
       },
       {
         "path": "bin/lib/verify-steps.mjs",
-        "blob": "fb0a9085bcc540ca012ee37a0165846e4e246c30"
+        "blob": "3e784e5d436bcc5850185d378766dbe2362d12b0"
       },
       {
         "path": "bin/lint-commit.mjs",
@@ -1868,7 +1868,7 @@
       },
       {
         "path": "bin/lib/verify-steps.mjs",
-        "blob": "fb0a9085bcc540ca012ee37a0165846e4e246c30"
+        "blob": "3e784e5d436bcc5850185d378766dbe2362d12b0"
       },
       {
         "path": "bin/sync-hub.mjs",

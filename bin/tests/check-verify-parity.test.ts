@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 import { describe, expect, test } from "vitest";
 import {
   VERIFY_STEPS,
@@ -8,6 +11,10 @@ import {
   parseCiVerifyStepNames,
   parseVerifyNeeds,
 } from "../../bin/lib/verify-steps.mjs";
+
+// bin/tests/check-cli-docs.test.ts's pattern for resolving the repo root from
+// a test file two directories under it (bin/tests/<file> -> ../../).
+const repoRoot = fileURLToPath(new URL("../../", import.meta.url));
 
 describe("parseCiVerifyStepNames", () => {
   const yaml = [
@@ -568,6 +575,249 @@ describe("groupStepsIntoLanes", () => {
     expect(laneC?.steps).toEqual([cStep]);
     expect(new Set(laneC?.dependsOn)).toEqual(new Set(["a", "b"]));
     expect(laneC?.dependsOn).toHaveLength(2);
+  });
+
+  // ---------------------------------------------------------------------
+  // dependsOnStepIds: cross-job dependency invisible to the ciStepName-
+  // collision mechanism above
+  // ---------------------------------------------------------------------
+  //
+  // Real bug this guards (found by claude-pr-review on PR #1167):
+  // `build-cli-for-gates`'s scoped `turbo run build --filter=@m3l-automation/
+  // m3l-cli` and `build`'s workspace-wide `pnpm build` (which also builds
+  // that package) race against the same local `packages/m3l-cli/dist`, but
+  // their ci.yml step NAMES genuinely differ ("Build CLI (scaffold checkers
+  // read packages/m3l-cli/dist)" vs "Build"), so pass 1's ciStepName-keyed
+  // dedup can never see the collision. `dependsOnStepIds` is the
+  // hand-authored escape hatch, resolved in pass 2 once every step's owning
+  // lane is known.
+
+  test("a dependsOnStepIds entry pointing at a step claimed by a DIFFERENT job adds that job's name to dependsOn, even with no ciStepName collision", () => {
+    const yaml = [
+      "jobs:",
+      "  a:",
+      "    runs-on: ubuntu-latest",
+      "    steps:",
+      "      - name: A Step",
+      "        run: pnpm a",
+      "  b:",
+      "    runs-on: ubuntu-latest",
+      "    steps:",
+      "      - name: B Step",
+      "        run: pnpm b",
+      "",
+    ].join("\n");
+    const aStep = { ciStepName: "A Step", id: "a-step", cmd: () => "pnpm a" };
+    const bStep = {
+      ciStepName: "B Step",
+      id: "b-step",
+      cmd: () => "pnpm b",
+      dependsOnStepIds: ["a-step"],
+    };
+    const steps = [aStep, bStep];
+
+    const lanes = groupStepsIntoLanes(yaml, steps);
+
+    const laneA = lanes.find((l) => l.jobName === "a");
+    const laneB = lanes.find((l) => l.jobName === "b");
+    // The ciStepName-collision path never fires here (the two step names are
+    // genuinely different) — dependsOn only comes from dependsOnStepIds.
+    expect(laneA?.dependsOn).toEqual([]);
+    expect(laneB?.dependsOn).toEqual(["a"]);
+  });
+
+  test("a dependsOnStepIds entry pointing at a step claimed by the SAME lane is a no-op (no self-dependency)", () => {
+    const yaml = [
+      "jobs:",
+      "  a:",
+      "    runs-on: ubuntu-latest",
+      "    steps:",
+      "      - name: First Step",
+      "        run: pnpm first",
+      "      - name: Second Step",
+      "        run: pnpm second",
+      "",
+    ].join("\n");
+    const firstStep = {
+      ciStepName: "First Step",
+      id: "first-step",
+      cmd: () => "pnpm first",
+    };
+    const secondStep = {
+      ciStepName: "Second Step",
+      id: "second-step",
+      cmd: () => "pnpm second",
+      dependsOnStepIds: ["first-step"],
+    };
+    const steps = [firstStep, secondStep];
+
+    const lanes = groupStepsIntoLanes(yaml, steps);
+
+    expect(lanes).toHaveLength(1);
+    const laneA = lanes.find((l) => l.jobName === "a");
+    expect(laneA?.steps).toEqual([firstStep, secondStep]);
+    // Both steps are claimed by job "a" itself — a's own name must never
+    // appear in its own dependsOn.
+    expect(laneA?.dependsOn).toEqual([]);
+  });
+
+  test("a dependsOnStepIds entry naming an id that matches no step at all is silently ignored, not thrown", () => {
+    const yaml = [
+      "jobs:",
+      "  a:",
+      "    runs-on: ubuntu-latest",
+      "    steps:",
+      "      - name: Lonely Step",
+      "        run: pnpm lonely",
+      "",
+    ].join("\n");
+    const lonelyStep = {
+      ciStepName: "Lonely Step",
+      id: "lonely-step",
+      cmd: () => "pnpm lonely",
+      dependsOnStepIds: ["nonexistent-id"],
+    };
+    const steps = [lonelyStep];
+
+    expect(() => groupStepsIntoLanes(yaml, steps)).not.toThrow();
+    const lanes = groupStepsIntoLanes(yaml, steps);
+    const laneA = lanes.find((l) => l.jobName === "a");
+    expect(laneA?.dependsOn).toEqual([]);
+  });
+
+  test("a lane's dependsOn combines a ciStepName-dedup dependency AND a dependsOnStepIds dependency, deduped, from both sources", () => {
+    const yaml = [
+      "jobs:",
+      "  a:",
+      "    runs-on: ubuntu-latest",
+      "    steps:",
+      "      - name: Shared Step",
+      "        run: pnpm shared",
+      "  b:",
+      "    runs-on: ubuntu-latest",
+      "    steps:",
+      "      - name: B Step",
+      "        run: pnpm b",
+      "  target:",
+      "    runs-on: ubuntu-latest",
+      "    steps:",
+      "      - name: Shared Step",
+      "        run: pnpm shared",
+      "      - name: Target Own Step",
+      "        run: pnpm target",
+      "",
+    ].join("\n");
+    const sharedStep = {
+      ciStepName: "Shared Step",
+      id: "shared",
+      cmd: () => "pnpm shared",
+    };
+    const bStep = { ciStepName: "B Step", id: "b-step", cmd: () => "pnpm b" };
+    const targetStep = {
+      ciStepName: "Target Own Step",
+      id: "target-step",
+      cmd: () => "pnpm target",
+      dependsOnStepIds: ["b-step"],
+    };
+    const steps = [sharedStep, bStep, targetStep];
+
+    const lanes = groupStepsIntoLanes(yaml, steps);
+
+    const laneTarget = lanes.find((l) => l.jobName === "target");
+    // "a" comes from the lost ciStepName-collision on "Shared Step"; "b"
+    // comes from targetStep's own dependsOnStepIds. Both must be present,
+    // deduped, with nothing missing.
+    expect(new Set(laneTarget?.dependsOn)).toEqual(new Set(["a", "b"]));
+    expect(laneTarget?.dependsOn).toHaveLength(2);
+  });
+
+  test("against the LIVE ci.yml and VERIFY_STEPS: the gates lane and the e2e lane both depend on the build lane via dependsOnStepIds", () => {
+    // This is the actual regression the bot found on PR #1167, confirmed
+    // against the real file rather than only a synthetic fixture:
+    // build-cli-for-gates (gates lane) and build-m3l-common-for-e2e (e2e
+    // lane) both declare dependsOnStepIds: ["build"] in VERIFY_STEPS.
+    const ciYamlText = readFileSync(
+      join(repoRoot, ".github/workflows/ci.yml"),
+      "utf8",
+    );
+
+    const lanes = groupStepsIntoLanes(ciYamlText, VERIFY_STEPS);
+
+    const gatesLane = lanes.find((l) => l.jobName === "gates");
+    const e2eLane = lanes.find((l) => l.jobName === "e2e");
+    expect(gatesLane).toBeDefined();
+    expect(e2eLane).toBeDefined();
+    expect(gatesLane?.dependsOn).toContain("build");
+    expect(e2eLane?.dependsOn).toContain("build");
+  });
+
+  // ---------------------------------------------------------------------
+  // Cycle detection (assertLaneGraphAcyclic, exercised only through
+  // groupStepsIntoLanes since it is not itself exported)
+  // ---------------------------------------------------------------------
+
+  test("throws a clear cyclic-lane-dependency error when dependsOnStepIds creates a direct 2-node cycle", () => {
+    const yaml = [
+      "jobs:",
+      "  a:",
+      "    runs-on: ubuntu-latest",
+      "    steps:",
+      "      - name: A Step",
+      "        run: pnpm a",
+      "  b:",
+      "    runs-on: ubuntu-latest",
+      "    steps:",
+      "      - name: B Step",
+      "        run: pnpm b",
+      "",
+    ].join("\n");
+    const aStep = {
+      ciStepName: "A Step",
+      id: "a-step",
+      cmd: () => "pnpm a",
+      // a's lane depends on whichever job owns "b-step" (job "b")...
+      dependsOnStepIds: ["b-step"],
+    };
+    const bStep = {
+      ciStepName: "B Step",
+      id: "b-step",
+      cmd: () => "pnpm b",
+      // ...and b's lane depends on whichever job owns "a-step" (job "a") —
+      // a direct 2-node cycle.
+      dependsOnStepIds: ["a-step"],
+    };
+    const steps = [aStep, bStep];
+
+    expect(() => groupStepsIntoLanes(yaml, steps)).toThrow(
+      /groupStepsIntoLanes: cyclic lane dependency:/i,
+    );
+  });
+
+  test("a normal acyclic dependsOnStepIds graph does not throw", () => {
+    const yaml = [
+      "jobs:",
+      "  a:",
+      "    runs-on: ubuntu-latest",
+      "    steps:",
+      "      - name: A Step",
+      "        run: pnpm a",
+      "  b:",
+      "    runs-on: ubuntu-latest",
+      "    steps:",
+      "      - name: B Step",
+      "        run: pnpm b",
+      "",
+    ].join("\n");
+    const aStep = { ciStepName: "A Step", id: "a-step", cmd: () => "pnpm a" };
+    const bStep = {
+      ciStepName: "B Step",
+      id: "b-step",
+      cmd: () => "pnpm b",
+      dependsOnStepIds: ["a-step"],
+    };
+    const steps = [aStep, bStep];
+
+    expect(() => groupStepsIntoLanes(yaml, steps)).not.toThrow();
   });
 });
 

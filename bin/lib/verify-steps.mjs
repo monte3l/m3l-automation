@@ -71,6 +71,19 @@
  * @property {boolean} [conditional] - true when this step is path-gated in CI
  *   (skipped when its category's inputs didn't change — see the file header).
  *   `pnpm verify` still runs it unconditionally either way.
+ * @property {string[]} [dependsOnStepIds] - other VERIFY_STEPS `id`s this
+ *   step's `cmd` writes the SAME local build output as, even though the two
+ *   steps have different `ciStepName`s and so are invisible to
+ *   {@link groupStepsIntoLanes}' ciStepName-collision dependency detection.
+ *   ci.yml can run both concurrently because each has its own runner and
+ *   checkout; locally there is one shared `dist/`, so the lane containing
+ *   this step must wait for the lane that ends up owning the named id(s).
+ *   Found via `claude-pr-review` on PR #1167: `build-cli-for-gates`'s
+ *   `turbo run build --filter=@m3l-automation/m3l-cli` and `build`'s full
+ *   `pnpm build` (also a turbo run, covering the same package) raced
+ *   against the same `packages/m3l-cli/dist` with no edge between them —
+ *   the ciStepName-only mechanism this field extends couldn't see it,
+ *   since the two ci.yml step names genuinely differ.
  */
 
 /** @type {VerifyStep[]} */
@@ -108,6 +121,7 @@ export const VERIFY_STEPS = [
     ciStepName: "Build CLI (scaffold checkers read packages/m3l-cli/dist)",
     id: "build-cli-for-gates",
     cmd: () => "pnpm turbo run build --filter=@m3l-automation/m3l-cli",
+    dependsOnStepIds: ["build"],
   },
   {
     ciStepName: "Check workflow build order",
@@ -310,6 +324,7 @@ export const VERIFY_STEPS = [
     skipReason:
       "prerequisite for the e2e lane's own vite build, which bypasses turbo's dependsOn graph — path-scoped like the rest of this lane (pass --full to run it)",
     conditional: true,
+    dependsOnStepIds: ["build"],
   },
   {
     ciStepName: "Cache Playwright browsers",
@@ -682,6 +697,32 @@ export function parseCiJobStepNames(ciYamlText) {
  * `skipReason`-only steps (e.g. "Cache turbo", no `cmd`) never create a
  * dependency — they never actually run, so nothing depends on them.
  *
+ * Two steps with genuinely DIFFERENT `ciStepName`s can still write the same
+ * local build output (e.g. `build-cli-for-gates`'s scoped
+ * `turbo run build --filter=@m3l-automation/m3l-cli` vs `build`'s workspace-
+ * wide `pnpm build`, which also builds that package) — invisible to the
+ * name-collision detection above, since ci.yml genuinely names them
+ * differently. This is what each step's own {@link VerifyStep.dependsOnStepIds}
+ * hand-authored field is for (see its own doc comment for the concrete bug
+ * this closes); resolved here in a second pass, once every step's owning
+ * lane is known, so the resolution order never depends on which job
+ * happens to appear first in ci.yml. A `dependsOnStepIds` entry naming a
+ * step that ended up in this SAME lane is a no-op (intra-lane order
+ * already covers it); one naming an id nothing claimed at all cannot
+ * happen for a currently-declared entry, but is silently ignored rather
+ * than thrown, matching this function's general "never abort, only
+ * degrade" stance toward drift.
+ *
+ * `bin/verify-all.mjs`'s scheduler assumes this dependency graph is
+ * acyclic — the ciStepName-collision source can only ever point at an
+ * EARLIER ci.yml-declared job, so it is acyclic by construction, but a
+ * future hand-authored `dependsOnStepIds` entry has no such guarantee (a
+ * mistaken pair of mutual dependencies would silently deadlock every
+ * worker in `waitForAnyLaneDone()` with no error at all, rather than fail
+ * loudly). This function therefore throws if the merged graph ever
+ * contains a cycle, so the mistake surfaces here — at lane-construction
+ * time, with the offending cycle named — instead of as a silent hang.
+ *
  * @param {string} ciYamlText
  * @param {VerifyStep[]} [steps] defaults to {@link VERIFY_STEPS}
  * @returns {{ jobName: string, steps: VerifyStep[], dependsOn: string[] }[]} in ci.yml job order
@@ -690,8 +731,12 @@ export function groupStepsIntoLanes(ciYamlText, steps = VERIFY_STEPS) {
   const jobStepNames = parseCiJobStepNames(ciYamlText);
   const stepByName = new Map(steps.map((s) => [s.ciStepName, s]));
   const claimedBy = new Map();
-  const lanes = [];
+  const laneOrder = [];
+  const laneStepsByJob = new Map();
+  const nameDedupDependsOn = new Map();
 
+  // Pass 1: assign each step to its first-claiming job (ciStepName-keyed),
+  // recording ciStepName-collision dependencies along the way.
   for (const [jobName, stepNames] of jobStepNames) {
     const laneSteps = [];
     const dependsOn = new Set();
@@ -707,21 +752,70 @@ export function groupStepsIntoLanes(ciYamlText, steps = VERIFY_STEPS) {
       claimedBy.set(step.id, jobName);
     }
     if (laneSteps.length > 0) {
-      lanes.push({ jobName, steps: laneSteps, dependsOn: [...dependsOn] });
+      laneOrder.push(jobName);
+      laneStepsByJob.set(jobName, laneSteps);
+      nameDedupDependsOn.set(jobName, dependsOn);
     }
   }
-
   for (const step of steps) {
     if (!claimedBy.has(step.id)) {
-      lanes.push({
-        jobName: `unmatched:${step.id}`,
-        steps: [step],
-        dependsOn: [],
-      });
+      const jobName = `unmatched:${step.id}`;
+      laneOrder.push(jobName);
+      laneStepsByJob.set(jobName, [step]);
+      nameDedupDependsOn.set(jobName, new Set());
+      claimedBy.set(step.id, jobName);
     }
   }
 
+  // Pass 2: every step's owning lane is now known, so resolve each step's
+  // own `dependsOnStepIds` against it and merge with pass 1's dependencies.
+  const lanes = laneOrder.map((jobName) => {
+    const laneSteps = laneStepsByJob.get(jobName);
+    const dependsOn = nameDedupDependsOn.get(jobName);
+    for (const step of laneSteps) {
+      for (const depId of step.dependsOnStepIds ?? []) {
+        const owner = claimedBy.get(depId);
+        if (owner !== undefined && owner !== jobName) dependsOn.add(owner);
+      }
+    }
+    return { jobName, steps: laneSteps, dependsOn: [...dependsOn] };
+  });
+
+  assertLaneGraphAcyclic(lanes);
   return lanes;
+}
+
+/**
+ * Throws if `lanes`' `dependsOn` edges contain a cycle — see
+ * {@link groupStepsIntoLanes}'s doc comment for why this must never reach
+ * `bin/verify-all.mjs`'s scheduler silently. Depth-first with a
+ * recursion-stack set, the standard cycle check for a small graph like
+ * this (at most one lane per ci.yml job).
+ *
+ * @param {{ jobName: string, dependsOn: string[] }[]} lanes
+ * @returns {void}
+ */
+function assertLaneGraphAcyclic(lanes) {
+  const dependsOnByJob = new Map(lanes.map((l) => [l.jobName, l.dependsOn]));
+  const visited = new Set();
+  const onStack = new Set();
+
+  function visit(jobName, path) {
+    if (onStack.has(jobName)) {
+      throw new Error(
+        `groupStepsIntoLanes: cyclic lane dependency: ${[...path, jobName].join(" -> ")}`,
+      );
+    }
+    if (visited.has(jobName)) return;
+    visited.add(jobName);
+    onStack.add(jobName);
+    for (const dep of dependsOnByJob.get(jobName) ?? []) {
+      visit(dep, [...path, jobName]);
+    }
+    onStack.delete(jobName);
+  }
+
+  for (const lane of lanes) visit(lane.jobName, []);
 }
 
 /**

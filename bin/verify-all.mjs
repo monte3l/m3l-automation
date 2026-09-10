@@ -71,10 +71,31 @@ export function parseJobsArg(argv, defaultJobs) {
     if (arg.startsWith("--jobs=")) raw = arg.slice("--jobs=".length);
     else if (arg === "--jobs") raw = argv[i + 1];
     if (raw === undefined) continue;
+    // Strict decimal digits only — bare Number(raw) would also accept
+    // exponent ("1e3" -> 1000 lanes) and hex ("0x8" -> 8) forms, neither of
+    // which matches the flag's documented plain-integer N shape.
+    if (!/^\d+$/.test(raw)) continue;
     const n = Number(raw);
     if (Number.isInteger(n) && n > 0) return n;
   }
   return defaultJobs;
+}
+
+/**
+ * Pick the index of the next lane in `queue` whose `dependsOn` is fully
+ * satisfied by `completedJobNames`, or `-1` if none is ready yet. Pulled
+ * out of the scheduler's worker loop as its own pure function so the
+ * dependency-gating logic — the riskiest part of the concurrency design —
+ * is unit-testable against plain fixtures, without spawning any process.
+ *
+ * @param {{ jobName: string, dependsOn: string[] }[]} queue
+ * @param {Set<string>} completedJobNames
+ * @returns {number}
+ */
+export function selectReadyLaneIndex(queue, completedJobNames) {
+  return queue.findIndex((lane) =>
+    lane.dependsOn.every((d) => completedJobNames.has(d)),
+  );
 }
 
 /**
@@ -255,9 +276,7 @@ async function main() {
       for (;;) {
         if (globalStopped && !runContinue) return;
         if (queue.length === 0) return;
-        const idx = queue.findIndex((lane) =>
-          lane.dependsOn.every((d) => completedJobNames.has(d)),
-        );
+        const idx = selectReadyLaneIndex(queue, completedJobNames);
         if (idx === -1) {
           // Every queued lane is still waiting on a dependency — nothing
           // for this worker to do until some other lane finishes.
@@ -290,19 +309,31 @@ async function main() {
 
   await runLanesConcurrently([...lanes]);
 
+  const skipById = new Map(skipResults.map((r) => [r.id, r]));
+  // A step present in neither map was runnable but never actually reached
+  // (fail-fast stopped before its lane was scheduled) — distinct from a
+  // deliberate skipReason/prOnly skip, so it gets its own status/icon
+  // rather than silently reusing "skip"'s.
   const results = VERIFY_STEPS.map(
     (step) =>
       runResults.get(step.id) ??
-      skipResults.find((r) => r.id === step.id) ?? {
+      skipById.get(step.id) ?? {
         id: step.id,
         ciStepName: step.ciStepName,
-        status: "skip",
+        status: "not-run",
       },
   );
 
   console.log("\n── pnpm verify summary ──");
   for (const r of results) {
-    const icon = r.status === "pass" ? "✓" : r.status === "fail" ? "✗" : "⏭";
+    const icon =
+      r.status === "pass"
+        ? "✓"
+        : r.status === "fail"
+          ? "✗"
+          : r.status === "skip"
+            ? "⏭"
+            : "·";
     console.log(`${icon}  ${r.ciStepName}`);
   }
   if (globalStopped && !runContinue) {
