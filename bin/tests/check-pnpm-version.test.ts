@@ -1,6 +1,11 @@
-import { describe, expect, test } from "vitest";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, describe, expect, test } from "vitest";
 import {
   PACKAGE_MANAGER_NAME,
+  collectContainerfiles,
+  collectGithubPnpmSetupFiles,
   findContainerfileDrift,
   findPackageManagerPinErrors,
   findUnreadPin,
@@ -219,6 +224,23 @@ describe("scanWorkflowPnpmSetup", () => {
     const text = plainActionSetupStep + plainActionSetupStep;
     expect(scanWorkflowPnpmSetup(text).actionSetupCount).toBe(2);
   });
+
+  test("counts a name-first step and still finds its version override", () => {
+    // Regression for the Should-fix #1 rewrite: the step's `uses:` line no
+    // longer shares the `- ` marker's own line (name-first form), which the
+    // old dash-anchored regex missed entirely. Verified against the real
+    // source via a live `node -e` run rather than assumed: the "with:" line
+    // shifts the "version:" line down one more, landing on line 4.
+    const text =
+      "- name: Setup pnpm\n" +
+      "  uses: pnpm/action-setup@abc\n" +
+      "  with:\n" +
+      "    version: 12\n";
+    expect(scanWorkflowPnpmSetup(text)).toEqual({
+      actionSetupCount: 1,
+      versionOverrides: [{ line: 4, value: "12" }],
+    });
+  });
 });
 
 describe("findWorkflowPnpmVersionDrift", () => {
@@ -239,13 +261,33 @@ describe("findWorkflowPnpmVersionDrift", () => {
     const { errors, actionSetupCount } = findWorkflowPnpmVersionDrift([
       { file: "action.yml", text },
     ]);
-    expect(actionSetupCount).toBe(1);
+    // Should-fix #2: an overridden site demonstrably does NOT read
+    // packageManager, so it is excluded from actionSetupCount (one site
+    // total, minus the one override, is zero) rather than counted alongside
+    // clean sites.
+    expect(actionSetupCount).toBe(0);
     expect(errors).toHaveLength(1);
     // Verified against the real source rather than assumed: the "with:"
     // line shifts the "version:" line down one, so the override lands on
     // line 4, not line 3.
     expect(errors[0]).toContain("action.yml:4");
     expect(errors[0]).toContain("overrides packageManager");
+  });
+
+  test("excludes an overridden site from actionSetupCount while still counting a clean one", () => {
+    // Regression for the Should-fix #2 overcounting fix: across two files,
+    // only the clean site should be counted as "reading the pin" — the
+    // overridden site in the second file must not inflate the total.
+    const overriddenText = `steps:
+  - uses: pnpm/action-setup@abc
+    with:
+      version: 12
+`;
+    const { actionSetupCount } = findWorkflowPnpmVersionDrift([
+      { file: "clean.yml", text: plainActionSetupStep },
+      { file: "overridden.yml", text: overriddenText },
+    ]);
+    expect(actionSetupCount).toBe(1);
   });
 });
 
@@ -262,6 +304,93 @@ describe("findUnreadPin", () => {
     const errors = findUnreadPin(PIN, 0, 0);
     expect(errors).toHaveLength(1);
     expect(errors[0]).toContain("no Containerfile or workflow reads it");
+  });
+});
+
+describe("collectContainerfiles", () => {
+  let dir: string;
+
+  afterEach(() => {
+    if (dir) rmSync(dir, { recursive: true, force: true });
+  });
+
+  test("returns every packages/<name>/Containerfile, sorted and POSIX-separated", () => {
+    dir = mktemp();
+    mkdirSync(join(dir, "packages", "a"), { recursive: true });
+    writeFileSync(join(dir, "packages", "a", "Containerfile"), "FROM node\n");
+    mkdirSync(join(dir, "packages", "b"), { recursive: true });
+    mkdirSync(join(dir, "packages", "c"), { recursive: true });
+    writeFileSync(join(dir, "packages", "c", "Containerfile"), "FROM node\n");
+
+    const result = collectContainerfiles(dir);
+    expect(result).toEqual([
+      "packages/a/Containerfile",
+      "packages/c/Containerfile",
+    ]);
+    for (const path of result) {
+      expect(path).not.toContain("\\");
+    }
+  });
+
+  test("returns an empty array when packages/ does not exist", () => {
+    dir = mktemp();
+    expect(collectContainerfiles(dir)).toEqual([]);
+  });
+
+  test("skips a non-directory entry under packages/", () => {
+    dir = mktemp();
+    mkdirSync(join(dir, "packages"), { recursive: true });
+    writeFileSync(join(dir, "packages", "README.md"), "not a package\n");
+
+    expect(collectContainerfiles(dir)).toEqual([]);
+  });
+});
+
+describe("collectGithubPnpmSetupFiles", () => {
+  let dir: string;
+
+  afterEach(() => {
+    if (dir) rmSync(dir, { recursive: true, force: true });
+  });
+
+  test("returns workflow yml/yaml files and composite action.yml files, sorted", () => {
+    dir = mktemp();
+    mkdirSync(join(dir, ".github", "workflows"), { recursive: true });
+    writeFileSync(join(dir, ".github", "workflows", "ci.yml"), "name: CI\n");
+    writeFileSync(
+      join(dir, ".github", "workflows", "other.yaml"),
+      "name: Other\n",
+    );
+    writeFileSync(
+      join(dir, ".github", "workflows", "README.md"),
+      "not a workflow\n",
+    );
+    mkdirSync(join(dir, ".github", "actions", "setup"), { recursive: true });
+    writeFileSync(
+      join(dir, ".github", "actions", "setup", "action.yml"),
+      "name: Setup\n",
+    );
+
+    expect(collectGithubPnpmSetupFiles(dir)).toEqual([
+      ".github/actions/setup/action.yml",
+      ".github/workflows/ci.yml",
+      ".github/workflows/other.yaml",
+    ]);
+  });
+
+  test("degrades to whatever exists when workflows or actions is missing", () => {
+    dir = mktemp();
+    mkdirSync(join(dir, ".github", "workflows"), { recursive: true });
+    writeFileSync(join(dir, ".github", "workflows", "ci.yml"), "name: CI\n");
+
+    expect(collectGithubPnpmSetupFiles(dir)).toEqual([
+      ".github/workflows/ci.yml",
+    ]);
+  });
+
+  test("returns an empty array when .github does not exist at all", () => {
+    dir = mktemp();
+    expect(collectGithubPnpmSetupFiles(dir)).toEqual([]);
   });
 });
 
@@ -321,3 +450,8 @@ describe("the committed repo state", () => {
     expect(findWorkflowPnpmVersionDrift(githubFiles).errors).toEqual([]);
   });
 });
+
+/** Create a fresh temp directory for one test; caller removes it in afterEach. */
+function mktemp(): string {
+  return mkdtempSync(join(tmpdir(), "m3l-check-pnpm-version-"));
+}

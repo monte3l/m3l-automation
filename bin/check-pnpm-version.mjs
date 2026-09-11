@@ -181,10 +181,13 @@ export function findContainerfileDrift(pinVersion, files) {
  * `pnpm/action-setup`: how many sites read the pin implicitly, and whether
  * any of them overrides it with an explicit `version:` input.
  *
- * Heuristic, matching `scanWorkflowNodeSetup`'s approach: walks lines after
- * a `uses: pnpm/action-setup@` step looking for a `version:` key at deeper
- * indentation, stopping at the first line that returns to the step's own
- * indentation or shallower (i.e. leaves the step's block).
+ * Groups lines into step blocks by their `- ` list-item markers first, then
+ * tests each block's full text for a `uses: pnpm/action-setup@` line —
+ * deliberately NOT anchored to `uses:` sharing the dash's own line, since a
+ * step can equally be written name-first (`- name: Setup pnpm` /
+ * `  uses: pnpm/action-setup@...`). Anchoring on the dash alone would miss
+ * exactly the case this gate exists to catch: a `version:` override buried
+ * in a step form none of today's call sites happen to use.
  *
  * @param {string} text YAML source
  * @returns {{
@@ -194,25 +197,45 @@ export function findContainerfileDrift(pinVersion, files) {
  */
 export function scanWorkflowPnpmSetup(text) {
   const lines = (text ?? "").split("\n");
+
+  /** @type {Array<{ start: number, indent: number }>} */
+  const stepStarts = [];
+  lines.forEach((line, index) => {
+    const marker = /^(\s*)-\s/.exec(line);
+    if (marker !== null)
+      stepStarts.push({ start: index, indent: marker[1].length });
+  });
+
   let actionSetupCount = 0;
   const versionOverrides = [];
 
-  lines.forEach((line, index) => {
-    const usesMatch = /^(\s*)-\s*uses:\s*pnpm\/action-setup@/.exec(line);
-    if (usesMatch === null) return;
+  stepStarts.forEach(({ start, indent: stepIndent }) => {
+    let end = lines.length;
+    for (let i = start + 1; i < lines.length; i++) {
+      if (lines[i].trim() === "") continue;
+      const indent = /^(\s*)/.exec(lines[i])[1].length;
+      if (indent <= stepIndent) {
+        end = i;
+        break;
+      }
+    }
+
+    const blockLines = lines.slice(start, end);
+    const blockText = blockLines.join("\n");
+    // The step's `uses:` key can share the `- ` marker's own line (the form
+    // every real call site here uses) or sit on its own line one level
+    // deeper (the name-first form) — match either.
+    if (!/(?:^|\n)\s*(?:-\s*)?uses:\s*pnpm\/action-setup@/.test(blockText)) {
+      return;
+    }
     actionSetupCount += 1;
-    const baseIndent = usesMatch[1].length;
 
-    for (let i = index + 1; i < lines.length; i++) {
-      const next = lines[i];
-      if (next.trim() === "") continue;
-      const indent = /^(\s*)/.exec(next)[1].length;
-      if (indent <= baseIndent) break; // left this step's own block
-
-      const versionMatch = /^\s*version:\s*(\S.*?)\s*$/.exec(next);
+    for (const [offset, blockLine] of blockLines.entries()) {
+      if (blockLine.trim() === "") continue;
+      const versionMatch = /^\s*version:\s*(\S.*?)\s*$/.exec(blockLine);
       if (versionMatch !== null) {
         versionOverrides.push({
-          line: i + 1,
+          line: start + offset + 1,
           value: versionMatch[1].replace(/^["']|["']$/g, ""),
         });
         break;
@@ -228,6 +251,12 @@ export function scanWorkflowPnpmSetup(text) {
  * explicit `version:` input, which would silently give the pin a second,
  * competing authority.
  *
+ * `actionSetupCount` in the result counts only sites that actually still
+ * read the pin — an overridden site demonstrably does NOT read
+ * `packageManager`, so it is excluded rather than counted alongside the
+ * clean sites. Both the "unread pin" check and the success message depend
+ * on this count meaning "sites that read it", not "sites that mention it".
+ *
  * @param {Array<{ file: string, text: string }>} files
  * @returns {{ errors: string[], actionSetupCount: number }}
  */
@@ -237,7 +266,7 @@ export function findWorkflowPnpmVersionDrift(files) {
 
   for (const { file, text } of files) {
     const scan = scanWorkflowPnpmSetup(text);
-    actionSetupCount += scan.actionSetupCount;
+    actionSetupCount += scan.actionSetupCount - scan.versionOverrides.length;
     for (const { line, value } of scan.versionOverrides) {
       errors.push(
         `${file}:${line} passes an explicit version: input (${value}) to ` +
