@@ -1,6 +1,8 @@
-import { dirname } from "node:path";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { describe, expect, test } from "vitest";
+import { afterEach, describe, expect, test } from "vitest";
 import {
   ADR_CLAIMS,
   checkAdrClaims,
@@ -182,5 +184,64 @@ describe("checkAdrClaims", () => {
   test("live-repo sanity check: every real ADR_CLAIMS entry currently holds", () => {
     expect(ADR_CLAIMS).toHaveLength(10);
     expect(checkAdrClaims(root)).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// package-manager-pin probe (via ADR_CLAIMS) — exercises the real, unexported
+// probePackageManagerPin through the exported ADR_CLAIMS table's entry, per
+// this repo's "don't export a sibling probe just to unit test it" convention.
+// ---------------------------------------------------------------------------
+
+describe("package-manager-pin probe (via ADR_CLAIMS)", () => {
+  let sandbox: string | undefined;
+
+  afterEach(() => {
+    if (sandbox !== undefined) {
+      rmSync(sandbox, { recursive: true, force: true });
+      sandbox = undefined;
+    }
+  });
+
+  function writePackageManagerFixture(packageManager: string): string {
+    const root = mkdtempSync(join(tmpdir(), "adr-claims-pm-pin-"));
+    writeFileSync(
+      join(root, "package.json"),
+      JSON.stringify({ packageManager }),
+    );
+    return root;
+  }
+
+  test("reports exact: true and the major version for an exact pnpm pin", () => {
+    sandbox = writePackageManagerFixture("pnpm@12.4.0");
+    const claim = ADR_CLAIMS.find((c) => c.id === "package-manager-pin");
+    expect(claim).toBeDefined();
+    expect(claim?.probe(sandbox)).toEqual({
+      manager: "pnpm",
+      exact: true,
+      major: 12,
+    });
+  });
+
+  test("reports exact: false and major: null for a range/non-exact pin", () => {
+    sandbox = writePackageManagerFixture("pnpm@^12.0.0");
+    const claim = ADR_CLAIMS.find((c) => c.id === "package-manager-pin");
+    expect(claim).toBeDefined();
+    expect(claim?.probe(sandbox)).toEqual({
+      manager: "pnpm",
+      exact: false,
+      major: null,
+    });
+  });
+
+  test("reports whichever manager is pinned, not just pnpm", () => {
+    sandbox = writePackageManagerFixture("yarn@4.0.0");
+    const claim = ADR_CLAIMS.find((c) => c.id === "package-manager-pin");
+    expect(claim).toBeDefined();
+    expect(claim?.probe(sandbox)).toEqual({
+      manager: "yarn",
+      exact: true,
+      major: 4,
+    });
   });
 });

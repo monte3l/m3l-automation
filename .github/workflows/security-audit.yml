@@ -31,10 +31,18 @@ jobs:
 
       - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
 
+      # cache-dependency-path folds package.json's packageManager literal into
+      # the cache key alongside the lockfile hash (see .github/actions/setup/
+      # action.yml's identical comment) — this workflow calls actions/setup-node
+      # directly rather than through that composite action, so it needs the
+      # same fix independently.
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version-file: .node-version
           cache: pnpm
+          cache-dependency-path: |
+            pnpm-lock.yaml
+            package.json
 
       - name: Install (frozen lockfile)
         run: pnpm install --frozen-lockfile
