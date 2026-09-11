@@ -306,7 +306,7 @@ decision. Item 2 (Context7 snapshots) remains open; only partially examined.
   - VERDICT: UNCHANGED (re-fetched 2026-09-08) — confirmed negative, see
     Outstanding drift #3 above for the full derivation and its honesty flag.
   - REPO-IMPACT: none — `.claude/rules/scripts.md:82-84,161-164`,
-    `.claude/rules/tests.md:121-124`, `.claude/agents/code-implementer.md:78-79`
+    `.claude/rules/tests.md:120-123`, `.claude/agents/code-implementer.md:78-79`
     all remain correct as written.
 - CLAIM: `check:exports` runs `publint` and `attw --pack ... --profile
 esm-only` against `packages/m3l-common` — <https://arethetypeswrong.github.io/>,
