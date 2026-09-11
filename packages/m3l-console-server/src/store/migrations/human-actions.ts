@@ -194,3 +194,47 @@ export const V8_ADD_VIEW_ACTION_KINDS_STATEMENTS: readonly string[] = [
   CREATE_CONSOLE_HUMAN_ACTIONS_AT_MS_INDEX,
   CREATE_CONSOLE_HUMAN_ACTIONS_OPERATOR_INDEX,
 ];
+
+/**
+ * `console_human_actions` recreated with `'session.flow.export'` added to
+ * the `action` vocabulary — `CONSOLE_MIGRATIONS`' v12 (X13 session-flow
+ * export).
+ *
+ * Loss-free on the same footing as v7 — see that migration's own TSDoc for
+ * the full picture, including what X7c changed. In short: the discarded rows
+ * are recoverable because `boot/audit-rebuild.ts` rebuilds this index from
+ * the JSONL trail on the next boot, and the empty table a DROP leaves behind
+ * is precisely that rebuild's trigger. Confirmed still wired: `main.ts`
+ * imports and calls `rebuildHumanActionIndexOnBoot` at boot. Before
+ * extending this pattern to a v13, verify the trigger is still wired:
+ * without it, a bare DROP is genuinely lossy and the migration must become a
+ * copy-through instead.
+ */
+export const V12_ADD_FLOW_EXPORT_ACTION_KIND_STATEMENTS: readonly string[] = [
+  `DROP TABLE console_human_actions`,
+  `
+  CREATE TABLE console_human_actions (
+    id INTEGER PRIMARY KEY,
+    at_ms INTEGER NOT NULL,
+    operator TEXT NOT NULL,
+    operator_email_declared INTEGER NOT NULL CHECK (operator_email_declared IN (0, 1)),
+    correlation_id TEXT NOT NULL,
+    action TEXT NOT NULL CHECK (action IN (
+      'run.launch','run.cancel','session.create','session.step.add',
+      'session.decision.raise','session.decision.answer',
+      'session.binding.select','session.close','session.reopen',
+      'session.flow.export',
+      'view.run.report','view.run.stream','view.session.artifact'
+    )),
+    target_kind TEXT NOT NULL CHECK (target_kind IN ('script','run','session','step','artifact')),
+    target_id TEXT NOT NULL,
+    script_name TEXT,
+    posture TEXT NOT NULL CHECK (posture IN ('auto','confirmed','escalated')),
+    outcome TEXT NOT NULL CHECK (outcome IN ('allowed','denied','rejected','failed','served')),
+    CHECK ((script_name IS NULL) = (target_kind <> 'script'))
+  ) STRICT
+`,
+  CREATE_CONSOLE_HUMAN_ACTIONS_CORRELATION_INDEX,
+  CREATE_CONSOLE_HUMAN_ACTIONS_AT_MS_INDEX,
+  CREATE_CONSOLE_HUMAN_ACTIONS_OPERATOR_INDEX,
+];

@@ -19,6 +19,7 @@ import {
   CREATE_CONSOLE_HUMAN_ACTIONS_TABLE,
   V7_WIDEN_HUMAN_ACTION_KINDS_STATEMENTS,
   V8_ADD_VIEW_ACTION_KINDS_STATEMENTS,
+  V12_ADD_FLOW_EXPORT_ACTION_KIND_STATEMENTS,
 } from "./human-actions.js";
 import {
   CREATE_CONSOLE_TELEMETRY_ROLLUP_TABLE,
@@ -496,5 +497,10 @@ export const CONSOLE_MIGRATIONS: readonly M3LMigration[] = [
     version: 11,
     name: "widen_telemetry_measure_symmetry",
     statements: V11_WIDEN_TELEMETRY_MEASURE_SYMMETRY_STATEMENTS,
+  },
+  {
+    version: 12,
+    name: "add_flow_export_action_kind",
+    statements: V12_ADD_FLOW_EXPORT_ACTION_KIND_STATEMENTS,
   },
 ];

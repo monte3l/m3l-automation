@@ -81,7 +81,10 @@ const OPERATOR_WITH_EMAIL: M3LOperatorProfile = {
  */
 const FILE_REF = `{"kind":"file","path":"sess-1/step-1.json","bytes":128,"sha256":"${"a".repeat(64)}"}`;
 
-/** All twelve kinds: nine write actions plus X7b's three `view.*` members. */
+/**
+ * All thirteen kinds: nine write actions plus X13's `session.flow.export`
+ * plus X7b's three `view.*` members.
+ */
 const ACTION_KINDS = [
   "run.launch",
   "run.cancel",
@@ -92,6 +95,7 @@ const ACTION_KINDS = [
   "session.binding.select",
   "session.close",
   "session.reopen",
+  "session.flow.export",
   "view.run.report",
   "view.run.stream",
   "view.session.artifact",

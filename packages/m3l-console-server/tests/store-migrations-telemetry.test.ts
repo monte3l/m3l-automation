@@ -284,10 +284,10 @@ describe("CONSOLE_MIGRATIONS — the real registry (v9: console_telemetry_rollup
     expect(v9?.name.length).toBeGreaterThan(0);
   });
 
-  test("applying every migration reaches user_version 11 and creates console_telemetry_rollup", () => {
+  test("applying every migration reaches user_version 12 and creates console_telemetry_rollup", () => {
     const database = createRealMigratedDatabase();
 
-    expect(readUserVersion(database)).toBe(11);
+    expect(readUserVersion(database)).toBe(12);
     expect(tableExists(database, "console_telemetry_rollup")).toBe(true);
   });
 
@@ -313,7 +313,7 @@ describe("CONSOLE_MIGRATIONS — the real registry (v9: console_telemetry_rollup
     const secondApplied = applyMigrations(database, CONSOLE_MIGRATIONS);
 
     expect(secondApplied).toBe(0);
-    expect(readUserVersion(database)).toBe(11);
+    expect(readUserVersion(database)).toBe(12);
     expect(tableExists(database, "console_telemetry_rollup")).toBe(true);
   });
 
@@ -369,10 +369,10 @@ describe("CONSOLE_MIGRATIONS — the real registry (v11: symmetric telemetry mea
     expect(v11Index).toBeGreaterThan(v10Index);
   });
 
-  test("applying every migration reaches user_version 11", () => {
+  test("applying every migration reaches user_version 12", () => {
     const database = createRealMigratedDatabase();
 
-    expect(readUserVersion(database)).toBe(11);
+    expect(readUserVersion(database)).toBe(12);
   });
 
   test("schema drift — a tampered v11 sql_digest is caught on the next apply", () => {

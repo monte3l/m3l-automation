@@ -146,6 +146,7 @@ const HUMAN_ACTION_INDEX_KINDS: Readonly<
   "session.binding.select": true,
   "session.close": true,
   "session.reopen": true,
+  "session.flow.export": true,
   "view.run.report": true,
   "view.run.stream": true,
   "view.session.artifact": true,
