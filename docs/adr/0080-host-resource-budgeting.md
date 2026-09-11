@@ -272,3 +272,60 @@ the loud crash this fix replaces. Deriving `NODE_OPTIONS` from the same
 per-host budget is exactly what this wave's remaining slices (see
 `docs/plans/2026-09-08-adaptive-host-budgeting.md`) intend to generalize,
 rather than special-casing this one script now.
+
+## Update 2026-09-11 — macOS/Darwin support
+
+This ADR's decision (systemd `MemoryMax`/`user-.slice`, `earlyoom`, zram,
+`vm.swappiness`, `vm.panic_on_oom`) is entirely Linux-specific and was never
+validated on macOS — the repo had no Mac available to it until now. Running
+`bin/check-host-resources.mjs`/`bin/setup-host-resources.mjs` live on a real
+Intel Mac (darwin x64, i9-9980HK, 64 GiB RAM) surfaced that both scripts
+simply skipped on any non-Linux platform with a single generic "nothing to
+do" line — including `setup-host-resources.mjs`'s step 7
+(`lefthook-local.yml` serial-pre-push override), which has no Linux
+dependency at all and was unreachable on macOS purely because of a blanket
+platform gate that predated this wave's own step-level idempotency design.
+
+**Most important finding: this ADR's headline mitigation has no macOS
+equivalent.** `CLAUDE_CODE_TOOL_MEMORY_LIMIT` is documented by Anthropic as
+Linux/WSL only (v2.1.233+) — it is enforced via a Linux cgroup over a
+session's Bash-tool subprocesses, and there is nothing to substitute on
+macOS. `setup-host-resources.mjs` now deliberately skips writing it there
+rather than have the script claim a mitigation the CLI cannot actually
+apply — a false "applied" is worse than an honest "not applicable here."
+The same reasoning extends to every other mechanism this ADR decided on:
+`earlyoom` → macOS's `jetsam` is in-kernel and not user-configurable; zram →
+macOS's always-on memory compressor already does that job and cannot be
+tuned; `vm.swappiness` → macOS has no equivalent (`dynamic_pager` sizes
+swap automatically); `user-.slice`/`MemoryMax` → macOS has no cgroups at
+all.
+
+**Fix, scoped to what's actually different:** both scripts now carry a real
+macOS branch instead of a blanket skip.
+
+- `check:host-resources` reports on what **is** observable on macOS —
+  jetsam memory pressure (`kern.memorystatus_vm_pressure_level`), swap
+  usage (`sysctl vm.swapusage`), and available memory (`vm_stat`-derived) —
+  and names the macOS analogue of each Linux-only mitigation by name rather
+  than silently skipping it (an advisory check that explains why it has
+  nothing to configure is worth more than one that says nothing at all —
+  `.claude/rules/harness-artifacts.md`). It does not warn about
+  `CLAUDE_CODE_TOOL_MEMORY_LIMIT` being unset on macOS, for the reason
+  above — warning about a setting the CLI ignores on this platform would
+  cry wolf.
+- `setup:host-resources` now gates each of its 7 steps individually
+  (`platformStepSkips`) instead of one blanket platform check at the top.
+  Steps 1-6 stay Linux-only and each print the specific macOS reason above;
+  step 7 (the derived-budget `lefthook-local.yml` override) is genuinely
+  platform-agnostic and now actually runs on macOS — verified live:
+  `--sessions=8` on this 8-core Mac correctly derives a 1-concurrent-lane
+  budget and writes the serial-pre-push override, and re-running is a clean
+  idempotent no-op.
+
+Full runbook detail, including the macOS analogue table: `docs/contributing/host-resources.md` § macOS.
+
+Not addressed by this update: no macOS runner was added to CI —
+`check:host-resources`/`setup:host-resources` remain local-developer
+tooling with no CI equivalent by design (a CI runner is a fresh
+single-purpose container, not the multi-session host this ADR guards), so
+this stays a Mac-local concern with no CI-side validation.

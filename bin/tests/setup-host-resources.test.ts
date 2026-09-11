@@ -9,6 +9,7 @@ import {
   extractGiBSuffix,
   shouldSerializePrePush,
   buildLefthookLocalOverride,
+  platformStepSkips,
 } from "../../bin/setup-host-resources.mjs";
 import { recommendToolMemoryLimitGiB } from "../../bin/check-host-resources.mjs";
 
@@ -304,4 +305,85 @@ describe("buildLefthookLocalOverride", () => {
     expect(override).toContain("sessions=1");
     expect(override).toContain("limitedBy=cpu");
   });
+});
+
+describe("platformStepSkips", () => {
+  const linuxOnlyKeys = [
+    "earlyoom",
+    "zram",
+    "swappiness",
+    "userSlice",
+    "claudeRc",
+  ] as const;
+  const allKeys = [
+    "earlyoom",
+    "zram",
+    "swappiness",
+    "userSlice",
+    "claudeRc",
+    "toolMemoryLimit",
+    "lefthookLocal",
+  ] as const;
+
+  test.each(allKeys)("%s is null on linux", (key) => {
+    expect(platformStepSkips("linux")[key]).toBeNull();
+  });
+
+  test.each([
+    ["earlyoom", /jetsam/i],
+    ["zram", /compressor/i],
+    ["swappiness", /swappiness|dynamic_pager/i],
+    ["userSlice", /cgroup/i],
+    ["claudeRc", /systemd|launchd/i],
+  ] as const)(
+    "%s is a non-empty, topic-appropriate reason on darwin",
+    (key, topicPattern) => {
+      const reason = platformStepSkips("darwin")[key];
+      expect(typeof reason).toBe("string");
+      expect(reason).toMatch(topicPattern);
+    },
+  );
+
+  test("lefthookLocal is null on darwin (step 7 has no OS dependency)", () => {
+    expect(platformStepSkips("darwin").lefthookLocal).toBeNull();
+  });
+
+  test("toolMemoryLimit is non-null on darwin and explains the cgroup-enforcement gap", () => {
+    const reason = platformStepSkips("darwin").toolMemoryLimit;
+    expect(reason).not.toBeNull();
+    expect(reason).toMatch(/cgroup/i);
+  });
+
+  test.each(linuxOnlyKeys)(
+    "%s is non-null on an unrecognized platform (win32) and interpolates the platform name",
+    (key) => {
+      const reason = platformStepSkips("win32")[key];
+      expect(reason).not.toBeNull();
+      expect(reason).toContain("win32");
+    },
+  );
+
+  test("win32's lefthookLocal is null, same as every platform", () => {
+    expect(platformStepSkips("win32").lefthookLocal).toBeNull();
+  });
+
+  test("win32 and darwin reasons genuinely differ per key (not both falling through to the same generic text)", () => {
+    for (const key of linuxOnlyKeys) {
+      expect(platformStepSkips("win32")[key]).not.toBe(
+        platformStepSkips("darwin")[key],
+      );
+    }
+  });
+
+  test.each([["darwin"], ["win32"]] as const)(
+    "%s: no Linux-only reason silently claims 'nothing to do' or is empty",
+    (platform) => {
+      for (const key of linuxOnlyKeys) {
+        const reason = platformStepSkips(platform)[key];
+        expect(reason).not.toBeNull();
+        expect(reason).not.toMatch(/nothing to do/i);
+        expect(reason).not.toBe("");
+      }
+    },
+  );
 });

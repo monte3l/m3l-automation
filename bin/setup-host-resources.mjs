@@ -3,8 +3,11 @@
  * Idempotent host-level setup for the OOM/livelock mitigations documented in
  * docs/contributing/host-resources.md and docs/adr/0080-host-resource-budgeting.md.
  * Companion to bin/check-host-resources.mjs, which only observes; this script
- * applies fixes. Linux-only (systemd + zram); exits 0 with an informational
- * message on any other platform.
+ * applies fixes. Steps 1-6 are Linux-only (systemd + zram) — on macOS each
+ * reports the specific reason it doesn't apply there (see
+ * {@link platformStepSkips}) rather than a blanket skip; step 7 is
+ * platform-agnostic and runs everywhere. Any platform besides linux/darwin
+ * gets a generic per-step reason and exits 0.
  *
  * SAFE BY DEFAULT: runs in --dry-run mode unless --apply is passed. Dry-run
  * prints exactly what would change (each step's current vs. target state) and
@@ -19,27 +22,32 @@
  * recommendation) — it reports the existing value and leaves it alone.
  *
  * Steps:
- *   1. earlyoom — install (apt) + enable, tuned to avoid killing
- *      sshd/systemd/tmux/sudo/the Claude Code CLI itself, and prefer
- *      killing Node-hosted processes (matched by /proc/PID/comm, not argv
- *      — see EARLYOOM_AVOID/EARLYOOM_PREFER's own comments for why
- *      "node"/"vitest"/"tsc" don't work as tokens).
- *   2. zram swap — install zram-tools, ~50% of RAM, zstd.
- *   3. vm.swappiness — lower via /etc/sysctl.d/ drop-in (never raises it).
- *   4. user-.slice MemoryMax — system-wide drop-in bounding the TOTAL memory
- *      available to all of this user's login sessions combined (one shared
- *      cgroup per UID, not one per session), derived from total host memory
- *      with a fixed OS reserve. Deliberately independent of --sessions: the
- *      per-session split is CLAUDE_CODE_TOOL_MEMORY_LIMIT's job (step 6).
- *   5. claude-rc.service — MemoryMax + OOMPolicy=kill drop-in, if the unit
- *      exists (~/.config/systemd/user/claude-rc.service per this host's
+ *   1. earlyoom (Linux-only) — install (apt) + enable, tuned to avoid
+ *      killing sshd/systemd/tmux/sudo/the Claude Code CLI itself, and
+ *      prefer killing Node-hosted processes (matched by /proc/PID/comm,
+ *      not argv — see EARLYOOM_AVOID/EARLYOOM_PREFER's own comments for
+ *      why "node"/"vitest"/"tsc" don't work as tokens).
+ *   2. zram swap (Linux-only) — install zram-tools, ~50% of RAM, zstd.
+ *   3. vm.swappiness (Linux-only) — lower via /etc/sysctl.d/ drop-in
+ *      (never raises it).
+ *   4. user-.slice MemoryMax (Linux-only) — system-wide drop-in bounding
+ *      the TOTAL memory available to all of this user's login sessions
+ *      combined (one shared cgroup per UID, not one per session), derived
+ *      from total host memory with a fixed OS reserve. Deliberately
+ *      independent of --sessions: the per-session split is
+ *      CLAUDE_CODE_TOOL_MEMORY_LIMIT's job (step 6).
+ *   5. claude-rc.service (Linux-only) — MemoryMax + OOMPolicy=kill
+ *      drop-in, if the unit exists
+ *      (~/.config/systemd/user/claude-rc.service per this host's
  *      remote-control wrapper; a no-op elsewhere).
- *   6. CLAUDE_CODE_TOOL_MEMORY_LIMIT — write the recommended value into
+ *   6. CLAUDE_CODE_TOOL_MEMORY_LIMIT (Linux-only — enforced via a Linux
+ *      cgroup, no effect on macOS) — write the recommended value into
  *      .claude/settings.local.json's "env" block (gitignored, host-specific
  *      — never the repo-tracked settings.json, since the number is derived
  *      from THIS host's RAM).
- *   7. lefthook-local.yml — forces `pre-push: parallel: false` when the
- *      SAME `deriveBudget()` formula `bin/verify-all.mjs`'s own `--jobs`
+ *   7. lefthook-local.yml (any platform) — forces `pre-push: parallel:
+ *      false` when the SAME `deriveBudget()` formula
+ *      `bin/verify-all.mjs`'s own `--jobs`
  *      default resolves through (`concurrentLaneWorkers`, P3.5 of
  *      adaptive-host-budgeting) comes out to 1 concurrent lane worker for
  *      the `--sessions`-budgeted profile this script builds (not
@@ -66,7 +74,11 @@ import { fileURLToPath } from "node:url";
 import { join } from "node:path";
 import { repoRoot, parseJsonFlag, createReporter } from "./lib/report.mjs";
 import { recommendToolMemoryLimitGiB } from "./check-host-resources.mjs";
-import { detectHostProfile, deriveBudget } from "./lib/host-profile.mjs";
+import {
+  detectHostProfile,
+  deriveBudget,
+  classifyOsFromPlatform,
+} from "./lib/host-profile.mjs";
 
 // earlyoom's --prefer/--avoid match /proc/PID/comm (the kernel thread name,
 // truncated to 15 visible bytes), NOT argv (`man earlyoom`: "EARLYOOM_NAME
@@ -300,6 +312,93 @@ export function shouldSerializePrePush(budget) {
   return budget.concurrentLaneWorkers <= 1;
 }
 
+/**
+ * @typedef {{
+ *   earlyoom: string | null,
+ *   zram: string | null,
+ *   swappiness: string | null,
+ *   userSlice: string | null,
+ *   claudeRc: string | null,
+ *   toolMemoryLimit: string | null,
+ *   lefthookLocal: string | null,
+ * }} PlatformStepSkips
+ */
+
+/**
+ * Why each numbered step cannot take effect on a given platform — `null`
+ * means "applies here, run it normally"; a string is the specific reason
+ * `run()` prints in its place. Every value is `null` on Linux, which is
+ * what this script was originally written for.
+ *
+ * macOS's OOM/swap/per-session-memory story is entirely in-kernel and not
+ * user-configurable — jetsam replaces earlyoom, the always-on memory
+ * compressor replaces zram, `dynamic_pager` sizes swap automatically (no
+ * `vm.swappiness` equivalent), there are no cgroups (no `user-.slice`/
+ * `MemoryMax`), and `claude-rc.service` is a systemd user unit macOS has no
+ * equivalent manager for (launchd, not systemd). `CLAUDE_CODE_TOOL_MEMORY_LIMIT`
+ * is documented Linux/WSL-only (v2.1.233+, docs/contributing/host-resources.md)
+ * — it is enforced via a Linux cgroup, so writing it on darwin would have
+ * this script claim a mitigation the CLI cannot actually apply there, which
+ * is worse than the skip it replaces. `lefthookLocal` (step 7) is `null` on
+ * every platform — it's a repo-local config write with no OS dependency.
+ *
+ * Every reason names the macOS analogue rather than saying "nothing to
+ * do" — an advisory script that silently skips is worse than one that
+ * explains why (.claude/rules/harness-artifacts.md).
+ *
+ * @param {string} nodePlatform `process.platform`
+ * @returns {PlatformStepSkips}
+ */
+export function platformStepSkips(nodePlatform) {
+  const osKind = classifyOsFromPlatform(nodePlatform);
+  if (osKind === "linux") {
+    return {
+      earlyoom: null,
+      zram: null,
+      swappiness: null,
+      userSlice: null,
+      claudeRc: null,
+      toolMemoryLimit: null,
+      lefthookLocal: null,
+    };
+  }
+  if (osKind === "darwin") {
+    return {
+      earlyoom:
+        "jetsam is the in-kernel OOM killer on macOS and is not " +
+        "user-configurable — no --avoid/--prefer equivalent.",
+      zram:
+        "the always-on in-kernel memory compressor replaces zram on " +
+        "macOS — it cannot be sized, tuned, or disabled.",
+      swappiness:
+        "macOS has no vm.swappiness — dynamic_pager sizes swap " +
+        "automatically and exposes no equivalent tunable.",
+      userSlice:
+        "macOS has no cgroups, so there is no user-.slice and no " +
+        "MemoryMax equivalent to set.",
+      claudeRc:
+        "claude-rc.service is a systemd user unit — macOS has launchd, " +
+        "not a systemd user manager.",
+      toolMemoryLimit:
+        "CLAUDE_CODE_TOOL_MEMORY_LIMIT is enforced via a Linux cgroup " +
+        "(v2.1.233+, Linux/WSL only); the value would be written but " +
+        "never applied on macOS, so this step is skipped rather than " +
+        "claim a mitigation that doesn't work here.",
+      lefthookLocal: null,
+    };
+  }
+  const generic = `requires systemd + procfs (Linux); platform is "${nodePlatform}".`;
+  return {
+    earlyoom: generic,
+    zram: generic,
+    swappiness: generic,
+    userSlice: generic,
+    claudeRc: generic,
+    toolMemoryLimit: generic,
+    lefthookLocal: null,
+  };
+}
+
 function sh(cmd, args, opts = {}) {
   return execFileSync(cmd, args, { encoding: "utf8", ...opts }).trim();
 }
@@ -335,14 +434,7 @@ function tryReadFile(path) {
  * @param {import("./lib/report.mjs").createReporter extends (...args: any) => infer R ? R : never} reporter
  */
 function run(opts, reporter) {
-  if (process.platform !== "linux") {
-    reporter.info(
-      `Host resource setup is Linux-specific (systemd + zram); platform is ` +
-        `"${process.platform}" — nothing to do.`,
-    );
-    return;
-  }
-
+  const skips = platformStepSkips(process.platform);
   const totalMemGiB = Math.round((totalmem() / 1024 ** 3) * 10) / 10;
   const mode = opts.apply ? "APPLY" : "DRY-RUN";
   reporter.info(
@@ -351,149 +443,169 @@ function run(opts, reporter) {
   );
 
   // 1. earlyoom
-  const earlyoomActive =
-    shQuiet("systemctl", ["is-active", "earlyoom"]) === "active";
-  const existingEarlyoomOverride = tryReadFile(EARLYOOM_OVERRIDE_PATH);
-  const earlyoomState = classifyEarlyoomState({
-    active: earlyoomActive,
-    existingOverride: existingEarlyoomOverride,
-  });
-  if (earlyoomState === "current") {
-    reporter.info(
-      "[1/7] earlyoom: already active and tuned as expected — leaving as-is.",
-    );
-  } else if (earlyoomState === "refresh") {
-    reporter.info(
-      `[1/7] earlyoom: active, but its tuning is stale (drop-in ` +
-        `${existingEarlyoomOverride === null ? "missing" : "differs"}) — ` +
-        `would rewrite to -m 5 -s ${EARLYOOM_SWAP_FREE_MIN_PERCENT} --avoid ` +
-        `'${EARLYOOM_AVOID}' --prefer '${EARLYOOM_PREFER}' and restart.`,
-    );
-    if (opts.apply) {
-      sh("sudo", ["mkdir", "-p", "/etc/systemd/system/earlyoom.service.d"]);
-      sh("sudo", ["tee", EARLYOOM_OVERRIDE_PATH], {
-        input: buildEarlyoomOverride(),
-      });
-      sh("sudo", ["systemctl", "daemon-reload"]);
-      sh("sudo", ["systemctl", "restart", "earlyoom"]);
-      reporter.change("updated", "earlyoom.service", "(tuning refreshed)");
-    }
+  if (skips.earlyoom) {
+    reporter.info(`[1/7] earlyoom: ${skips.earlyoom}`);
   } else {
-    reporter.info(
-      `[1/7] earlyoom: would install + enable, tuned -m 5 -s ` +
-        `${EARLYOOM_SWAP_FREE_MIN_PERCENT} --avoid '${EARLYOOM_AVOID}' ` +
-        `--prefer '${EARLYOOM_PREFER}'.`,
-    );
-    if (opts.apply) {
-      sh("sudo", ["apt-get", "install", "-y", "earlyoom"]);
-      sh("sudo", ["mkdir", "-p", "/etc/systemd/system/earlyoom.service.d"]);
-      sh("sudo", ["tee", EARLYOOM_OVERRIDE_PATH], {
-        input: buildEarlyoomOverride(),
-      });
-      sh("sudo", ["systemctl", "daemon-reload"]);
-      sh("sudo", ["systemctl", "enable", "--now", "earlyoom"]);
-      reporter.change("updated", "earlyoom.service", "(installed + enabled)");
+    const earlyoomActive =
+      shQuiet("systemctl", ["is-active", "earlyoom"]) === "active";
+    const existingEarlyoomOverride = tryReadFile(EARLYOOM_OVERRIDE_PATH);
+    const earlyoomState = classifyEarlyoomState({
+      active: earlyoomActive,
+      existingOverride: existingEarlyoomOverride,
+    });
+    if (earlyoomState === "current") {
+      reporter.info(
+        "[1/7] earlyoom: already active and tuned as expected — leaving as-is.",
+      );
+    } else if (earlyoomState === "refresh") {
+      reporter.info(
+        `[1/7] earlyoom: active, but its tuning is stale (drop-in ` +
+          `${existingEarlyoomOverride === null ? "missing" : "differs"}) — ` +
+          `would rewrite to -m 5 -s ${EARLYOOM_SWAP_FREE_MIN_PERCENT} --avoid ` +
+          `'${EARLYOOM_AVOID}' --prefer '${EARLYOOM_PREFER}' and restart.`,
+      );
+      if (opts.apply) {
+        sh("sudo", ["mkdir", "-p", "/etc/systemd/system/earlyoom.service.d"]);
+        sh("sudo", ["tee", EARLYOOM_OVERRIDE_PATH], {
+          input: buildEarlyoomOverride(),
+        });
+        sh("sudo", ["systemctl", "daemon-reload"]);
+        sh("sudo", ["systemctl", "restart", "earlyoom"]);
+        reporter.change("updated", "earlyoom.service", "(tuning refreshed)");
+      }
+    } else {
+      reporter.info(
+        `[1/7] earlyoom: would install + enable, tuned -m 5 -s ` +
+          `${EARLYOOM_SWAP_FREE_MIN_PERCENT} --avoid '${EARLYOOM_AVOID}' ` +
+          `--prefer '${EARLYOOM_PREFER}'.`,
+      );
+      if (opts.apply) {
+        sh("sudo", ["apt-get", "install", "-y", "earlyoom"]);
+        sh("sudo", ["mkdir", "-p", "/etc/systemd/system/earlyoom.service.d"]);
+        sh("sudo", ["tee", EARLYOOM_OVERRIDE_PATH], {
+          input: buildEarlyoomOverride(),
+        });
+        sh("sudo", ["systemctl", "daemon-reload"]);
+        sh("sudo", ["systemctl", "enable", "--now", "earlyoom"]);
+        reporter.change("updated", "earlyoom.service", "(installed + enabled)");
+      }
     }
   }
 
   // 2. zram
-  const hasZram = /zram/.test(shQuiet("cat", ["/proc/swaps"]) ?? "");
-  if (hasZram) {
-    reporter.info("[2/7] zram: swap device already present — leaving as-is.");
+  if (skips.zram) {
+    reporter.info(`[2/7] zram: ${skips.zram}`);
   } else {
-    reporter.info("[2/7] zram: would install zram-tools (~50% RAM, zstd).");
-    if (opts.apply) {
-      sh("sudo", ["apt-get", "install", "-y", "zram-tools"]);
-      sh("sudo", ["tee", "/etc/default/zramswap"], {
-        input: "ALGO=zstd\nPERCENT=50\nPRIORITY=100\n",
-      });
-      sh("sudo", ["systemctl", "restart", "zramswap"]);
-      reporter.change("updated", "zramswap.service", "(installed)");
+    const hasZram = /zram/.test(shQuiet("cat", ["/proc/swaps"]) ?? "");
+    if (hasZram) {
+      reporter.info("[2/7] zram: swap device already present — leaving as-is.");
+    } else {
+      reporter.info("[2/7] zram: would install zram-tools (~50% RAM, zstd).");
+      if (opts.apply) {
+        sh("sudo", ["apt-get", "install", "-y", "zram-tools"]);
+        sh("sudo", ["tee", "/etc/default/zramswap"], {
+          input: "ALGO=zstd\nPERCENT=50\nPRIORITY=100\n",
+        });
+        sh("sudo", ["systemctl", "restart", "zramswap"]);
+        reporter.change("updated", "zramswap.service", "(installed)");
+      }
     }
   }
 
   // 3. swappiness
-  const currentSwappiness = Number(
-    shQuiet("cat", ["/proc/sys/vm/swappiness"]) ?? "60",
-  );
-  if (currentSwappiness <= SWAPPINESS_TARGET) {
-    reporter.info(
-      `[3/7] vm.swappiness: already ${currentSwappiness} (<= target ${SWAPPINESS_TARGET}) — leaving as-is.`,
-    );
+  if (skips.swappiness) {
+    reporter.info(`[3/7] vm.swappiness: ${skips.swappiness}`);
   } else {
-    reporter.info(
-      `[3/7] vm.swappiness: would lower from ${currentSwappiness} to ${SWAPPINESS_TARGET}.`,
+    const currentSwappiness = Number(
+      shQuiet("cat", ["/proc/sys/vm/swappiness"]) ?? "60",
     );
-    if (opts.apply) {
-      sh("sudo", ["tee", "/etc/sysctl.d/90-host-resources.conf"], {
-        input: `vm.swappiness=${SWAPPINESS_TARGET}\n`,
-      });
-      sh("sudo", ["sysctl", "--system"]);
-      reporter.change(
-        "updated",
-        "/etc/sysctl.d/90-host-resources.conf",
-        `(swappiness ${currentSwappiness} -> ${SWAPPINESS_TARGET})`,
+    if (currentSwappiness <= SWAPPINESS_TARGET) {
+      reporter.info(
+        `[3/7] vm.swappiness: already ${currentSwappiness} (<= target ${SWAPPINESS_TARGET}) — leaving as-is.`,
       );
+    } else {
+      reporter.info(
+        `[3/7] vm.swappiness: would lower from ${currentSwappiness} to ${SWAPPINESS_TARGET}.`,
+      );
+      if (opts.apply) {
+        sh("sudo", ["tee", "/etc/sysctl.d/90-host-resources.conf"], {
+          input: `vm.swappiness=${SWAPPINESS_TARGET}\n`,
+        });
+        sh("sudo", ["sysctl", "--system"]);
+        reporter.change(
+          "updated",
+          "/etc/sysctl.d/90-host-resources.conf",
+          `(swappiness ${currentSwappiness} -> ${SWAPPINESS_TARGET})`,
+        );
+      }
     }
   }
 
   // 4. user@.slice MemoryMax
-  const sliceOverride = buildUserSliceOverride(totalMemGiB);
-  const sliceOverridePath = "/etc/systemd/system/user-.slice.d/override.conf";
-  const existingSlice = existsSync(sliceOverridePath)
-    ? readFileSync(sliceOverridePath, "utf8")
-    : null;
-  const existingSliceGiB =
-    existingSlice !== null ? extractMemoryMaxGiB(existingSlice) : null;
-  const targetSliceGiB = extractMemoryMaxGiB(sliceOverride);
-  if (existingSliceGiB !== null && existingSliceGiB <= targetSliceGiB) {
-    reporter.info(
-      `[4/7] user-.slice MemoryMax: existing ${existingSliceGiB}G is already ` +
-        `at or stricter than the derived ${targetSliceGiB}G — leaving as-is.`,
-    );
+  if (skips.userSlice) {
+    reporter.info(`[4/7] user-.slice MemoryMax: ${skips.userSlice}`);
   } else {
-    reporter.info(
-      `[4/7] user-.slice MemoryMax: would write:\n${sliceOverride
-        .split("\n")
-        .filter(Boolean)
-        .map((l) => `        ${l}`)
-        .join("\n")}`,
-    );
-    if (opts.apply) {
-      sh("sudo", ["mkdir", "-p", "/etc/systemd/system/user-.slice.d"]);
-      sh("sudo", ["tee", sliceOverridePath], {
-        input: sliceOverride,
-      });
-      sh("sudo", ["systemctl", "daemon-reload"]);
-      reporter.change("updated", sliceOverridePath);
+    const sliceOverride = buildUserSliceOverride(totalMemGiB);
+    const sliceOverridePath = "/etc/systemd/system/user-.slice.d/override.conf";
+    const existingSlice = existsSync(sliceOverridePath)
+      ? readFileSync(sliceOverridePath, "utf8")
+      : null;
+    const existingSliceGiB =
+      existingSlice !== null ? extractMemoryMaxGiB(existingSlice) : null;
+    const targetSliceGiB = extractMemoryMaxGiB(sliceOverride);
+    if (existingSliceGiB !== null && existingSliceGiB <= targetSliceGiB) {
+      reporter.info(
+        `[4/7] user-.slice MemoryMax: existing ${existingSliceGiB}G is already ` +
+          `at or stricter than the derived ${targetSliceGiB}G — leaving as-is.`,
+      );
+    } else {
+      reporter.info(
+        `[4/7] user-.slice MemoryMax: would write:\n${sliceOverride
+          .split("\n")
+          .filter(Boolean)
+          .map((l) => `        ${l}`)
+          .join("\n")}`,
+      );
+      if (opts.apply) {
+        sh("sudo", ["mkdir", "-p", "/etc/systemd/system/user-.slice.d"]);
+        sh("sudo", ["tee", sliceOverridePath], {
+          input: sliceOverride,
+        });
+        sh("sudo", ["systemctl", "daemon-reload"]);
+        reporter.change("updated", sliceOverridePath);
+      }
     }
   }
 
   // 5. claude-rc.service (only if it exists — this host's remote-control unit)
-  const rcUnitPath = join(
-    process.env.HOME ?? "",
-    ".config/systemd/user/claude-rc.service",
-  );
-  if (existsSync(rcUnitPath)) {
-    const rcOverride = buildClaudeRcOverride(totalMemGiB, opts.sessions);
-    const rcMemoryMaxGiB = extractMemoryMaxGiB(rcOverride);
-    reporter.info(
-      `[5/7] claude-rc.service: would add MemoryMax=${rcMemoryMaxGiB}G + OOMPolicy=kill drop-in.`,
-    );
-    if (opts.apply) {
-      const dropinDir = join(
-        process.env.HOME ?? "",
-        ".config/systemd/user/claude-rc.service.d",
-      );
-      mkdirSync(dropinDir, { recursive: true });
-      writeFileSync(join(dropinDir, "override.conf"), rcOverride);
-      sh("systemctl", ["--user", "daemon-reload"]);
-      reporter.change("updated", "claude-rc.service.d/override.conf");
-    }
+  if (skips.claudeRc) {
+    reporter.info(`[5/7] claude-rc.service: ${skips.claudeRc}`);
   } else {
-    reporter.info(
-      "[5/7] claude-rc.service: not present on this host — skipping.",
+    const rcUnitPath = join(
+      process.env.HOME ?? "",
+      ".config/systemd/user/claude-rc.service",
     );
+    if (existsSync(rcUnitPath)) {
+      const rcOverride = buildClaudeRcOverride(totalMemGiB, opts.sessions);
+      const rcMemoryMaxGiB = extractMemoryMaxGiB(rcOverride);
+      reporter.info(
+        `[5/7] claude-rc.service: would add MemoryMax=${rcMemoryMaxGiB}G + OOMPolicy=kill drop-in.`,
+      );
+      if (opts.apply) {
+        const dropinDir = join(
+          process.env.HOME ?? "",
+          ".config/systemd/user/claude-rc.service.d",
+        );
+        mkdirSync(dropinDir, { recursive: true });
+        writeFileSync(join(dropinDir, "override.conf"), rcOverride);
+        sh("systemctl", ["--user", "daemon-reload"]);
+        reporter.change("updated", "claude-rc.service.d/override.conf");
+      }
+    } else {
+      reporter.info(
+        "[5/7] claude-rc.service: not present on this host — skipping.",
+      );
+    }
   }
 
   // 6. CLAUDE_CODE_TOOL_MEMORY_LIMIT — written to settings.local.json, NOT the
@@ -501,45 +613,60 @@ function run(opts, reporter) {
   // host's RAM, so committing it would apply one machine's number to every
   // contributor's differently-sized box. settings.local.json is
   // gitignored and merges over settings.json per-checkout.
-  const recommendedGiB = recommendToolMemoryLimitGiB(
-    totalMemGiB,
-    opts.sessions,
-  );
-  const localSettingsPath = join(
-    repoRoot(import.meta.url),
-    ".claude/settings.local.json",
-  );
-  const localSettings = existsSync(localSettingsPath)
-    ? JSON.parse(readFileSync(localSettingsPath, "utf8"))
-    : {};
-  const currentLimit = localSettings.env?.CLAUDE_CODE_TOOL_MEMORY_LIMIT;
-  const currentLimitGiB =
-    typeof currentLimit === "string" ? extractGiBSuffix(currentLimit) : null;
-  if (currentLimitGiB !== null && currentLimitGiB <= recommendedGiB) {
+  if (skips.toolMemoryLimit) {
     reporter.info(
-      `[6/7] CLAUDE_CODE_TOOL_MEMORY_LIMIT: existing ${currentLimit} is ` +
-        `already at or stricter than the derived ${recommendedGiB}G — leaving as-is.`,
+      `[6/7] CLAUDE_CODE_TOOL_MEMORY_LIMIT: ${skips.toolMemoryLimit}`,
     );
   } else {
-    reporter.info(
-      `[6/7] CLAUDE_CODE_TOOL_MEMORY_LIMIT: would set to ${recommendedGiB}G in ` +
-        `.claude/settings.local.json (currently ${currentLimit ?? "unset"}). ` +
-        "Relaunch Claude Code after applying — the cap latches at first tool use.",
+    const recommendedGiB = recommendToolMemoryLimitGiB(
+      totalMemGiB,
+      opts.sessions,
     );
-    if (opts.apply) {
-      localSettings.env = {
-        ...localSettings.env,
-        CLAUDE_CODE_TOOL_MEMORY_LIMIT: `${recommendedGiB}G`,
-      };
-      writeFileSync(
-        localSettingsPath,
-        `${JSON.stringify(localSettings, null, 2)}\n`,
+    const localSettingsPath = join(
+      repoRoot(import.meta.url),
+      ".claude/settings.local.json",
+    );
+    let localSettings = {};
+    try {
+      localSettings = existsSync(localSettingsPath)
+        ? JSON.parse(readFileSync(localSettingsPath, "utf8"))
+        : {};
+    } catch {
+      reporter.info(
+        "[6/7] CLAUDE_CODE_TOOL_MEMORY_LIMIT: .claude/settings.local.json " +
+          "exists but is not valid JSON — leaving it untouched rather than " +
+          "risk overwriting it.",
       );
-      reporter.change(
-        "updated",
-        ".claude/settings.local.json",
-        `(env.CLAUDE_CODE_TOOL_MEMORY_LIMIT=${recommendedGiB}G)`,
+    }
+    const currentLimit = localSettings.env?.CLAUDE_CODE_TOOL_MEMORY_LIMIT;
+    const currentLimitGiB =
+      typeof currentLimit === "string" ? extractGiBSuffix(currentLimit) : null;
+    if (currentLimitGiB !== null && currentLimitGiB <= recommendedGiB) {
+      reporter.info(
+        `[6/7] CLAUDE_CODE_TOOL_MEMORY_LIMIT: existing ${currentLimit} is ` +
+          `already at or stricter than the derived ${recommendedGiB}G — leaving as-is.`,
       );
+    } else {
+      reporter.info(
+        `[6/7] CLAUDE_CODE_TOOL_MEMORY_LIMIT: would set to ${recommendedGiB}G in ` +
+          `.claude/settings.local.json (currently ${currentLimit ?? "unset"}). ` +
+          "Relaunch Claude Code after applying — the cap latches at first tool use.",
+      );
+      if (opts.apply) {
+        localSettings.env = {
+          ...localSettings.env,
+          CLAUDE_CODE_TOOL_MEMORY_LIMIT: `${recommendedGiB}G`,
+        };
+        writeFileSync(
+          localSettingsPath,
+          `${JSON.stringify(localSettings, null, 2)}\n`,
+        );
+        reporter.change(
+          "updated",
+          ".claude/settings.local.json",
+          `(env.CLAUDE_CODE_TOOL_MEMORY_LIMIT=${recommendedGiB}G)`,
+        );
+      }
     }
   }
 

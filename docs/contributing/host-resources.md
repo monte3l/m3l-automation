@@ -41,6 +41,38 @@ the transcript.
 | `CLAUDE_CODE_NO_FLICKER=1` (`.claude/settings.json`)            | Keeps the client's render tree — and memory — flat over a long session                                                                                                                                                                                                                                          | Safe for every host (no per-machine tradeoff), so it's set once in the shared, repo-tracked settings.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | `lefthook-local.yml` `pre-push: parallel: false`                | Forces the entire `pre-push` run serial when the derived host budget (`deriveBudget(detectHostProfile()).concurrentLaneWorkers`, `bin/lib/host-profile.mjs`) comes out to 1 concurrent lane worker — cores, memory, _and_ concurrently running Claude sessions, not RAM alone (P3.5 of adaptive-host-budgeting) | `test`/`typecheck`/`build-exports` each cap their own internal fan-out (turbo/vitest, both 50%, see below), but three already-capped heavy processes can still stack on a small or contended box. Lefthook's own documented [local-override mechanism](https://lefthook.dev/examples/lefthook-local) — gitignored, never edits the shared `lefthook.yml`. The same signal `pnpm verify --isolated` names explicitly.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 
+## macOS
+
+Everything above is Linux-specific — `earlyoom`, zram, `vm.swappiness`,
+`user-.slice`/`MemoryMax`, and `claude-rc.service` are all systemd/cgroup
+mechanisms macOS simply doesn't have. `bin/check-host-resources.mjs` and
+`bin/setup-host-resources.mjs` both carry a real macOS branch rather than
+silently skipping — validated live on an Intel Mac (darwin x64,
+i9-9980HK, 64 GiB RAM):
+
+| Linux mitigation                       | macOS analogue                                                                                       | Configurable here?                                                                                                                 |
+| -------------------------------------- | ---------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `earlyoom`                             | `jetsam`, the in-kernel OOM killer                                                                   | No — not user-configurable, no `--avoid`/`--prefer` equivalent                                                                     |
+| zram swap                              | The always-on in-kernel memory compressor (`vm_stat`'s "Pages occupied by compressor")               | No — cannot be sized, tuned, or disabled                                                                                           |
+| `vm.swappiness`                        | `dynamic_pager` sizes swap automatically                                                             | No equivalent tunable                                                                                                              |
+| `user-.slice` `MemoryMax`              | Nothing — macOS has no cgroups                                                                       | No equivalent to set                                                                                                               |
+| `claude-rc.service`                    | Nothing — this is a systemd user unit; macOS has launchd, not a systemd user manager                 | N/A                                                                                                                                |
+| `CLAUDE_CODE_TOOL_MEMORY_LIMIT`        | None — Anthropic documents this as **Linux/WSL only** (v2.1.233+); it is enforced via a Linux cgroup | No — `setup-host-resources.mjs` deliberately skips writing it on macOS rather than claim a mitigation the CLI cannot enforce there |
+| `lefthook-local.yml` (serial pre-push) | Same mechanism — platform-agnostic, a repo-local config write with no OS dependency                  | Yes — this is the one step that actually runs on macOS                                                                             |
+
+`pnpm check:host-resources` reports what **is** observable on macOS instead:
+jetsam memory pressure (`kern.memorystatus_vm_pressure_level` — warns at
+"warning"/"critical", i.e. `>= 2`), swap usage (`sysctl vm.swapusage` — warns
+once used swap crosses 50% of provisioned swap), and available memory
+(`vm_stat`-derived, informational). It never warns about
+`CLAUDE_CODE_TOOL_MEMORY_LIMIT` being unset on macOS — that would be nagging
+about a setting the CLI itself ignores on this platform.
+
+`node bin/setup-host-resources.mjs` (dry-run or `--apply`) runs unchanged on
+macOS — steps 1-6 each print the reason above instead of a blanket "nothing
+to do", and step 7 (the lane-budget-derived `lefthook-local.yml` override)
+applies exactly as it does on Linux, since it has no OS dependency.
+
 ## Known caveat: silent kills
 
 `CLAUDE_CODE_TOOL_MEMORY_LIMIT` gives **no attribution** when it kills a
