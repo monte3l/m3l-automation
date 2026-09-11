@@ -79,6 +79,7 @@
     "check:host-resources": "node bin/check-host-resources.mjs",
     "bench:gates": "node bin/bench-gates.mjs",
     "check:node-version": "node bin/check-node-version.mjs",
+    "check:pnpm-version": "node bin/check-pnpm-version.mjs",
     "check:claude-cli-version": "node bin/check-claude-cli-version.mjs",
     "setup:host-resources": "node bin/setup-host-resources.mjs",
     "check:integration-stance": "node bin/check-integration-stance.mjs",

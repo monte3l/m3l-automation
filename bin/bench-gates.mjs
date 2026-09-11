@@ -162,7 +162,7 @@ export const LANES = Object.freeze({
   },
   checks: {
     command:
-      "node bin/verify-signed-range.mjs && node bin/check-commit-trailers.mjs && pnpm check:control-chars && pnpm check:no-docker && pnpm check:file-budget && pnpm check:agents && pnpm check:script-docs && pnpm check:cli-docs && pnpm check:review-size && pnpm check:context-budget && pnpm check:provenance && pnpm check:index && pnpm check:adr-index && pnpm check:adr-claims && pnpm check:adr-provenance && pnpm check:adr-worthiness && pnpm check:harness-freshness && pnpm check:typescript-freshness && pnpm check:retrospective && pnpm check:staleness && pnpm check:logs-index && pnpm check:promotion-stamps && pnpm check:lefthook-shim && pnpm check:skill-evals && pnpm check:claude-cli-version && pnpm check:review-policy && pnpm check:hooks && pnpm check:skill-frontmatter && pnpm check:mcp",
+      "node bin/verify-signed-range.mjs && node bin/check-commit-trailers.mjs && pnpm check:control-chars && pnpm check:no-docker && pnpm check:file-budget && pnpm check:agents && pnpm check:script-docs && pnpm check:cli-docs && pnpm check:review-size && pnpm check:context-budget && pnpm check:provenance && pnpm check:index && pnpm check:adr-index && pnpm check:adr-claims && pnpm check:adr-provenance && pnpm check:adr-worthiness && pnpm check:harness-freshness && pnpm check:typescript-freshness && pnpm check:retrospective && pnpm check:staleness && pnpm check:logs-index && pnpm check:promotion-stamps && pnpm check:lefthook-shim && pnpm check:skill-evals && pnpm check:claude-cli-version && pnpm check:pnpm-version && pnpm check:review-policy && pnpm check:hooks && pnpm check:skill-frontmatter && pnpm check:mcp",
     turbo: false,
   },
 });

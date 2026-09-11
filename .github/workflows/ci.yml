@@ -721,6 +721,18 @@ jobs:
       - name: Check Claude Code CLI pin
         run: pnpm check:claude-cli-version
 
+      # package.json's packageManager field is the single authority for the
+      # pnpm version used in dev, CI, and both consumer-image Containerfiles.
+      # It never moved off pnpm@11.9.0 since the initial commit — Dependabot
+      # has no npm-ecosystem concept of the packageManager field, and
+      # check:deps never reads it either. The same-shape sibling of the
+      # Claude Code CLI gate above: asserts an exact version (no range/tag),
+      # both Containerfiles' hardcoded `npm install --global pnpm@X` sites
+      # agree with it, no pnpm/action-setup step overrides it with an
+      # explicit version: input, and at least one site actually reads it.
+      - name: Check pnpm version pin
+        run: pnpm check:pnpm-version
+
       # External-integration stance: every GitHub-talking skill (ADR-0030
       # amendment, 2026-07-27) and every context7-talking skill (ADR-0093)
       # cites its governing ADR, carries no retired policy claim, and names
