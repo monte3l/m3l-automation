@@ -106,7 +106,49 @@ describe reality:
 Nothing else in decision 4 changes: `.node-version` remains the pin, and it is
 now actually authoritative rather than one of two independent literals.
 
+## Update 2026-09-11 — pnpm 12 and an enforced `packageManager` pin
+
+The 2026-08-31 Update above cited `pnpm -v` reporting `11.9.0` as evidence the
+`packageManager` self-management mechanism works. That literal is now stale
+on its own terms — `package.json` pins `pnpm@12.4.0` — which is the revisit
+trigger that Update already declared, not a contradiction of it: the
+mechanism it described ("pnpm self-manages from it") is unchanged and this
+Update is that mechanism doing its job across a major-version bump.
+
+Two things prompted the bump, not just routine freshness:
+
+- **The pin had never moved since the initial commit**, and nothing tracked
+  it — Dependabot has no npm-ecosystem concept of the `packageManager` field
+  (dependabot-core#4830, open since 2022), and `bin/check-deps.mjs` never
+  read it. A one-year-old pin is now closed by a warn-only staleness probe
+  folded into `check:deps` (PR 3 of this sequence).
+- **The pin was independently duplicated**, unguarded, in both
+  `packages/m3l-console-web/Containerfile` and
+  `packages/m3l-console-server/Containerfile` (`RUN npm install --global
+pnpm@<version>`), with nothing catching drift between the three sites. PR 1
+  of this sequence landed `bin/check-pnpm-version.mjs` — a new blocking
+  `check:pnpm-version` gate, modeled on the existing
+  `check:claude-cli-version` gate class — asserting `package.json`, both
+  Containerfiles, and every `pnpm/action-setup` CI step agree on one pin
+  before the bump itself landed, so the bump was protected by a gate already
+  proven to work rather than introducing both at once.
+
+The bump itself carried no exposure to pnpm 12's breaking changes for this
+repo (no `.pnpmfile.cjs`, no `git+ssh`/`git+https` lockfile entries, no
+removed install flag in use) and produced one benign, additive lockfile
+change: pnpm 12 now records its own binary in `pnpm-lock.yaml` under
+`packageManagerDependencies`, plus platform-specific `@pnpm/exe.*` packages
+for it — `lockfileVersion` stayed `'9.0'` and no existing resolved dependency
+changed.
+
+**The Corepack position is unchanged, and better supported than when the
+2026-08-31 Update was written.** Node's TSC has scheduled Corepack's removal
+from Node core starting at Node 25 — the self-managed `packageManager` pin
+this repo already relies on is the durable mechanism, not a stopgap that
+Corepack's departure will strand.
+
 ## Links
 
 - Related: `CLAUDE.md` (Tech Stack, Commands, Git Workflow), `lefthook.yml`,
-  `turbo.json`, `knip.json`, `.github/workflows/ci.yml`.
+  `turbo.json`, `knip.json`, `.github/workflows/ci.yml`,
+  `bin/check-pnpm-version.mjs`, `bin/check-deps.mjs`.

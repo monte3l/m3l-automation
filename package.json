@@ -12,7 +12,7 @@
     "esm",
     "monorepo"
   ],
-  "packageManager": "pnpm@11.9.0",
+  "packageManager": "pnpm@12.4.0",
   "engines": {
     "node": ">=24"
   },
