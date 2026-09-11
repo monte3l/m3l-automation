@@ -34,9 +34,12 @@ const PRESET_NAME = "nightly";
 const PRESET_RELATIVE_PATH = "data/config/presets/agent-operator/nightly.json";
 const OPERATOR_PROFILE = "ops-writer";
 
-/** One recorded invocation, carrying the field under test. */
+/**
+ * One recorded invocation. Deliberately carries ONLY the field under test —
+ * argv is already exhaustively pinned by `cli-surface.test.ts`, and a
+ * recorded-but-never-asserted field reads as coverage while proving nothing.
+ */
 interface RecordedTeardown {
-  readonly args: readonly string[];
   readonly teardown: CliTeardownScope | undefined;
 }
 
@@ -48,7 +51,7 @@ function createTeardownRecorder(): {
   const invocations: RecordedTeardown[] = [];
   const queue: CliRunResult[] = [];
   const runProcess: typeof runCliProcess = (options) => {
-    invocations.push({ args: [...options.args], teardown: options.teardown });
+    invocations.push({ teardown: options.teardown });
     const next = queue.shift();
     if (next === undefined) {
       // A forgotten `enqueueResult` is a fixture bug, not a scenario.

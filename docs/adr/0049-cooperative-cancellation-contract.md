@@ -243,12 +243,20 @@ Three qualifications the maintainer accepted explicitly:
    cover a `SIGKILL` of the reaper's own process. Recovery there is
    `kill -- -<pgid>`. Group teardown is also **POSIX-only**: no
    `process.platform` branch was added (this tree has none in any `src`), and
-   on Windows the negative-pid call is rejected outright, is reported through
-   the errno diagnostic, and then **degrades to the direct `child.kill`** —
-   which is what leaves Windows with exactly today's child-only semantics.
-   That degradation is load-bearing, not tidy: reporting alone would have
-   left a `"group"` run signalling nothing at all, strictly worse than the
-   child-only teardown it replaced.
+   `detached` is not applied on Windows at all, so a `"group"` run there is
+   exactly a `"child"` run. Reaching for a `process.platform` guard was a
+   reversal: the plan had declined one on the belief that this tree contained
+   none, which
+   `packages/m3l-console-server/src/store/store.ts`'s
+   `restrictFilePermissions` disproves — it skips its POSIX-only `chmod` the
+   same way. Gating the spawn option, rather than only handling the failed
+   signal, is what makes the POSIX-only scope cost-free: `detached` would
+   otherwise have removed the child tree from the console's signal group in
+   exchange for a group kill Windows rejects. The signal path is
+   independently defensive — a real errno degrades to the direct
+   `child.kill` rather than reporting and returning unsignalled — which is
+   what keeps any platform where the negation fails at child-only teardown
+   instead of no teardown.
 
 **What the cooperative half still owes.** `m3l` does not thread its own
 cancellation-scope signal into `packages/m3l-cli/src/flow/step.ts`, and

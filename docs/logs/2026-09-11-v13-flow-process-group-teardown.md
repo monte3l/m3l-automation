@@ -210,6 +210,45 @@ row, and the gate passed green with all ~28 new script tests already in place.
 Both decisions are recorded in an `Acknowledged-Should-Fix:` footer, which the
 gate requires either way.
 
+## Second review round, after the rebase
+
+The rebase onto main (8 commits, conflicting only on the generated
+`docs/adr/provenance.json` at three of four replayed commits — taken from main
+each time, then regenerated once) put the branch on a new head, and
+`claude-pr-review` re-read it and returned PASS with two NEW Should-fix items
+and two nits. All four actioned:
+
+- **`detached: true` was applied on every platform.** On Windows the group
+  kill is rejected, so `signalTarget` degrades to `child.kill` — the same reach
+  as `"child"` mode — while `detached` had already removed the child tree from
+  the console's signal group. A net loss with no gain. Fixed by gating the
+  spawn option on `supportsProcessGroups()`, so a `"group"` run on Windows is
+  exactly a `"child"` run. **This reversed an explicit plan decision**, and the
+  reversal was justified by a fact, not a preference: the plan declined a
+  `process.platform` branch on the grounds that "the repo has none anywhere",
+  and `packages/m3l-console-server/src/store/store.ts`'s
+  `restrictFilePermissions` is exactly one, skipping its POSIX-only `chmod` the
+  same way. Confirmed with the maintainer before changing it.
+- **The one deliberate swallow had no test.** Every errno test mocked
+  `process.stderr.write` to succeed, so nothing pinned the behaviour its
+  comment claims to protect. Two tests now do: a throwing stderr must still let
+  the degrade-to-child fallback run, and must not abandon the second group pid
+  inside the reaper's loop. Removing the `catch` fails both.
+- Nit: a comment reading "the reaper iterates a SET" after the registry had
+  become a `Map<pid, ProcessKillLike>` — a stale self-reference I introduced in
+  the previous round's own fix.
+- Nit: `RecordedTeardown.args` was recorded and never asserted. Dropped rather
+  than asserted: argv is already exhaustively pinned in `cli-surface.test.ts`,
+  and a recorded-but-unasserted field reads as coverage while proving nothing.
+
+`should-fix-ack` passed on that push, and it passed **vacuously**: the gate
+checks only that at least one `Acknowledged-Should-Fix:` footer exists anywhere
+in the commit range (`bin/check-should-fix-ack.mjs`'s
+`hasShouldFixAcknowledgment(commitLog)`), so the previous round's footers
+satisfied it while two brand-new findings sat unacknowledged. A green
+`should-fix-ack` says "some finding was once acknowledged", not "the current
+findings are handled" — read the bot comment, never the check mark.
+
 ## Insights
 
 - **A type-system fact can invalidate a plan's forcing function without

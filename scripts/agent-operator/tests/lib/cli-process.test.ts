@@ -689,7 +689,12 @@ function errnoError(code: string, message: string): Error {
 }
 
 describe("runCliProcess — group teardown: the spawn shape", () => {
-  test("teardown: 'group' spawns detached, alongside the unchanged cwd/shell/stdio", async () => {
+  // Scoped to "on a POSIX host" deliberately: `detached` is gated on
+  // `process.platform !== "win32"`, and CI is ubuntu-only, so this asserts
+  // the POSIX arm. The win32 arm is unexecuted here by construction — that
+  // was the accepted cost of making the POSIX-only claim cost-free rather
+  // than merely documented.
+  test("teardown: 'group' spawns detached on a POSIX host, alongside the unchanged cwd/shell/stdio", async () => {
     const harness = createGroupHarness(4242);
     const resultPromise = runCliProcess(harness.options);
 
@@ -704,6 +709,30 @@ describe("runCliProcess — group teardown: the spawn shape", () => {
       stdio: ["ignore", "pipe", "pipe"],
       detached: true,
     });
+  });
+
+  test("the 'detached' key tracks this platform's process-group support exactly", async () => {
+    const child = createFakeChild(4242);
+    const { spawn, calls } = createFakeSpawn(child);
+    const resultPromise = runCliProcess({
+      ...baseOptions,
+      spawn,
+      teardown: "group",
+      kill: vi.fn<ProcessKillLike>(),
+      exitEmitter: new EventEmitter(),
+    });
+
+    child.emit("close", 0, null);
+    await resultPromise;
+
+    // Expressed against the live platform rather than hardcoded, so the
+    // assertion states the actual contract — `detached` iff the OS can be
+    // addressed by a negative pid — on whichever host runs the suite.
+    const call = calls[0];
+    expect(call).toBeDefined();
+    expect(Object.hasOwn(call?.options ?? {}, "detached")).toBe(
+      process.platform !== "win32",
+    );
   });
 
   // `toMatchObject` cannot prove a key's ABSENCE, and `detached === false`
@@ -1034,6 +1063,67 @@ describe("runCliProcess — group teardown: errno handling", () => {
     );
   });
 
+  // The `catch {}` around `process.stderr.write` is the one deliberate swallow
+  // in the module, and every other errno test mocks `write` to SUCCEED — so
+  // without these, nothing pins the behaviour that comment claims to protect:
+  // a broken stderr must not propagate out of the report, must still let the
+  // degrade-to-child fallback run, and must not abandon the teardown.
+  test("a throwing stderr does not abort the teardown — the degraded child kill still happens", async () => {
+    vi.useFakeTimers();
+    vi.spyOn(process.stderr, "write").mockImplementation(() => {
+      throw Object.assign(new Error("write EPIPE"), { code: "EPIPE" });
+    });
+    const harness = createGroupHarness(4242, () => {
+      throw errnoError("EPERM", "kill EPERM");
+    });
+    const resultPromise = runCliProcess({
+      ...harness.options,
+      timeoutMs: 5_000,
+    });
+
+    await vi.advanceTimersByTimeAsync(5_000);
+    const result = await resultPromise;
+
+    expect(result.disposition).toBe("timed-out");
+    // The report threw, yet the fallback still ran: `reportTeardownFailure`
+    // must swallow the write failure AND still return "this was a real fault".
+    expect(harness.child.kill).toHaveBeenCalledWith("SIGTERM");
+  });
+
+  test("a throwing stderr inside the exit reaper does not abandon the remaining group pids", async () => {
+    vi.spyOn(process.stderr, "write").mockImplementation(() => {
+      throw Object.assign(new Error("write EPIPE"), { code: "EPIPE" });
+    });
+    const emitter = new EventEmitter();
+    const killCalls: RecordedKill[] = [];
+    const children = [createFakeChild(7101), createFakeChild(7102)];
+    const promises = children.map((child) => {
+      const { spawn } = createFakeSpawn(child);
+      return runCliProcess({
+        ...baseOptions,
+        spawn,
+        teardown: "group",
+        kill: vi.fn<ProcessKillLike>((target, signal) => {
+          killCalls.push({ pid: target, signal });
+          throw errnoError("EPERM", "kill EPERM");
+        }),
+        exitEmitter: emitter,
+      });
+    });
+
+    emitter.emit("exit");
+
+    // The FIRST pid's report throws. If that escaped the catch, the loop would
+    // abandon the second group — the exact failure the swallow exists to stop.
+    expect(killCalls).toEqual([
+      { pid: -7101, signal: "SIGKILL" },
+      { pid: -7102, signal: "SIGKILL" },
+    ]);
+
+    for (const child of children) child.emit("close", 0, null);
+    await Promise.all(promises);
+  });
+
   test("a throw on the ESCALATED kill, 5s after the promise resolved, never becomes an uncaught exception", async () => {
     vi.useFakeTimers();
     vi.spyOn(process.stderr, "write").mockImplementation(() => true);
@@ -1085,9 +1175,10 @@ describe("runCliProcess — group teardown: the exit reaper", () => {
     expect(harness.killCalls).toEqual([]);
   });
 
-  // The reaper iterates a SET, and production reaches that loop with more than
-  // one entry whenever two flow runs overlap. Every other test here drives one
-  // group at a time, which exercises the loop only at length 1.
+  // The reaper iterates a `Map<pid, ProcessKillLike>`, and production reaches
+  // that loop with more than one entry whenever two flow runs overlap. Every
+  // other test here drives one group at a time, which exercises the loop only
+  // at length 1.
   test("two simultaneously-live groups on one emitter are BOTH group-SIGKILLed by a single 'exit'", async () => {
     const emitter = new EventEmitter();
     const killCalls: RecordedKill[] = [];

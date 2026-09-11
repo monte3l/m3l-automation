@@ -77,7 +77,10 @@ export type SpawnLike = (
  * - `"group"` — the child's whole process group, via a negative-pid
  *   `process.kill`. The child is spawned `detached` so it becomes its own
  *   group leader, which is what makes the group's other members (the flow
- *   step processes `m3l` spawns) reachable. **POSIX-only.**
+ *   step processes `m3l` spawns) reachable. **POSIX-only**, and inert rather
+ *   than harmful elsewhere: on Windows the `detached` spawn option is not
+ *   applied at all (see `supportsProcessGroups`), so a `"group"` run there
+ *   behaves exactly like `"child"`.
  *
  * A string union rather than a boolean: it reads at the call site without a
  * comment, it matches this module's exhaustive-`Record` house style (see
@@ -286,6 +289,26 @@ const KILL_ON_SETTLE: Record<CliRunDisposition, boolean> = {
 interface TeardownPlan {
   readonly scope: CliTeardownScope;
   readonly kill: ProcessKillLike;
+}
+
+/**
+ * Whether this platform can be addressed by a negative pid at all.
+ *
+ * Mirrors `packages/m3l-console-server`'s `restrictFilePermissions`, which
+ * skips its POSIX-only `chmod` the same way — the repo's existing precedent
+ * for guarding a capability that simply does not exist on Windows.
+ *
+ * This gates the `detached` spawn option, not just the signal: on Windows
+ * `process.kill(-pid, …)` is rejected outright, so a `"group"` run there
+ * would degrade to {@link signalTarget}'s direct `child.kill` — the same
+ * reach as `"child"` mode — while `detached` had ALSO removed the child tree
+ * from the console's signal group, costing console-signal propagation for a
+ * group kill the OS was never going to honour. Refusing `detached` up front
+ * makes the POSIX-only claim cost-free rather than merely honest: Windows
+ * keeps exactly today's child-only teardown.
+ */
+function supportsProcessGroups(): boolean {
+  return process.platform !== "win32";
 }
 
 /**
@@ -670,8 +693,12 @@ function spawnOrClassify(options: SpawnAttemptOptions): SpawnAttempt {
       // `"child"` the options object carries no `detached` key at all, so
       // the six non-opted-in surface methods spawn byte-for-byte as before
       // — and a test can prove the absence with `Object.hasOwn` rather than
-      // settling for the weaker `detached === false`.
-      ...(teardown === "group" ? { detached: true } : {}),
+      // settling for the weaker `detached === false`. Windows takes that
+      // same key-absent path even under `"group"`; see
+      // `supportsProcessGroups`.
+      ...(teardown === "group" && supportsProcessGroups()
+        ? { detached: true }
+        : {}),
     });
     return { spawned: true, child };
   } catch (cause) {
