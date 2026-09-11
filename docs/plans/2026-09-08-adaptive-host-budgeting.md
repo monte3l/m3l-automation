@@ -55,6 +55,6 @@ table a submodule's reference page carries, gated by
 | P3.3  | `feat/eslint-cache`             | Phase 2 #3: ESLint `--cache --cache-strategy content`, local-only via `lint:fast` (Stage 3)            | Landed (PR #1159) |
 | P3.4  | `feat/verify-jobs`              | Phase 2 #4: `--jobs N` for `bin/verify-all.mjs` (Stage 3)                                              | Landed (PR #1167) |
 | P3.5  | `feat/lane-scheduling`          | Phase 2 #5: lane scheduling (`--concurrent` vs `--isolated`, lefthook seam) (Stage 3)                  | Landed (PR #1172) |
-| P3.6  | `feat/eslint-concurrency`       | Phase 2 #6: ESLint `--concurrency` > 1, after P3.3/P3.5 (Stage 3)                                      | To Do             |
+| P3.6  | `feat/eslint-concurrency`       | Phase 2 #6: ESLint `--concurrency` > 1, after P3.3/P3.5 (Stage 3)                                      | Landed (PR #1178) |
 | P3.7  | —                               | Phase 2 #7: `/tmp` → tmpfs (Stage 3)                                                                   | To Do             |
 | P3.8  | —                               | Phase 2 #8: parallelise the 29-gate `checks` chain (Stage 3)                                           | To Do             |

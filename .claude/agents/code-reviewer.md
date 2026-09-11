@@ -59,6 +59,15 @@ than silence, because the hub will act on it.
   constructed internally; composition over inheritance.
 - **ESM `.js` extension** on every relative import; **named exports only**;
   **no `any`**, no non-null `!`; no CommonJS.
+- A new `bin/**` self-invocation guard (`if (process.argv[1] === ...)`) must
+  use `fileURLToPath(import.meta.url)`, never `new URL(import.meta.url)
+.pathname` — the latter is percent-encoded while `process.argv[1]` is a
+  decoded path, so it silently never matches on a path with spaces/non-ASCII
+  characters. Diff any new guard against an existing sibling script's guard
+  line (`bin/verify-all.mjs`, `bin/bench-gates.mjs`) rather than trusting it
+  "looks equivalent" — a pre-push review verified the surrounding logic here
+  but missed exactly this, caught only by a post-push bot
+  (`docs/logs/2026-09-11-eslint-concurrency.md`).
 - The `exports` map is the public contract (`.`, `./core`, `./aws`) — flag any
   change to it as a semver event and check the Conventional Commit matches.
 - TSDoc on exported symbols.
