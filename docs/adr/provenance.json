@@ -1969,7 +1969,7 @@
       },
       {
         "path": "bin/check-host-resources.mjs",
-        "blob": "0a560757b14f27235b31991a1d3d88d8f80f8ac7"
+        "blob": "9d0ba30ae59fe9af91e5ab855c6af0f1623261e3"
       },
       {
         "path": "bin/mcp-server.mjs",
@@ -1977,7 +1977,7 @@
       },
       {
         "path": "bin/setup-host-resources.mjs",
-        "blob": "09d134eeb53e8c73ec1a5c3d2c8bed01e6b172c2"
+        "blob": "00e2d4182f79787d868b834fd27d374d9414c480"
       },
       {
         "path": "bin/worktree-setup.mjs",

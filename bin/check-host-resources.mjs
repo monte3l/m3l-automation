@@ -176,6 +176,13 @@ export function parseDarwinSwapDetail(output) {
  * }} facts
  * @returns {{ warnings: string[], info: string[] }}
  */
+
+// Minimum swap actually in use, in GiB, before the swap warning below can
+// fire — paired with the 50% usedFraction check so a small dynamic_pager-
+// grown swap file (macOS sizes it on demand, not upfront) sitting mostly
+// "used" on an otherwise healthy host doesn't cry wolf.
+const SWAP_WARNING_FLOOR_GIB = 2;
+
 export function evaluateDarwinHostResources(facts) {
   const info = [
     "earlyoom/systemd-oomd have no macOS equivalent to configure: jetsam " +
@@ -199,7 +206,15 @@ export function evaluateDarwinHostResources(facts) {
 
   if (facts.swap !== null && facts.swap.totalGiB > 0) {
     const usedFraction = facts.swap.usedGiB / facts.swap.totalGiB;
-    if (usedFraction >= 0.5) {
+    // A bare percentage fires on normal macOS operation: dynamic_pager
+    // grows the swap file on demand rather than provisioning it upfront
+    // (unlike Linux's fixed zram/swapfile size), so a healthy host can sit
+    // at a high used fraction of a small total (e.g. 0.6 GiB of 1 GiB) with
+    // no real pressure at all. Requiring an absolute floor alongside the
+    // percentage keeps this quiet on that normal case while still catching
+    // genuinely heavy swapping — see .claude/rules/harness-artifacts.md on
+    // an advisory check that cries wolf.
+    if (usedFraction >= 0.5 && facts.swap.usedGiB >= SWAP_WARNING_FLOOR_GIB) {
       warnings.push(
         `${facts.swap.usedGiB} GiB of ${facts.swap.totalGiB} GiB swap in ` +
           `use (${Math.round(usedFraction * 100)}%). Heavy swap use is ` +

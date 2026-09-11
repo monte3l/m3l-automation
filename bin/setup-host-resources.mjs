@@ -627,45 +627,67 @@ function run(opts, reporter) {
       ".claude/settings.local.json",
     );
     let localSettings = {};
+    let parseFailed = false;
     try {
       localSettings = existsSync(localSettingsPath)
         ? JSON.parse(readFileSync(localSettingsPath, "utf8"))
         : {};
-    } catch {
-      reporter.info(
+    } catch (error) {
+      parseFailed = true;
+      // Deliberately not including error.message: a JSON.parse SyntaxError
+      // embeds a snippet of the surrounding file content in its message
+      // (V8's own error format), and this file's "env" block is exactly
+      // where a host-local secret would live — echoing it into this
+      // reporter.warn would put it on stderr, in the --json payload's
+      // warnings[], and in a GitHub Actions ::warning:: annotation
+      // (bin/lib/report.mjs). error.name alone (e.g. "SyntaxError") is
+      // safe: it carries no file content.
+      const errorName = error instanceof Error ? error.name : "Error";
+      reporter.warn(
         "[6/7] CLAUDE_CODE_TOOL_MEMORY_LIMIT: .claude/settings.local.json " +
-          "exists but is not valid JSON — leaving it untouched rather than " +
-          "risk overwriting it.",
+          `exists but is not valid JSON (${errorName}) — leaving it untouched ` +
+          "rather than risk overwriting it. Fix the file by hand, then re-run.",
       );
     }
-    const currentLimit = localSettings.env?.CLAUDE_CODE_TOOL_MEMORY_LIMIT;
-    const currentLimitGiB =
-      typeof currentLimit === "string" ? extractGiBSuffix(currentLimit) : null;
-    if (currentLimitGiB !== null && currentLimitGiB <= recommendedGiB) {
-      reporter.info(
-        `[6/7] CLAUDE_CODE_TOOL_MEMORY_LIMIT: existing ${currentLimit} is ` +
-          `already at or stricter than the derived ${recommendedGiB}G — leaving as-is.`,
-      );
+    // Bail out of the rest of this step on a parse failure — falling through
+    // with localSettings still `{}` would make writeFileSync below (under
+    // --apply) silently replace every other key in the user's malformed-but-
+    // recoverable file with a single CLAUDE_CODE_TOOL_MEMORY_LIMIT entry,
+    // exactly the data loss the warning above promises not to cause.
+    if (parseFailed) {
+      // step 6 done; fall through to step 7
     } else {
-      reporter.info(
-        `[6/7] CLAUDE_CODE_TOOL_MEMORY_LIMIT: would set to ${recommendedGiB}G in ` +
-          `.claude/settings.local.json (currently ${currentLimit ?? "unset"}). ` +
-          "Relaunch Claude Code after applying — the cap latches at first tool use.",
-      );
-      if (opts.apply) {
-        localSettings.env = {
-          ...localSettings.env,
-          CLAUDE_CODE_TOOL_MEMORY_LIMIT: `${recommendedGiB}G`,
-        };
-        writeFileSync(
-          localSettingsPath,
-          `${JSON.stringify(localSettings, null, 2)}\n`,
+      const currentLimit = localSettings.env?.CLAUDE_CODE_TOOL_MEMORY_LIMIT;
+      const currentLimitGiB =
+        typeof currentLimit === "string"
+          ? extractGiBSuffix(currentLimit)
+          : null;
+      if (currentLimitGiB !== null && currentLimitGiB <= recommendedGiB) {
+        reporter.info(
+          `[6/7] CLAUDE_CODE_TOOL_MEMORY_LIMIT: existing ${currentLimit} is ` +
+            `already at or stricter than the derived ${recommendedGiB}G — leaving as-is.`,
         );
-        reporter.change(
-          "updated",
-          ".claude/settings.local.json",
-          `(env.CLAUDE_CODE_TOOL_MEMORY_LIMIT=${recommendedGiB}G)`,
+      } else {
+        reporter.info(
+          `[6/7] CLAUDE_CODE_TOOL_MEMORY_LIMIT: would set to ${recommendedGiB}G in ` +
+            `.claude/settings.local.json (currently ${currentLimit ?? "unset"}). ` +
+            "Relaunch Claude Code after applying — the cap latches at first tool use.",
         );
+        if (opts.apply) {
+          localSettings.env = {
+            ...localSettings.env,
+            CLAUDE_CODE_TOOL_MEMORY_LIMIT: `${recommendedGiB}G`,
+          };
+          writeFileSync(
+            localSettingsPath,
+            `${JSON.stringify(localSettings, null, 2)}\n`,
+          );
+          reporter.change(
+            "updated",
+            ".claude/settings.local.json",
+            `(env.CLAUDE_CODE_TOOL_MEMORY_LIMIT=${recommendedGiB}G)`,
+          );
+        }
       }
     }
   }

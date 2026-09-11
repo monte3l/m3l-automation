@@ -280,18 +280,26 @@ describe("evaluateDarwinHostResources", () => {
     expect(result.warnings).toEqual([]);
   });
 
-  test("high swap usage (90%) fires a warning naming the percentage", () => {
+  test("high swap usage (75%, above the absolute floor) fires a warning naming the percentage", () => {
     const result = evaluateDarwinHostResources({
       ...healthyFacts,
-      swap: { totalGiB: 1, usedGiB: 0.9 },
+      swap: { totalGiB: 8, usedGiB: 6 },
     });
-    expect(result.warnings.some((w) => w.includes("90%"))).toBe(true);
+    expect(result.warnings.some((w) => w.includes("75%"))).toBe(true);
   });
 
   test("low swap usage (10%) does NOT fire the swap warning", () => {
     const result = evaluateDarwinHostResources({
       ...healthyFacts,
       swap: { totalGiB: 1, usedGiB: 0.1 },
+    });
+    expect(result.warnings.some((w) => /swap/i.test(w))).toBe(false);
+  });
+
+  test("high swap PERCENTAGE below the absolute floor (dynamic_pager on a healthy host) does NOT fire the swap warning", () => {
+    const result = evaluateDarwinHostResources({
+      ...healthyFacts,
+      swap: { totalGiB: 1, usedGiB: 0.9 }, // 90% but only 0.9 GiB used
     });
     expect(result.warnings.some((w) => /swap/i.test(w))).toBe(false);
   });
