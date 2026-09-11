@@ -20,6 +20,7 @@
 // small plain objects every current claim returns.
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { parsePackageManagerField } from "../check-pnpm-version.mjs";
 
 /**
  * @typedef {{
@@ -151,6 +152,28 @@ function probeWorktreeToolingExists(root) {
 }
 
 /**
+ * Asserts shape, not the literal version — an `expect: "12.4.1"` would rot on
+ * every patch bump and force an ADR Update each time, rebuilding the drift
+ * problem `check:pnpm-version`/`check:deps`'s staleness probe already close.
+ * The major version is included deliberately: stable across patch and minor
+ * bumps, and a future pnpm 13 bump *should* fail this claim, since at that
+ * point ADR-0001's pnpm-12 prose genuinely is stale.
+ *
+ * @param {string} root
+ * @returns {{ manager: string | undefined, exact: boolean, major: number | null }}
+ */
+function probePackageManagerPin(root) {
+  const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
+  const field = parsePackageManagerField(pkg.packageManager);
+  const exact = field !== null && /^\d+\.\d+\.\d+$/.test(field.version);
+  return {
+    manager: field?.name,
+    exact,
+    major: exact ? Number(field.version.split(".")[0]) : null,
+  };
+}
+
+/**
  * @param {string} root
  * @returns {boolean}
  */
@@ -233,6 +256,14 @@ const ADR_CLAIMS = [
     claim: "bin/check-host-resources.mjs exists",
     probe: probeHostResourceGateExists,
     expect: true,
+  },
+  {
+    id: "package-manager-pin",
+    adr: "0001",
+    claim:
+      "package.json's packageManager field pins an exact pnpm 12.x version",
+    probe: probePackageManagerPin,
+    expect: { manager: "pnpm", exact: true, major: 12 },
   },
 ];
 

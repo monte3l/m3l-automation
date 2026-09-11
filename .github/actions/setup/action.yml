@@ -17,10 +17,19 @@ runs:
   steps:
     - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
 
+    # cache-dependency-path folds package.json's packageManager literal into
+    # the cache key alongside the lockfile hash — actions/setup-node's cache
+    # key is otherwise OS/arch + Node version + pnpm-lock.yaml hash only, with
+    # no pnpm-major component, so a pnpm bump would otherwise reuse a store
+    # populated by the old major and lean on --prefer-offline against it. This
+    # busts the cache automatically on every future bump too, not just this one.
     - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
       with:
         node-version-file: .node-version
         cache: pnpm
+        cache-dependency-path: |
+          pnpm-lock.yaml
+          package.json
 
     # Records the runner's real specs in the log so the job-split's assumed
     # 4 vCPU / 16 GB baseline (CLAUDE.md CI perf audit) is verifiable, not

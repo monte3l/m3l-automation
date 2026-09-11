@@ -96,6 +96,25 @@ describe("checkAdrClaims", () => {
     expect(findings[0]?.message).toContain("no longer holds");
   });
 
+  test("returns one finding for a package-manager-pin mismatch", () => {
+    const claims = [
+      {
+        id: "package-manager-pin",
+        adr: "0001",
+        claim:
+          "package.json's packageManager field pins an exact pnpm 12.x version",
+        probe: () => ({ manager: "pnpm", exact: true, major: 13 }),
+        expect: { manager: "pnpm", exact: true, major: 12 },
+      },
+    ];
+    const findings = checkAdrClaims("/fake", claims);
+    expect(findings).toHaveLength(1);
+    expect(findings[0]?.id).toBe("package-manager-pin");
+    expect(findings[0]?.adr).toBe("0001");
+    expect(findings[0]?.message).toContain("ADR-0001");
+    expect(findings[0]?.message).toContain("no longer holds");
+  });
+
   test("a throwing probe produces one finding naming the probe failure, without crashing the rest of the run", () => {
     const claims = [
       {
@@ -161,7 +180,7 @@ describe("checkAdrClaims", () => {
   });
 
   test("live-repo sanity check: every real ADR_CLAIMS entry currently holds", () => {
-    expect(ADR_CLAIMS).toHaveLength(9);
+    expect(ADR_CLAIMS).toHaveLength(10);
     expect(checkAdrClaims(root)).toEqual([]);
   });
 });

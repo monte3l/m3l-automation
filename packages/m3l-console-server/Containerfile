@@ -25,7 +25,7 @@ WORKDIR /repo
 # ADR-0001: no Corepack in this repo. pnpm is installed directly, pinned to
 # the exact `packageManager` version — the same version pnpm/action-setup
 # resolves for CI, just without Corepack as the install mechanism.
-RUN npm install --global pnpm@11.9.0
+RUN npm install --global pnpm@12.4.0
 
 COPY . .
 # `--ignore-scripts`: the root `prepare` script (`lefthook install && node
