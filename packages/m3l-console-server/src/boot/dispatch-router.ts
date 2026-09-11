@@ -21,7 +21,10 @@ import type {
 import type { M3LTelemetryReaderPort } from "../http/routes/telemetry.js";
 import type { M3LDrainController } from "../lifecycle/drain.js";
 import type { M3LConsoleStoreLifecycle } from "../store/store.js";
-import { applyHumanActionAudit } from "./human-action-audit.js";
+import {
+  applyHumanActionAudit,
+  assertHumanActionSpecsAreLive,
+} from "./human-action-audit.js";
 
 /**
  * Builds the router the request listener actually dispatches through: the
@@ -49,8 +52,11 @@ import { applyHumanActionAudit } from "./human-action-audit.js";
  *   repository is wired (see `main.ts`'s `resolveTelemetry`).
  * @returns The compiled dispatch router.
  * @throws {@link "../errors/console-error.js".M3LConsoleError}
- *   `ERR_CONSOLE_INTERNAL` when a non-`GET` route has no audit spec; see
- *   {@link applyHumanActionAudit}.
+ *   `ERR_CONSOLE_INTERNAL` in either direction of the human-action audit
+ *   reconciliation: when a non-`GET` route has no audit spec (see
+ *   {@link applyHumanActionAudit}), or when a spec names a route that is not
+ *   actually registered given `runs`/`sessions` (see
+ *   {@link assertHumanActionSpecsAreLive}).
  *
  * @example
  * ```ts
@@ -84,6 +90,10 @@ export function buildDispatchRouter(
     ...(sessions !== undefined && { sessions }),
     ...(telemetry !== undefined && { telemetry }),
     routes: [],
+  });
+  assertHumanActionSpecsAreLive(consoleRoutes, {
+    runs: runs !== undefined,
+    sessions: sessions !== undefined,
   });
   return createRouter([
     ...applyHumanActionAudit(consoleRoutes, auditPort),

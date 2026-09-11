@@ -15,7 +15,14 @@ import { describe, expect, test, vi } from "vitest";
 
 import type { M3LHumanActionAuditPort } from "../src/audit/port.js";
 import type { M3LHumanActionRecord } from "../src/audit/record.js";
-import { applyHumanActionAudit } from "../src/boot/human-action-audit.js";
+import {
+  applyHumanActionAudit,
+  assertHumanActionSpecsAreLive,
+} from "../src/boot/human-action-audit.js";
+import {
+  HUMAN_ACTION_SPECS,
+  humanActionSpecKey,
+} from "../src/boot/human-action-specs.js";
 import { M3LConsoleError } from "../src/errors/console-error.js";
 import {
   createRequestContext,
@@ -24,8 +31,23 @@ import {
   withParams,
 } from "../src/http/context.js";
 import type { M3LRequestContext } from "../src/http/context.js";
+import { createBuiltInRoutes } from "../src/http/routes/built-in.js";
+import type {
+  M3LRunLauncherPort,
+  M3LRunReaderPort,
+  M3LRunReportPort,
+} from "../src/http/routes/runs.js";
+import type { M3LRunStreamRegistryPort } from "../src/http/routes/run-stream.js";
+import type { M3LScriptCatalogPort } from "../src/http/routes/scripts.js";
+import type {
+  SessionRouteReaderPort,
+  SessionRouteWriterPort,
+} from "../src/http/routes/sessions.js";
+import type { M3LTelemetryReaderPort } from "../src/http/routes/telemetry.js";
 import type { M3LConsoleResult } from "../src/http/stream-response.js";
 import type { M3LRoute } from "../src/http/router.js";
+import { createDrainController } from "../src/lifecycle/drain.js";
+import { createEventStreamHub } from "../src/stream/event-stream.js";
 
 /** A recording port; `failWith` makes every write reject. */
 function createFakePort(failWith?: Error): M3LHumanActionAuditPort & {
@@ -301,6 +323,348 @@ describe("the boot-time exhaustiveness guard", () => {
 
     expect(handler).toHaveBeenCalledTimes(1);
     expect(port.records).toHaveLength(0);
+  });
+});
+
+describe("the boot-time reconciliation (X8a)", () => {
+  /**
+   * Every `HUMAN_ACTION_SPECS` key, hand-typed to keep T1-T6 independent of
+   * the real table's contents — only T7 reconciles against the real thing.
+   */
+  const ALL_HUMAN_ACTION_ROUTE_SIGNATURES: readonly {
+    readonly method: string;
+    readonly path: string;
+  }[] = [
+    { method: "POST", path: "/api/v1/runs" },
+    { method: "POST", path: "/api/v1/runs/:id/cancel" },
+    { method: "GET", path: "/api/v1/runs/:id/report" },
+    { method: "GET", path: "/api/v1/runs/:id/stream" },
+    { method: "POST", path: "/api/v1/sessions" },
+    { method: "POST", path: "/api/v1/sessions/:id/steps" },
+    { method: "POST", path: "/api/v1/sessions/:id/bindings" },
+    { method: "POST", path: "/api/v1/sessions/:id/steps/:stepId/decision" },
+    { method: "POST", path: "/api/v1/sessions/:id/decisions/:decisionId" },
+    { method: "POST", path: "/api/v1/sessions/:id/close" },
+    { method: "POST", path: "/api/v1/sessions/:id/reopen" },
+    { method: "GET", path: "/api/v1/sessions/:id/steps/:stepId/artifact" },
+  ];
+
+  /** Builds an `M3LRoute[]` from method/path signatures, each a no-op handler. */
+  function routesFor(
+    signatures: readonly { readonly method: string; readonly path: string }[],
+  ): M3LRoute[] {
+    return signatures.map(({ method, path }) => ({
+      method,
+      path,
+      auth: "required",
+      handler: () => OK,
+    }));
+  }
+
+  /** Every signature in {@link ALL_HUMAN_ACTION_ROUTE_SIGNATURES} except `omit`. */
+  function allExcept(
+    omit: readonly { readonly method: string; readonly path: string }[],
+  ): { readonly method: string; readonly path: string }[] {
+    return ALL_HUMAN_ACTION_ROUTE_SIGNATURES.filter(
+      (signature) =>
+        !omit.some(
+          (o) => o.method === signature.method && o.path === signature.path,
+        ),
+    );
+  }
+
+  // MUTATION KILLED: dropping the space in the key grammar (or swapping
+  // method/path order) would still let T7 pass, since it only compares
+  // `humanActionSpecKey` outputs against themselves via a `Set` — this pins
+  // the literal format independently.
+  test("humanActionSpecKey formats method and path as `METHOD path`", () => {
+    expect(humanActionSpecKey({ method: "POST", path: "/api/v1/runs" })).toBe(
+      "POST /api/v1/runs",
+    );
+  });
+
+  // MUTATION KILLED: deleting the "any key not present is an orphan"
+  // collection — a fully-covering table with exactly one key omitted must
+  // throw, and the thrown message must name that one key.
+  test("T1: a table missing exactly one specced route throws, naming it", () => {
+    const routes = routesFor(
+      allExcept([{ method: "POST", path: "/api/v1/runs/:id/cancel" }]),
+    );
+
+    expect(() =>
+      assertHumanActionSpecsAreLive(routes, { runs: true, sessions: true }),
+    ).toThrow(M3LConsoleError);
+
+    let thrown: unknown;
+    try {
+      assertHumanActionSpecsAreLive(routes, { runs: true, sessions: true });
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toBeInstanceOf(M3LConsoleError);
+    expect((thrown as M3LConsoleError).message).toMatch(
+      /POST \/api\/v1\/runs\/:id\/cancel/u,
+    );
+  });
+
+  // MUTATION KILLED: deleting the `!wiring.runs || !wiring.sessions` early
+  // return. `http/routes/built-in.ts`'s own "no registered-but-always-404
+  // middle state" guarantee (BuiltInRouteOptions.runs/.sessions TSDoc) means
+  // a partially-wired console legitimately registers only a SUBSET of the
+  // twelve keys — this is what stops the check from refusing to boot every
+  // console that has neither run orchestration nor the session workbench
+  // wired. A health-only table, with neither group wired, must not throw
+  // even though none of the twelve keys are present.
+  test("T2: neither runs nor sessions wired — a health-only table does not throw", () => {
+    const routes: M3LRoute[] = [
+      { method: "GET", path: "/health", auth: "exempt", handler: () => OK },
+    ];
+
+    expect(() =>
+      assertHumanActionSpecsAreLive(routes, { runs: false, sessions: false }),
+    ).not.toThrow();
+  });
+
+  // MUTATION KILLED: narrowing the per-key group check (`humanActionSpecGroup`)
+  // back to an all-or-nothing `!wiring.runs || !wiring.sessions` gate — a
+  // console with run orchestration but no session workbench must not throw
+  // over the eight sessions-group keys it never registers, even though
+  // reconciliation is now genuinely PER-GROUP rather than short-circuited
+  // entirely. (This test alone cannot distinguish "correctly skips the
+  // unwired group" from "skips everything" — T3b below is the one that
+  // does; both must pass.)
+  test("T3: only runs wired — the four runs-group routes alone do not throw", () => {
+    const routes = routesFor(
+      ALL_HUMAN_ACTION_ROUTE_SIGNATURES.filter((signature) =>
+        signature.path.startsWith("/api/v1/runs"),
+      ),
+    );
+
+    expect(() =>
+      assertHumanActionSpecsAreLive(routes, { runs: true, sessions: false }),
+    ).not.toThrow();
+  });
+
+  // MUTATION KILLED (and the whole point of the per-group fix over T3 alone):
+  // reverting to the all-or-nothing `!wiring.runs || !wiring.sessions) return`
+  // early return — under that OLD contract, a `runs`-only console missing one
+  // of its own four runs-group routes never threw, because `sessions: false`
+  // alone short-circuited the entire check. Reconciliation is now PER-GROUP,
+  // so a `runs`-only console must still be held to its OWN wired group, with
+  // the eight (entirely absent) sessions-group keys correctly skipped.
+  test("T3b: only runs wired, missing one runs-group route, throws (sessions stays unchecked)", () => {
+    const routes = routesFor(
+      ALL_HUMAN_ACTION_ROUTE_SIGNATURES.filter(
+        (signature) =>
+          signature.path.startsWith("/api/v1/runs") &&
+          !(
+            signature.method === "POST" &&
+            signature.path === "/api/v1/runs/:id/cancel"
+          ),
+      ),
+    );
+
+    let thrown: unknown;
+    try {
+      assertHumanActionSpecsAreLive(routes, { runs: true, sessions: false });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LConsoleError);
+    expect((thrown as M3LConsoleError).message).toMatch(
+      /POST \/api\/v1\/runs\/:id\/cancel/u,
+    );
+  });
+
+  // Symmetric to T3b, proving the per-group fix is not runs-only-biased: a
+  // `sessions`-only console missing one of its own eight sessions-group
+  // routes must throw too, with the four (entirely absent) runs-group keys
+  // correctly skipped.
+  test("T3c: only sessions wired, missing one sessions-group route, throws (runs stays unchecked)", () => {
+    const routes = routesFor(
+      ALL_HUMAN_ACTION_ROUTE_SIGNATURES.filter(
+        (signature) =>
+          signature.path.startsWith("/api/v1/sessions") &&
+          !(
+            signature.method === "POST" &&
+            signature.path === "/api/v1/sessions/:id/reopen"
+          ),
+      ),
+    );
+
+    let thrown: unknown;
+    try {
+      assertHumanActionSpecsAreLive(routes, { runs: false, sessions: true });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LConsoleError);
+    expect((thrown as M3LConsoleError).message).toMatch(
+      /POST \/api\/v1\/sessions\/:id\/reopen/u,
+    );
+  });
+
+  // MUTATION KILLED: scoping the reconciliation to non-GET routes only — the
+  // OLD `applyHumanActionAudit` guard's own shape, which only ever throws for
+  // a non-GET route with no spec entry. This is exactly the case that old
+  // guard could never catch: a GET view route (`view.run.report`) silently
+  // missing its spec passed straight through, unaudited, with no boot-time
+  // signal at all.
+  test("T4: a table missing a GET view spec (view.run.report) throws", () => {
+    const routes = routesFor(
+      allExcept([{ method: "GET", path: "/api/v1/runs/:id/report" }]),
+    );
+
+    expect(() =>
+      assertHumanActionSpecsAreLive(routes, { runs: true, sessions: true }),
+    ).toThrow(M3LConsoleError);
+  });
+
+  // MUTATION KILLED: moving the throw INSIDE the collection loop (throwing
+  // on the first orphan found, rather than after collecting every orphan) —
+  // this table omits TWO specced routes and must surface BOTH in the SAME,
+  // single thrown error, not fail on the first and never mention the second.
+  test("T5: a table missing two specced routes throws ONE error naming both", () => {
+    const routes = routesFor(
+      allExcept([
+        { method: "POST", path: "/api/v1/sessions/:id/close" },
+        { method: "POST", path: "/api/v1/sessions/:id/reopen" },
+      ]),
+    );
+
+    let thrown: unknown;
+    try {
+      assertHumanActionSpecsAreLive(routes, { runs: true, sessions: true });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LConsoleError);
+    const message = (thrown as M3LConsoleError).message;
+    expect(message).toMatch(/POST \/api\/v1\/sessions\/:id\/close/u);
+    expect(message).toMatch(/POST \/api\/v1\/sessions\/:id\/reopen/u);
+  });
+
+  // MUTATION KILLED: a message regression that drops the "fix it here" file
+  // reference — the thrown message must always point at
+  // boot/human-action-specs.ts, the one file an orphaned spec is fixed in.
+  test("T6: the thrown message names boot/human-action-specs.ts as the file to fix", () => {
+    const routes = routesFor(
+      allExcept([{ method: "POST", path: "/api/v1/runs/:id/cancel" }]),
+    );
+
+    let thrown: unknown;
+    try {
+      assertHumanActionSpecsAreLive(routes, { runs: true, sessions: true });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LConsoleError);
+    expect((thrown as M3LConsoleError).message).toMatch(
+      /boot\/human-action-specs\.ts/u,
+    );
+  });
+
+  // Fixtures below are COPIED (not imported — this repo's test rule
+  // duplicates fixtures per file) from `routes-built-in.test.ts`'s
+  // fully-wired fixture (~lines 405-447): fake orchestrator/registry/hub/
+  // catalog/reportReader/sessionService/telemetryReader, plus a real
+  // `createDrainController`.
+  const fixtureLaunchHandle = {
+    id: "run-1",
+    scriptName: "sqs-etl",
+    status: "running" as const,
+    dryRun: false,
+    executionMode: "spawn",
+  };
+  const fakeOrchestrator: M3LRunLauncherPort = {
+    cancel: () => true,
+    launch: () => fixtureLaunchHandle,
+  };
+  const fakeRegistry: M3LRunReaderPort & M3LRunStreamRegistryPort = {
+    list: () => [],
+    get: () => undefined,
+  };
+  const fakeCatalog: M3LScriptCatalogPort = {
+    list: () => [],
+    describe: () => Promise.resolve({}),
+  };
+  const fakeReportReader: M3LRunReportPort = {
+    read: () => Promise.resolve(undefined),
+  };
+  const fakeSessionService: SessionRouteReaderPort & SessionRouteWriterPort = {
+    getSession: () => undefined,
+    listSessions: () => [],
+    readStepArtifact: () => Promise.resolve(undefined),
+    selectBinding: () => Promise.resolve({ id: "binding-1" }),
+    createSession: () => ({
+      id: "session-1",
+      operator: "alice",
+      correlationId: "corr-1",
+      status: "open",
+      createdAtMs: Date.now(),
+      updatedAtMs: Date.now(),
+    }),
+    closeSession: () => true,
+    reopenSession: () => true,
+    addStep: () => Promise.resolve({ step: { id: "step-1" } }),
+    raiseDecision: () => ({ id: "decision-1" }),
+    answerDecision: () => true,
+    listBindingsForSession: () => [],
+    listStepsForSession: () => [],
+    listDecisionsForSession: () => [],
+  };
+  const fakeTelemetryReader: M3LTelemetryReaderPort = {
+    list: () => [],
+  };
+
+  /** Builds the console's REAL, fully-wired built-in route table. */
+  function buildRealRoutes(): readonly M3LRoute[] {
+    const drain = createDrainController({ timeoutMs: 15_000 });
+    const hub = createEventStreamHub<{ event: string }>({ bufferSize: 10 });
+    return createBuiltInRoutes({
+      drain,
+      startedAt: Date.now(),
+      routes: [],
+      runs: {
+        orchestrator: fakeOrchestrator,
+        registry: fakeRegistry,
+        hub,
+        catalog: fakeCatalog,
+        reportReader: fakeReportReader,
+      },
+      sessions: { reader: fakeSessionService, writer: fakeSessionService },
+      telemetry: fakeTelemetryReader,
+    });
+  }
+
+  // MUTATION KILLED: any real spec-key typo in `human-action-specs.ts` (a
+  // stray `:id` vs a differently-named param, a trailing slash, a wrong
+  // method) — this is the only test in the suite that reconciles against the
+  // REAL route table `createBuiltInRoutes` produces, not a hand-typed
+  // stand-in, so it is the one that makes the fix actually complete.
+  test("T7: the real, fully-wired route table covers every HUMAN_ACTION_SPECS key", () => {
+    const realRoutes = buildRealRoutes();
+    // `humanActionSpecKey` — the PRODUCTION helper, not a re-inlined
+    // template literal — is load-bearing here: it must be the exact same key
+    // grammar `HUMAN_ACTION_SPECS` is keyed by, or this check could pass
+    // while the real `assertHumanActionSpecsAreLive` call below still throws.
+    const registeredKeys = new Set(realRoutes.map(humanActionSpecKey));
+
+    const orphans = [...HUMAN_ACTION_SPECS.keys()].filter(
+      (key) => !registeredKeys.has(key),
+    );
+
+    expect(orphans).toEqual([]);
+    expect(() =>
+      assertHumanActionSpecsAreLive(realRoutes, {
+        runs: true,
+        sessions: true,
+      }),
+    ).not.toThrow();
   });
 });
 

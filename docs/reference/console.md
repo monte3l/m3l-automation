@@ -1348,10 +1348,12 @@ Stated plainly rather than left to be discovered:
   caller-invented route; enforcing its exhaustiveness guard against those
   would make the `routes` seam unusable instead. Every write route the console
   itself serves IS audited, and adding an unaudited one fails at boot.
-- **Read routes are audited by exception, not by default.** The boot-time
-  failure above covers write routes only; a `GET` carrying no audit spec is
-  served undecorated and records nothing. Exactly three reads write a human
-  action — `GET /api/v1/runs/:id/report`, `GET /api/v1/runs/:id/stream` and
+- **Read routes are audited by exception, not by default.** A `GET` carrying
+  no audit spec is served undecorated and records nothing — this is
+  `applyHumanActionAudit`'s route → spec direction, and it covers write
+  routes only: a non-`GET` route with no spec fails at boot, a `GET` with no
+  spec does not. Exactly three reads write a human action —
+  `GET /api/v1/runs/:id/report`, `GET /api/v1/runs/:id/stream` and
   `GET /api/v1/sessions/:id/steps/:stepId/artifact` — because ADR-0070 audits
   the rendering of a sensitive-class artifact, not every read. Collection and
   detail endpoints, `GET /api/v1/telemetry` among them, are excluded by
@@ -1359,6 +1361,20 @@ Stated plainly rather than left to be discovered:
   so it cannot grow silently. An operator's read of a list is therefore
   visible in request telemetry and the access log, but carries no
   by-reference audit entry.
+- **A stale spec belonging to a route group this console did not register is
+  not reported at boot.** `assertHumanActionSpecsAreLive` (X8a) is the
+  reverse direction — spec → route: it fails boot when a `HUMAN_ACTION_SPECS`
+  key names no registered route, closing the typo'd/stale-key gap the guard
+  above leaves open. Reconciliation runs per route group, not all-or-nothing:
+  each spec key's own group (run-governor or session workbench, derived from
+  its path template) is checked only when that group is wired, since every
+  key belongs to one of the two conditionally-registered groups and a
+  partially-wired console legitimately registers only a subset — see
+  `BuiltInRouteOptions.runs`'s "no registered-but-always-404 middle state"
+  guarantee. A console with only `runs` wired is still held to its own four
+  runs-group keys; only a spec belonging to a group this console did not
+  register at all goes unreported at that console's own boot. A fully-wired
+  boot (CI's own configuration) reconciles every key.
 - **`GET /api/v1/scripts` stats the scripts directory on every request.** It
   is deliberately uncached — a freshly scaffolded script must appear without a
   restart — so the cost is `O(scripts)` `stat` calls per call, synchronously,

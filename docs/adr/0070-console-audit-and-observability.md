@@ -769,6 +769,97 @@ follow-up named only in an ADR cannot be projected onto the board:
   prototype chain rather than with `Object.hasOwn`; consistency hygiene, not
   reachable through real filesystem input.
 
+## Update (2026-09-11) — X8a closes: the spec → route direction is reconciled at boot, per route group
+
+X8a — filed by the 2026-09-05 (second) Update above, executing the revisit
+trigger both that Update and the 2026-09-04 Update before it declared — is
+complete. `boot/human-action-audit.ts` gains `assertHumanActionSpecsAreLive`,
+the reverse of `applyHumanActionAudit`'s existing guard: that function checks
+route → spec (every non-`GET` route has one), this checks spec → route (every
+`HUMAN_ACTION_SPECS` key names a route that is actually registered). A typo'd
+or stale key — a renamed path template, a dropped route, a wrong method — now
+fails at boot instead of auditing nothing, silently, forever.
+
+This section supersedes the 2026-09-04 Update's "What this Update does not
+claim" paragraph naming the gap as open, and the X8a bullet under "What X8
+does not close" above.
+
+### The departure from a literal reading of the tracker row
+
+The row asked for "a boot-time reconciliation of the two sets." A literal,
+unconditional reading — every `HUMAN_ACTION_SPECS` key must name a registered
+route, checked on every boot — would refuse to boot any console without run
+orchestration or the session workbench wired. That is not a theoretical edge
+case: it is `createBuiltInRoutes`'s documented "no registered-but-always-404
+middle state" guarantee (`BuiltInRouteOptions.runs`'s own TSDoc), and it is how
+most of this package's own tests boot today. All twelve spec keys belong to
+one of those two conditionally-registered groups (four under `/api/v1/runs`,
+eight under `/api/v1/sessions`), so a partially-wired console legitimately
+registers only a subset.
+
+The first shape shipped — during PR review, before this Update was written —
+gated the whole check on `wiring.runs && wiring.sessions`: reconcile
+everything, or reconcile nothing. Independent review caught what that
+actually meant: a console running only `runs` (a real, documented
+configuration) got **zero** reconciliation, including for its own four
+runs-group keys — the all-or-nothing gate exempted the wired group along with
+the unwired one. That defeated X8a's own purpose for exactly the consoles
+most likely to run it: a single-subsystem deployment.
+
+What shipped instead reconciles **per group**. Each `HUMAN_ACTION_SPECS` key
+carries its group in its own path template — `humanActionSpecGroup` reads it
+off the key text itself (`/api/v1/runs` vs `/api/v1/sessions`), not off the
+registered-routes table — and a key is checked only when `wiring` says its
+own group is live:
+
+```ts
+const orphans = [...HUMAN_ACTION_SPECS.keys()].filter((key) => {
+  if (!wiring[humanActionSpecGroup(key)]) return false;
+  return !live.has(key);
+});
+```
+
+A console with only `runs` wired is still held to its own four runs-group
+keys; only the eight sessions-group keys are exempt, because that group is
+genuinely absent. `boot/dispatch-router.ts` derives `wiring` from its own
+`runs`/`sessions` parameters at the one call site that has them.
+
+The residual gap is narrower than the first shape's: a spec belonging to a
+group this console did not register **at all** goes unreported at that
+console's own boot — there is nothing live to reconcile it against, by
+construction. That residual is closed in CI, not at every boot: a test builds
+the real, fully-wired route table via `createBuiltInRoutes` and reconciles it
+against `HUMAN_ACTION_SPECS` using the same production key helper the runtime
+path uses, so a real typo or stale key fails the suite regardless of which
+console configuration happens to run it locally.
+
+### Rejected alternatives
+
+- **Per-spec `gate: "runs" | "sessions"` metadata.** Declares deployment
+  topology a second time, in a file whose stated purpose is which routes are
+  audited and how; a mislabelled gate on a spec belonging to a group this
+  console does not run produces a spurious production boot failure over a
+  route the console never serves — worse than the gap it would close.
+- **Deriving a key's group from the registered ROUTES table's path prefixes**
+  (as opposed to what shipped, which derives it from the SPEC KEY's own,
+  static path template). Self-maintaining, but a heuristic that goes silent
+  in exactly the worst case: every route under a family deleted at once takes
+  the whole family "dark" in the routes table and silences its specs too. A
+  spec key's own text never vanishes the way a routes-table entry can, which
+  is what makes the shipped classification safe where this one is not.
+- **A maximal `CONSOLE_ROUTE_TEMPLATES` manifest, asserted both ways.**
+  Recurses the defect one level up — nothing then checks that a _template_
+  the manifest declares is ever actually registered, which needs the same
+  fully-wired test this Update ships anyway, at which point the manifest is a
+  third hand-maintained list alongside the two it was meant to reconcile.
+- **A boot-time inert-port probe** (build the full route table at boot with
+  never-invoked ports, config-independently). The only design that is both
+  complete and unconditional at boot, and rejected only for now: it runs a
+  self-test in production against an unstated purity property of nine route
+  constructors, and the day one gains eager validation, an unrelated refactor
+  becomes a universal boot failure with a confusing stack. Recorded here as
+  the escalation path if X8a-class drift recurs after this shape ships.
+
 ## Links
 
 - Programme: [ADR-0064](./0064-m3l-console-programme.md). Store/index:

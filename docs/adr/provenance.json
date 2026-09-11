@@ -1536,10 +1536,10 @@
     "sourceFiles": [
       {
         "path": "docs/reference/console.md",
-        "blob": "befbe839563b4a0ea65af1cab16de821db88c43f"
+        "blob": "77ef565e50c89fe162827228d04bdad789bec212"
       }
     ],
-    "verifiedAt": "2026-09-06"
+    "verifiedAt": "2026-09-11"
   },
   "0067": {
     "sourceFiles": [
@@ -1566,10 +1566,10 @@
       },
       {
         "path": "docs/reference/console.md",
-        "blob": "befbe839563b4a0ea65af1cab16de821db88c43f"
+        "blob": "77ef565e50c89fe162827228d04bdad789bec212"
       }
     ],
-    "verifiedAt": "2026-09-09"
+    "verifiedAt": "2026-09-11"
   },
   "0070": {
     "sourceFiles": [
@@ -1583,7 +1583,7 @@
       },
       {
         "path": "docs/reference/console.md",
-        "blob": "befbe839563b4a0ea65af1cab16de821db88c43f"
+        "blob": "77ef565e50c89fe162827228d04bdad789bec212"
       },
       {
         "path": "docs/ROADMAP.md",
@@ -1594,7 +1594,7 @@
         "blob": "55ae1207f7068ba133455349bbfdede7ec65bcdc"
       }
     ],
-    "verifiedAt": "2026-09-09"
+    "verifiedAt": "2026-09-11"
   },
   "0071": {
     "sourceFiles": [
