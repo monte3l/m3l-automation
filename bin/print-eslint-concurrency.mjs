@@ -9,8 +9,8 @@
  * jobs both call directly. Those stay pinned at `--concurrency=1`: CI's
  * split into two jobs exists specifically because typescript-eslint's
  * `projectService` duplicates the *entire* typed-lint TS program per
- * worker — a prior unsplit `eslint . --concurrency=2` measured 4.6GB vs
- * 4.6GB→9.0GB at `--concurrency=1`, OOM'ing a fixed 4-vCPU/16GB runner
+ * worker — a prior unsplit `eslint .` measured ~4.6GB at `--concurrency=1`
+ * vs ~9.0GB at `--concurrency=2`, OOM'ing a fixed 4-vCPU/16GB runner
  * (issue #734, see `.github/workflows/ci.yml`'s comment above the
  * `lint-library` job). A fixed CI runner spec can't stand in for a live
  * host's actual available memory, so this script only ever runs by hand,
@@ -29,6 +29,7 @@
  *   node bin/print-eslint-concurrency.mjs library    # prints an integer, e.g. "2"
  *   node bin/print-eslint-concurrency.mjs workspace
  */
+import { fileURLToPath } from "node:url";
 import { detectHostProfile, deriveBudget } from "./lib/host-profile.mjs";
 
 /** @typedef {import("./lib/host-profile.mjs").HostProfile} HostProfile */
@@ -53,13 +54,32 @@ export function resolveEslintConcurrency(target, profile) {
   return deriveBudget(profile, { perWorkerGiB }).workers;
 }
 
-if (process.argv[1] === new URL(import.meta.url).pathname) {
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const target = process.argv[2];
+  if (!Object.hasOwn(PER_WORKER_GIB, target)) {
+    // A bad target is a caller/config bug (a typo in whichever
+    // package.json script invokes this), not a transient condition —
+    // fail loudly rather than silently degrading to a working run, unlike
+    // the detectHostProfile() fallback below.
+    process.stderr.write(
+      `print-eslint-concurrency: unknown target ${JSON.stringify(target)} (expected one of: ${Object.keys(PER_WORKER_GIB).join(", ")})\n`,
+    );
+    process.exit(1);
+  }
   try {
     const concurrency = resolveEslintConcurrency(target, detectHostProfile());
     process.stdout.write(String(concurrency));
   } catch (error) {
-    process.stderr.write(`${error.message}\n`);
-    process.exit(1);
+    // detectHostProfile() reads live environment state (os.cpus(),
+    // /proc/meminfo, etc.) and can fail for reasons outside this script's
+    // control. package.json's `--concurrency=$(node
+    // bin/print-eslint-concurrency.mjs <target>)` command substitution
+    // discards THIS process's own exit status regardless — the surrounding
+    // eslint invocation's status is what actually propagates — so fall back
+    // to the safe, always-correct serial value (1) rather than let this
+    // failure interpolate as an empty `--concurrency=`.
+    const message = error instanceof Error ? error.message : String(error);
+    process.stderr.write(`${message}\n`);
+    process.stdout.write("1");
   }
 }

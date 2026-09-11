@@ -4,8 +4,11 @@ import { deriveBudget } from "../lib/host-profile.mjs";
 import { resolveEslintConcurrency } from "../print-eslint-concurrency.mjs";
 
 // print-eslint-concurrency.mjs's effectful top-level work (detectHostProfile,
-// process.stdout.write, process.exit) lives inside an
-// `if (process.argv[1] === new URL(import.meta.url).pathname)` guard — the
+// process.stdout.write, and process.exit — the last for the unknown-target
+// pre-check that fails loudly before the try/catch, distinct from the
+// try/catch's own environmental-failure fallback that writes "1" instead of
+// exiting) lives inside an
+// `if (process.argv[1] === fileURLToPath(import.meta.url))` guard — the
 // same pattern as bin/verify-all.mjs and bin/bench-gates.mjs — so importing
 // `resolveEslintConcurrency` alone never triggers a live host read or a
 // process exit. That entry-point branch is exercised by a live run per
