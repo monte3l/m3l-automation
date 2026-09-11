@@ -1500,7 +1500,7 @@
       },
       {
         "path": "docs/plans/2026-08-20-m3l-console.md",
-        "blob": "b1aedb64c49be7339448793848ba15644182b75d"
+        "blob": "a49f57fc8b38ac4b361f91a7dec584bfa42ad8d8"
       },
       {
         "path": "docs/plans/IMPLEMENTATION.md",
@@ -1583,7 +1583,7 @@
     "sourceFiles": [
       {
         "path": "docs/plans/2026-08-20-m3l-console.md",
-        "blob": "b1aedb64c49be7339448793848ba15644182b75d"
+        "blob": "a49f57fc8b38ac4b361f91a7dec584bfa42ad8d8"
       },
       {
         "path": "docs/plans/IMPLEMENTATION.md",
@@ -1622,7 +1622,7 @@
     "sourceFiles": [
       {
         "path": "docs/plans/2026-08-20-m3l-console.md",
-        "blob": "b1aedb64c49be7339448793848ba15644182b75d"
+        "blob": "a49f57fc8b38ac4b361f91a7dec584bfa42ad8d8"
       },
       {
         "path": "docs/plans/IMPLEMENTATION.md",
@@ -2565,7 +2565,7 @@
       },
       {
         "path": "packages/m3l-console-server/tests/integration/store.integration.test.ts",
-        "blob": "9bce621e4235c7c1dcd3937e5472c1df1bba3363"
+        "blob": "d1f9859c435f45ac7c3c6dff313aeb520441d09e"
       },
       {
         "path": "rules/02-testing.md",
