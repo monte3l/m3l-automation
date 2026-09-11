@@ -7,6 +7,17 @@
  * through `lib/cli-surface.ts`, which is the sole consumer of
  * {@link runCliProcess}.
  *
+ * ## Teardown scope
+ *
+ * A spawn is torn down either at the direct child ({@link CliTeardownScope}
+ * `"child"`, the default) or across the child's whole process group
+ * (`"group"`). Group teardown exists because the `m3l` CLI is a middle link:
+ * it spawns each flow step as its own grandchild and deliberately survives
+ * the first `SIGTERM` to finish teardown, so signalling only the direct
+ * child leaves a step process mutating AWS to completion after the caller
+ * has already been told the run timed out. `"group"` is **POSIX-only** and
+ * is opted into per surface method — today only `flowRun`.
+ *
  * @packageDocumentation
  */
 
@@ -20,6 +31,17 @@ import { StringDecoder } from "node:string_decoder";
  * real process. Module-private: it exists only to constrain {@link SpawnLike}.
  */
 interface CliChildProcess {
+  /**
+   * The child's OS process id, or `undefined` when it never got one.
+   *
+   * Declared OPTIONAL (`pid?`), not required-but-possibly-`undefined`, and
+   * that is forced rather than chosen: `@types/node` declares
+   * `ChildProcess.pid` as `readonly pid?: number | undefined`, and under
+   * `exactOptionalPropertyTypes` an optional property is not assignable to a
+   * required one — a required declaration here would break
+   * {@link defaultSpawn}'s no-cast return of a real `ChildProcess`.
+   */
+  readonly pid?: number | undefined;
   readonly stdout: {
     on(event: "data", listener: (chunk: Buffer) => void): unknown;
     removeAllListeners(event: "data"): unknown;
@@ -46,6 +68,48 @@ export type SpawnLike = (
   args: readonly string[],
   options: Record<string, unknown>,
 ) => CliChildProcess;
+
+/**
+ * How far a teardown signal reaches.
+ *
+ * - `"child"` — the direct child only, via `ChildProcess#kill`. The default,
+ *   and the behaviour every surface method except `flowRun` keeps.
+ * - `"group"` — the child's whole process group, via a negative-pid
+ *   `process.kill`. The child is spawned `detached` so it becomes its own
+ *   group leader, which is what makes the group's other members (the flow
+ *   step processes `m3l` spawns) reachable. **POSIX-only**, and inert rather
+ *   than harmful elsewhere: on Windows the `detached` spawn option is not
+ *   applied at all (see `supportsProcessGroups`), so a `"group"` run there
+ *   behaves exactly like `"child"`.
+ *
+ * A string union rather than a boolean: it reads at the call site without a
+ * comment, it matches this module's exhaustive-`Record` house style (see
+ * {@link KILL_ON_SETTLE}), and a future third mode becomes a compile error
+ * rather than a silently flipped flag.
+ */
+export type CliTeardownScope = "child" | "group";
+
+/**
+ * Injection seam for the process-level `kill` used by `"group"` teardown.
+ *
+ * This seam is mandatory, not stylistic: a test that reached a real
+ * `process.kill(-pid, …)` would signal the Vitest worker's own process
+ * group. Same reason and same shape as `packages/m3l-cli`'s
+ * `escalateBySignal` `target` / `M3LCancellationScopeOptions.killer`.
+ */
+export type ProcessKillLike = (pid: number, signal: NodeJS.Signals) => void;
+
+/**
+ * The one event this module needs from `process` to register its exit
+ * reaper. Kept narrow and structural — like {@link CliChildProcess} — so a
+ * test satisfies it with a plain `EventEmitter` instead of the global
+ * `process`. Module-private for the same reason {@link CliChildProcess} is:
+ * it exists to constrain {@link RunCliProcessOptions.exitEmitter}, not to
+ * ask a caller to name it.
+ */
+interface CliExitEmitter {
+  on(event: "exit", listener: () => void): unknown;
+}
 
 /**
  * Every terminal state {@link runCliProcess} can resolve with. Spawn failure
@@ -109,6 +173,24 @@ export interface RunCliProcessOptions {
   readonly signal?: AbortSignal;
   /** Test injection seam; defaults to a thin wrapper over the real `spawn`. */
   readonly spawn?: SpawnLike;
+  /**
+   * How far a teardown signal reaches. Defaults to `"child"` — today's
+   * behaviour byte-for-byte, including a spawn options object that carries
+   * no `detached` key at all.
+   */
+  readonly teardown?: CliTeardownScope;
+  /**
+   * Test injection seam for the process-level kill `"group"` teardown uses;
+   * defaults to a thin wrapper over `process.kill`. A sibling of
+   * {@link RunCliProcessOptions.spawn}, and mandatory for any test that
+   * opts into `"group"` — see {@link ProcessKillLike}.
+   */
+  readonly kill?: ProcessKillLike;
+  /**
+   * Test injection seam for the emitter the exit reaper registers on;
+   * defaults to `process`. Used only by `"group"` teardown.
+   */
+  readonly exitEmitter?: CliExitEmitter;
 }
 
 const ERROR_CODE_PATTERN = /^[A-Z][A-Z0-9_]{0,31}$/;
@@ -141,6 +223,11 @@ function defaultSpawn(
   options: Record<string, unknown>,
 ): CliChildProcess {
   return nodeSpawn(command, args, options);
+}
+
+/** Wraps `process.kill` as the default {@link ProcessKillLike}. */
+function defaultKill(pid: number, signal: NodeJS.Signals): void {
+  process.kill(pid, signal);
 }
 
 /**
@@ -198,12 +285,235 @@ const KILL_ON_SETTLE: Record<CliRunDisposition, boolean> = {
   "output-truncated": true,
 };
 
+/** How a settled run's teardown signals are addressed. */
+interface TeardownPlan {
+  readonly scope: CliTeardownScope;
+  readonly kill: ProcessKillLike;
+}
+
+/**
+ * Whether this platform can be addressed by a negative pid at all.
+ *
+ * Mirrors `packages/m3l-console-server`'s `restrictFilePermissions`, which
+ * skips its POSIX-only `chmod` the same way — the repo's existing precedent
+ * for guarding a capability that simply does not exist on Windows.
+ *
+ * This gates the `detached` spawn option, not just the signal: on Windows
+ * `process.kill(-pid, …)` is rejected outright, so a `"group"` run there
+ * would degrade to {@link signalTarget}'s direct `child.kill` — the same
+ * reach as `"child"` mode — while `detached` had ALSO removed the child tree
+ * from the console's signal group, costing console-signal propagation for a
+ * group kill the OS was never going to honour. Refusing `detached` up front
+ * makes the POSIX-only claim cost-free rather than merely honest: Windows
+ * keeps exactly today's child-only teardown.
+ */
+function supportsProcessGroups(): boolean {
+  return process.platform !== "win32";
+}
+
+/**
+ * Whether a pid can safely be negated into a process-group target.
+ *
+ * This guard is load-bearing, not hygiene. Two pids are catastrophic rather
+ * than merely wrong once negated, and neither is refused by a truthiness or
+ * sign check:
+ *
+ * - `process.kill(-0, sig)` IS `process.kill(0, sig)`, which POSIX defines as
+ *   "every process in the **caller's own** group" — agent-operator would
+ *   signal itself, and a test would signal the Vitest worker and its
+ *   siblings.
+ * - `process.kill(-1, sig)` is "every process the caller has permission to
+ *   signal", which is strictly worse still. Hence `pid > 1`, not `pid > 0`:
+ *   a real `spawn` never yields pid 1, so refusing it costs nothing and the
+ *   guard becomes sound by construction rather than by that assumption.
+ *
+ * `-NaN` and a fractional pid are a coin flip, and `Number.isInteger` does
+ * not coerce, so a runtime-unsound `"4242"` or `4242n` is refused too.
+ */
+function isGroupTargetablePid(pid: number | undefined): pid is number {
+  return pid !== undefined && Number.isInteger(pid) && pid > 1;
+}
+
+/**
+ * Reports a non-benign teardown-signal failure to stderr, best-effort.
+ *
+ * `process.kill` fails two ways and only one of them is expected:
+ *
+ * - `ESRCH` — the group is already gone. A benign race: the child can drain
+ *   between the settle decision and the `SIGTERM`, or between the `SIGTERM`
+ *   and the escalated `SIGKILL`. Ignored deliberately.
+ * - anything else (`EPERM`, `EINVAL`, and on Windows the negative-pid
+ *   rejection) — a real fault, but one that surfaces AFTER
+ *   {@link runCliProcess} has already resolved (the escalation fires 5 s
+ *   later on an `unref`'d timer), so there is nowhere to return it and
+ *   {@link runCliProcess}'s documented "never a throw" contract forbids
+ *   rethrowing. Follows `packages/m3l-common`'s
+ *   `internal/script/signalHandlers.ts` precedent for exactly this shape: a
+ *   failure that is not actionable from here must still not vanish silently.
+ *
+ * Returns whether the failure was a **real fault** — `true` for anything
+ * reported, `false` for the benign `ESRCH` race. That return is what lets
+ * {@link signalTarget} decide whether a fallback teardown is warranted:
+ * after a real fault there is still a live tree to signal, whereas after
+ * `ESRCH` there is nothing left and a fallback would aim at a pid the OS may
+ * have reused.
+ *
+ * The message carries **only** the errno code and the signal name — never a
+ * pid, a path, or the raw error message. A Node error message embeds the
+ * resolved absolute entrypoint path, and this process's stderr is collected
+ * and read by a model, so this mirrors {@link readFailureCode}'s allow-list
+ * posture rather than relaxing it.
+ */
+function reportTeardownFailure(
+  cause: unknown,
+  signal: NodeJS.Signals,
+): boolean {
+  const code = readFailureCode(cause);
+  if (code === "ESRCH") return false;
+  try {
+    process.stderr.write(
+      `agent-operator: process-group ${signal} failed (${code ?? "UNKNOWN"})\n`,
+    );
+  } catch {
+    // The diagnostic channel itself is gone (a closed or broken stderr). This
+    // is the one place in this module where swallowing is the right answer:
+    // there is no remaining channel to report to, and a throw from here would
+    // propagate out of the exit reaper's loop and abandon every group pid
+    // after this one — losing the teardown to protect a log line.
+  }
+  return true;
+}
+
+/**
+ * Sends one teardown signal at the plan's scope, and **never leaves the
+ * target unsignalled**.
+ *
+ * Three paths reach the direct `child.kill`, and only the first is the
+ * ordinary one:
+ *
+ * 1. `"child"` scope — the default, unchanged.
+ * 2. `"group"` scope with a pid that is not group-targetable (see
+ *    {@link isGroupTargetablePid}). Not a degradation: a child that never
+ *    got a pid never became a group leader, so there is no group to address,
+ *    and `child.kill` on such a child is itself a no-op.
+ * 3. `"group"` scope whose negative-pid send threw a **real fault**. This
+ *    one IS a degradation, and it is load-bearing rather than tidy: without
+ *    it, every non-`ESRCH` errno would report to stderr and return having
+ *    signalled nothing at all — so on Windows, where `process.kill(-pid)` is
+ *    rejected outright, a `"group"` run would tear down NOTHING, strictly
+ *    worse than the child-only teardown it replaced. Degrading here is what
+ *    makes this module's POSIX-only claim mean "the group half is
+ *    POSIX-only" rather than "teardown is POSIX-only".
+ *
+ * The `ESRCH` arm deliberately does NOT degrade: the group is already gone,
+ * so a follow-up `child.kill` would aim at a pid the OS may have reused.
+ */
+function signalTarget(
+  child: CliChildProcess,
+  plan: TeardownPlan,
+  signal: NodeJS.Signals,
+): void {
+  const pid = child.pid;
+  if (plan.scope === "child" || !isGroupTargetablePid(pid)) {
+    child.kill(signal);
+    return;
+  }
+  try {
+    plan.kill(-pid, signal);
+  } catch (cause) {
+    if (reportTeardownFailure(cause, signal)) {
+      child.kill(signal);
+    }
+  }
+}
+
+/**
+ * The live detached group pids each exit emitter is responsible for reaping,
+ * each mapped to the {@link ProcessKillLike} of the run that registered it.
+ *
+ * A `WeakMap` keyed by the emitter, rather than one module-level collection
+ * plus a `WeakSet` of wired emitters, for two reasons: the map's own key
+ * presence already makes listener registration idempotent per emitter, and
+ * keying by emitter keeps a test's injected fake emitter from ever reaping
+ * (or being blamed for) another test's pids — no `vi.resetModules`, whose
+ * first-test cost this repo has measured, and no test-only reset export.
+ * Weak so an emitter that goes out of scope is not retained.
+ *
+ * The value is a `Map` to a per-pid killer, not a bare `Set`, because the
+ * `"exit"` listener is registered exactly once per emitter: closing over the
+ * FIRST run's killer would silently reap every later run's group through a
+ * seam that run never supplied. Production only ever passes
+ * {@link defaultKill}, so that would be invisible there — but it would let a
+ * test believe it exercised its own injected killer when it did not, which
+ * is the vacuous-fixture failure mode, not a cosmetic one.
+ */
+const groupReapersByEmitter = new WeakMap<
+  CliExitEmitter,
+  Map<number, ProcessKillLike>
+>();
+
+/**
+ * Registers a detached group pid with the best-effort exit reaper, and wires
+ * its removal on the child's `"close"`.
+ *
+ * The reaper covers the paths where the escalation timer never gets to fire
+ * because the operator itself is going away: a double-Ctrl-C (the second
+ * signal in `packages/m3l-common`'s `registerShutdownSignals` is a JS
+ * `process.exit()`, which still runs `"exit"` listeners), an uncaught throw,
+ * and a normal exit with a straggler. It deliberately does **not** cover a
+ * `SIGKILL` of agent-operator itself — nothing can, and a detached group
+ * then survives until a human runs `kill -- -<pgid>`.
+ *
+ * Removal is keyed on `"close"` and NOT on settle: `"close"` is the only
+ * event that makes the pid safely reusable by the OS, and de-registering at
+ * settle would blind the reaper during exactly the five-second window in
+ * which the `unref`'d escalation timer can be lost to a process exit.
+ *
+ * `"exit"` listeners must be fully synchronous; `process.kill` is.
+ */
+function trackDetachedGroup(
+  child: CliChildProcess,
+  plan: TeardownPlan,
+  emitter: CliExitEmitter,
+): void {
+  const pid = child.pid;
+  if (!isGroupTargetablePid(pid)) return;
+  const existing = groupReapersByEmitter.get(emitter);
+  const live = existing ?? new Map<number, ProcessKillLike>();
+  if (existing === undefined) {
+    groupReapersByEmitter.set(emitter, live);
+    emitter.on("exit", () => {
+      for (const [groupPid, kill] of live) {
+        try {
+          kill(-groupPid, "SIGKILL");
+        } catch (cause) {
+          // The reaper holds pids, not child handles, so unlike
+          // `signalTarget` it has no direct-child fallback to degrade to —
+          // the report is all there is. The return value is deliberately
+          // unused for that reason.
+          reportTeardownFailure(cause, "SIGKILL");
+        }
+      }
+    });
+  }
+  live.set(pid, plan.kill);
+  child.on("close", () => {
+    live.delete(pid);
+  });
+}
+
 /**
  * Grace period between the initial `SIGTERM` and an escalation to `SIGKILL`
  * for a child that ignores it. Five seconds mirrors the common
  * graceful-shutdown convention (e.g. Docker's default stop timeout): long
  * enough for an `m3l` CLI child to unwind cleanly, short enough that an
  * orphan from a long `dryRunTimeoutMs` (up to 900s) doesn't linger.
+ *
+ * Under `"group"` teardown this window bounds a whole process tree rather
+ * than one process: the `SIGTERM` is broadcast to the group — where `m3l`'s
+ * survival scope and each step's own shutdown handler treat it as a
+ * cooperative first signal — and the `SIGKILL` is the guarantee that the
+ * tree stops even if none of them cooperate.
  */
 const SIGKILL_GRACE_MS = 5_000;
 
@@ -212,13 +522,19 @@ const SIGKILL_GRACE_MS = 5_000;
  * if the child has not closed by then. The escalation timer is `unref()`'d
  * (it can never keep the process alive) and is cancelled the moment the
  * child's own `"close"` fires, so a child that dies from the `SIGTERM`
- * within the grace period is never sent a second signal against a pid the OS
- * may have already reused.
+ * within the grace period is never sent a second signal against a pid — or,
+ * under `"group"`, a pgid — the OS may have already reused.
+ *
+ * Both signals go through the one {@link signalTarget} call shape, so they
+ * can never disagree about scope or about how a pid is validated. Each
+ * re-reads `child.pid`, which a real `ChildProcess` retains through both
+ * `"exit"` and `"close"`, so the escalation addresses the same group the
+ * `SIGTERM` did.
  */
-function killWithEscalation(child: CliChildProcess): void {
-  child.kill("SIGTERM");
+function killWithEscalation(child: CliChildProcess, plan: TeardownPlan): void {
+  signalTarget(child, plan, "SIGTERM");
   const graceTimer = setTimeout(() => {
-    child.kill("SIGKILL");
+    signalTarget(child, plan, "SIGKILL");
   }, SIGKILL_GRACE_MS);
   graceTimer.unref();
   child.on("close", () => {
@@ -242,6 +558,7 @@ function createSettler(
   stderr: StreamCollector,
   timer: NodeJS.Timeout,
   detachAbort: () => void,
+  plan: TeardownPlan,
 ): (outcome: PendingOutcome) => void {
   let settled = false;
   return (outcome) => {
@@ -252,7 +569,7 @@ function createSettler(
     child.stdout.removeAllListeners("data");
     child.stderr.removeAllListeners("data");
     if (KILL_ON_SETTLE[outcome.disposition]) {
-      killWithEscalation(child);
+      killWithEscalation(child, plan);
     }
     resolve({
       ...outcome,
@@ -343,6 +660,7 @@ interface SpawnAttemptOptions {
   readonly entrypoint: string;
   readonly args: readonly string[];
   readonly cwd: string;
+  readonly teardown: CliTeardownScope;
 }
 
 /**
@@ -365,12 +683,22 @@ interface SpawnAttemptOptions {
  * result is read by a model.
  */
 function spawnOrClassify(options: SpawnAttemptOptions): SpawnAttempt {
-  const { spawn, nodeExecPath, entrypoint, args, cwd } = options;
+  const { spawn, nodeExecPath, entrypoint, args, cwd, teardown } = options;
   try {
     const child = spawn(nodeExecPath, [entrypoint, ...args], {
       cwd,
       shell: false, // primary argument-injection defence: no shell, no command line to inject into
       stdio: ["ignore", "pipe", "pipe"], // stdin ignored — a child M3LPrompt can never hang the agent
+      // A CONDITIONAL SPREAD, not `detached: teardown === "group"`: under
+      // `"child"` the options object carries no `detached` key at all, so
+      // the six non-opted-in surface methods spawn byte-for-byte as before
+      // — and a test can prove the absence with `Object.hasOwn` rather than
+      // settling for the weaker `detached === false`. Windows takes that
+      // same key-absent path even under `"group"`; see
+      // `supportsProcessGroups`.
+      ...(teardown === "group" && supportsProcessGroups()
+        ? { detached: true }
+        : {}),
     });
     return { spawned: true, child };
   } catch (cause) {
@@ -388,6 +716,40 @@ function spawnOrClassify(options: SpawnAttemptOptions): SpawnAttempt {
 }
 
 /**
+ * The `"aborted"` result for a call whose signal had already fired before
+ * any child existed: no process ran, so both streams are empty and there is
+ * no exit code or failure code to report.
+ */
+function abortedBeforeSpawn(): CliRunResult {
+  return {
+    disposition: "aborted",
+    exitCode: null,
+    stdout: "",
+    stderr: "",
+    failureCode: undefined,
+  };
+}
+
+/**
+ * Builds the run's {@link TeardownPlan} and, under `"group"`, registers the
+ * new group with the exit reaper — the two facts that must agree, resolved
+ * in one place so a future caller cannot set the scope without arming the
+ * reaper that backstops it.
+ */
+function planTeardown(
+  child: CliChildProcess,
+  teardown: CliTeardownScope,
+  kill: ProcessKillLike,
+  exitEmitter: CliExitEmitter,
+): TeardownPlan {
+  const plan: TeardownPlan = { scope: teardown, kill };
+  if (teardown === "group") {
+    trackDetachedGroup(child, plan, exitEmitter);
+  }
+  return plan;
+}
+
+/**
  * Spawns the `m3l` CLI entrypoint and resolves with its outcome as a value —
  * a spawn failure, a timeout, an abort, and a byte-cap breach are each a
  * {@link CliRunDisposition}, never a throw. The single exception the caller
@@ -399,6 +761,23 @@ function spawnOrClassify(options: SpawnAttemptOptions): SpawnAttempt {
  * written explicitly (even though it is the default) because it is the
  * primary defence — with no shell, there is no command line to inject into.
  * `stdin` is `"ignore"` so a child `M3LPrompt` can never hang the agent.
+ *
+ * `teardown: "group"` changes the Ctrl-C semantics ADR-0049 maps, and in the
+ * direction opposite to what "detached breaks Ctrl-C" suggests. Today the
+ * operator and the `m3l` child share the terminal's foreground process
+ * group, so one Ctrl-C races two settle paths: this function's `"aborted"`
+ * (exit 5) against the child's own `"close"` from that same `SIGINT`
+ * (`"signalled"`, a spawn error). Spawned `detached`, the child's tree is in
+ * its own group and receives nothing from the tty, so the abort listener
+ * wins deterministically and exit 5 becomes MORE reliable on that path, not
+ * less — while the settle-path group kill actually tears the tree down.
+ *
+ * The honest cost: a hard `SIGKILL` of agent-operator now leaves a detached
+ * group nobody reaps, where the shared group previously meant a Ctrl-C
+ * reached the whole tree. {@link trackDetachedGroup}'s exit reaper closes
+ * every softer exit path (including a double-Ctrl-C); a `SIGKILL` of the
+ * operator is a real, narrow regression it cannot cover, recoverable only
+ * with `kill -- -<pgid>`.
  *
  * @example
  * ```ts
@@ -429,6 +808,9 @@ export async function runCliProcess(
     maxOutputBytes,
     signal,
     spawn = defaultSpawn,
+    teardown = "child",
+    kill = defaultKill,
+    exitEmitter = process,
   } = options;
 
   // Checked before the `spawn` call, not inside the `attachAbort` listener:
@@ -441,15 +823,7 @@ export async function runCliProcess(
   // which matters once a single `AbortSignal` outlives many calls (a
   // Bedrock tool loop), where spawn-then-kill would otherwise repeat once
   // per remaining iteration.
-  if (signal?.aborted === true) {
-    return {
-      disposition: "aborted",
-      exitCode: null,
-      stdout: "",
-      stderr: "",
-      failureCode: undefined,
-    };
-  }
+  if (signal?.aborted === true) return abortedBeforeSpawn();
 
   const attempt = spawnOrClassify({
     spawn,
@@ -457,9 +831,12 @@ export async function runCliProcess(
     entrypoint,
     args,
     cwd,
+    teardown,
   });
   if (!attempt.spawned) return attempt.result;
   const child = attempt.child;
+
+  const plan = planTeardown(child, teardown, kill, exitEmitter);
 
   const stdoutCollector = createStreamCollector(maxOutputBytes);
   const stderrCollector = createStreamCollector(maxOutputBytes);
@@ -489,6 +866,7 @@ export async function runCliProcess(
       stderrCollector,
       timer,
       () => detachAbort(),
+      plan,
     );
     const detachAbort = attachAbort(signal, settle);
 

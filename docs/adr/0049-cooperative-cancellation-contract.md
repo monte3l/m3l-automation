@@ -179,6 +179,97 @@ unreachable only until a signal was threaded. Both arms were sanitized in the
 same change set. The abort error accepts no `cause` parameter at all, so the SDK
 payload cannot enter the error chain by any route.
 
+## Update (2026-09-11) — a force-kill backstop under the cooperative contract
+
+This ADR's §"Deliberately out of scope" lists **"Cancelling non-blocking
+work"**: the signal is checked at operation and step boundaries and does not
+interrupt work that never looks at it. That framing stays correct for
+in-process callers, but it left one composition where the signal is not merely
+unchecked — it is unreachable, and a caller who did everything this ADR asks
+still could not stop the work.
+
+**The composition.** `scripts/agent-operator` spawns the `m3l` CLI, and
+`m3l flow run` spawns each flow step as its own grandchild
+(`packages/m3l-cli/src/run/spawn.ts`). Only the first hop was cooperative.
+`scripts/agent-operator/src/lib/cli-process.ts`'s `killWithEscalation`
+signalled the direct child, and `packages/m3l-cli/src/run/cancellation.ts`'s
+survival scope answers a first signal by aborting an `AbortSignal` and
+deliberately staying alive to finish teardown. The follow-up `SIGKILL` five
+seconds later did kill `m3l` — but a `SIGKILL` addressed to one pid does not
+propagate, so the step process kept running. An expired `flowTimeoutMs`
+therefore rejected the caller while an AWS-mutating step ran to completion
+unobserved, with no envelope and — by `lib/cli-surface.ts`'s deliberate
+omission of `--resume` — no recovery path back.
+
+**The decision.** The maintainer's call is a **force-kill backstop on that one
+spawn path**, not a widening of the cooperative contract. `cli-process.ts` now
+carries a `CliTeardownScope` of `"child"` (the default, today's behaviour
+byte-for-byte) or `"group"`. `"group"` spawns `detached`, so the child becomes
+its own process-group leader, and both the `SIGTERM` and the escalated
+`SIGKILL` are addressed to the negated pid, reaching every member of the group
+— `m3l` and the step it spawned. The scope is opted into per method by
+`lib/cli-surface.ts`'s `CliInvocationSpec`, where it is a **required** field
+with seven construction sites; `runFlowRun`'s is the only `"group"`. The other
+six methods keep child-only signalling, because none of them spawns a
+grandchild.
+
+Three qualifications the maintainer accepted explicitly:
+
+1. **The run stays INDETERMINATE.** Teardown bounds the blast radius; it does
+   not undo a partial mutation or produce an envelope.
+   `scripts/agent-operator/src/steps/build-flow-tools.ts` keeps recording the
+   run indeterminate and escalating — that classification was already the
+   truth and remains it. What changes is only that an operator reconciling by
+   hand is now reconciling a _stopped_ flow.
+
+2. **The Ctrl-C path this ADR maps to exit 5 gets MORE deterministic, not
+   less** — the opposite of what "detached breaks Ctrl-C" suggests. Today
+   agent-operator and `m3l` share the terminal's foreground process group, so
+   one `SIGINT` races two settle paths inside `runCliProcess`: the `"aborted"`
+   disposition (which `lib/cli-surface.ts` re-raises as
+   `Core.M3LOperationAbortedError`, exit 5 per ADR-0035's table) against the
+   child's own `"close"` from that same signal, which settles `"signalled"` —
+   a spawn error, never exit 5. Spawned `detached`, the flow tree receives
+   nothing from the tty, so the abort listener wins unconditionally.
+
+3. **One narrow regression, unfixable.** A hard `SIGKILL` of agent-operator
+   itself now leaves a detached group nobody reaps, where the shared group
+   previously meant a Ctrl-C reached the whole tree. `cli-process.ts`'s
+   `trackDetachedGroup` installs a best-effort `process.on("exit")` reaper
+   that covers every softer exit path — including a double-Ctrl-C, because the
+   second signal in
+   `packages/m3l-common/src/internal/script/signalHandlers.ts` is a JS
+   `process.exit()`, which still runs `"exit"` listeners — but nothing can
+   cover a `SIGKILL` of the reaper's own process. Recovery there is
+   `kill -- -<pgid>`. Group teardown is also **POSIX-only**: no
+   `process.platform` branch was added (this tree has none in any `src`), and
+   `detached` is not applied on Windows at all, so a `"group"` run there is
+   exactly a `"child"` run. Reaching for a `process.platform` guard was a
+   reversal: the plan had declined one on the belief that this tree contained
+   none, which
+   `packages/m3l-console-server/src/store/store.ts`'s
+   `restrictFilePermissions` disproves — it skips its POSIX-only `chmod` the
+   same way. Gating the spawn option, rather than only handling the failed
+   signal, is what makes the POSIX-only scope cost-free: `detached` would
+   otherwise have removed the child tree from the console's signal group in
+   exchange for a group kill Windows rejects. The signal path is
+   independently defensive — a real errno degrades to the direct
+   `child.kill` rather than reporting and returning unsignalled — which is
+   what keeps any platform where the negation fails at child-only teardown
+   instead of no teardown.
+
+**What the cooperative half still owes.** `m3l` does not thread its own
+cancellation-scope signal into `packages/m3l-cli/src/flow/step.ts`, and
+`M3LCliFlowStepOptions` declares no per-step timeout, so on the group
+`SIGTERM` an in-process step does not wind down cooperatively — only the
+`SIGKILL` stops it. That is a quality gap, not a correctness one, and it is
+tracked as its own row rather than folded in here: the kernel delivers a group
+signal without passing through `m3l`'s code, so no `packages/m3l-cli` change
+was needed for this backstop to work. Two things that _would_ silently un-fix
+it, worth naming: adding `detached` to `m3l`'s own step spawn, or introducing
+a new process group anywhere under `m3l flow run` — either removes the step
+from the group this backstop addresses.
+
 ## Links
 
 - Related: [ADR-0035 (fault-origin classification, exit codes, the run report and

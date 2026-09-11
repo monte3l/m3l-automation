@@ -10,7 +10,11 @@ import { EventEmitter, getEventListeners } from "node:events";
 import { afterEach, describe, expect, test, vi } from "vitest";
 
 import { runCliProcess } from "../../src/lib/cli-process.js";
-import type { CliRunResult, SpawnLike } from "../../src/lib/cli-process.js";
+import type {
+  CliRunResult,
+  ProcessKillLike,
+  SpawnLike,
+} from "../../src/lib/cli-process.js";
 
 /**
  * The subset of a real `ChildProcess` this fake needs to satisfy the
@@ -26,14 +30,23 @@ interface FakeChildProcess extends EventEmitter {
   readonly stdout: EventEmitter;
   readonly stderr: EventEmitter;
   readonly kill: ReturnType<typeof vi.fn<(signal?: NodeJS.Signals) => boolean>>;
+  /**
+   * Mirrors `ChildProcess.pid`'s own OPTIONAL declaration, so a child built
+   * with no argument has no `pid` own property at all — which is the exact
+   * shape the group-teardown pid guard has to refuse.
+   */
+  readonly pid?: number | undefined;
 }
 
-function createFakeChild(): FakeChildProcess {
+function createFakeChild(pid?: number): FakeChildProcess {
   const child = new EventEmitter() as FakeChildProcess;
   Object.assign(child, {
     stdout: new EventEmitter(),
     stderr: new EventEmitter(),
     kill: vi.fn<(signal?: NodeJS.Signals) => boolean>(() => true),
+    // Conditional so `createFakeChild()` leaves `pid` genuinely ABSENT
+    // rather than present-but-`undefined`.
+    ...(pid === undefined ? {} : { pid }),
   });
   return child;
 }
@@ -610,5 +623,658 @@ describe("runCliProcess — spawn invocation shape", () => {
       shell: false,
       stdio: ["ignore", "pipe", "pipe"],
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// V13 — process-group teardown. `flowRun` is the one surface method that
+// opts in, so these tests drive `runCliProcess` directly with
+// `teardown: "group"`.
+//
+// EVERY group-mode test MUST inject `kill`. A `teardown: "group"` run that
+// reaches the real `process.kill(-pid, …)` would signal the Vitest worker's
+// own process group — that hazard is why the seam exists, so the group
+// harness below always attaches it (and an injected `exitEmitter`, so the
+// reaper never registers on the real `process`).
+// ---------------------------------------------------------------------------
+
+/** One recorded process-level kill: the raw pid argument, exactly as passed. */
+interface RecordedKill {
+  readonly pid: number;
+  readonly signal: NodeJS.Signals;
+}
+
+/**
+ * A group-teardown harness: a fake child with `pid`, a recording `spawn`, a
+ * recording (optionally throwing) `kill`, and a fake exit emitter. The
+ * `options` bag it returns always carries the two seams, so no test can
+ * forget one.
+ */
+function createGroupHarness(
+  pid: number | undefined,
+  killImpl?: (pid: number, signal: NodeJS.Signals) => void,
+): {
+  readonly child: FakeChildProcess;
+  readonly spawnCalls: RecordedSpawnCall[];
+  readonly killCalls: RecordedKill[];
+  readonly emitter: EventEmitter;
+  readonly options: Parameters<typeof runCliProcess>[0];
+} {
+  const child = createFakeChild(pid);
+  const { spawn, calls } = createFakeSpawn(child);
+  const killCalls: RecordedKill[] = [];
+  const emitter = new EventEmitter();
+  const kill = vi.fn<ProcessKillLike>((target, signal) => {
+    killCalls.push({ pid: target, signal });
+    killImpl?.(target, signal);
+  });
+  return {
+    child,
+    spawnCalls: calls,
+    killCalls,
+    emitter,
+    options: {
+      ...baseOptions,
+      spawn,
+      teardown: "group",
+      kill,
+      exitEmitter: emitter,
+    },
+  };
+}
+
+/** Builds an errno-bearing throw shaped like a real `process.kill` failure. */
+function errnoError(code: string, message: string): Error {
+  return Object.assign(new Error(message), { code });
+}
+
+describe("runCliProcess — group teardown: the spawn shape", () => {
+  // Scoped to "on a POSIX host" deliberately: `detached` is gated on
+  // `process.platform !== "win32"`, and CI is ubuntu-only, so this asserts
+  // the POSIX arm. The win32 arm is unexecuted here by construction — that
+  // was the accepted cost of making the POSIX-only claim cost-free rather
+  // than merely documented.
+  test("teardown: 'group' spawns detached on a POSIX host, alongside the unchanged cwd/shell/stdio", async () => {
+    const harness = createGroupHarness(4242);
+    const resultPromise = runCliProcess(harness.options);
+
+    harness.child.emit("close", 0, null);
+    await resultPromise;
+
+    const call = harness.spawnCalls[0];
+    expect(call).toBeDefined();
+    expect(call?.options).toMatchObject({
+      cwd: baseOptions.cwd,
+      shell: false,
+      stdio: ["ignore", "pipe", "pipe"],
+      detached: true,
+    });
+  });
+
+  test("the 'detached' key tracks this platform's process-group support exactly", async () => {
+    const child = createFakeChild(4242);
+    const { spawn, calls } = createFakeSpawn(child);
+    const resultPromise = runCliProcess({
+      ...baseOptions,
+      spawn,
+      teardown: "group",
+      kill: vi.fn<ProcessKillLike>(),
+      exitEmitter: new EventEmitter(),
+    });
+
+    child.emit("close", 0, null);
+    await resultPromise;
+
+    // Expressed against the live platform rather than hardcoded, so the
+    // assertion states the actual contract — `detached` iff the OS can be
+    // addressed by a negative pid — on whichever host runs the suite.
+    const call = calls[0];
+    expect(call).toBeDefined();
+    expect(Object.hasOwn(call?.options ?? {}, "detached")).toBe(
+      process.platform !== "win32",
+    );
+  });
+
+  // `toMatchObject` cannot prove a key's ABSENCE, and `detached === false`
+  // would pass against a spawn that explicitly opts out — a different fact.
+  // The contract is that the six non-opted-in methods spawn byte-for-byte as
+  // before, i.e. with no `detached` own property at all.
+  test.each([
+    ["omitted", {}],
+    ["explicit 'child'", { teardown: "child" as const }],
+  ])(
+    "teardown %s leaves NO 'detached' key on the spawn options object",
+    async (_label, teardownOption) => {
+      const child = createFakeChild(4242);
+      const { spawn, calls } = createFakeSpawn(child);
+      const resultPromise = runCliProcess({
+        ...baseOptions,
+        spawn,
+        ...teardownOption,
+      });
+
+      child.emit("close", 0, null);
+      await resultPromise;
+
+      const call = calls[0];
+      expect(call).toBeDefined();
+      expect(Object.hasOwn(call?.options ?? {}, "detached")).toBe(false);
+    },
+  );
+});
+
+describe("runCliProcess — group teardown: signalling the group", () => {
+  test("a timed-out group run signals the NEGATED pid, escalating to SIGKILL, and never touches child.kill", async () => {
+    vi.useFakeTimers();
+    const harness = createGroupHarness(4242);
+    const resultPromise = runCliProcess({
+      ...harness.options,
+      timeoutMs: 5_000,
+    });
+
+    await vi.advanceTimersByTimeAsync(5_000);
+    const result = await resultPromise;
+
+    expect(result.disposition).toBe("timed-out");
+    expect(harness.killCalls).toEqual([{ pid: -4242, signal: "SIGTERM" }]);
+
+    // The fake child ignores the SIGTERM entirely — exactly what `m3l`'s
+    // survival scope does — so the grace period must escalate.
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(harness.killCalls).toEqual([
+      { pid: -4242, signal: "SIGTERM" },
+      { pid: -4242, signal: "SIGKILL" },
+    ]);
+    // The positive assertions above are only half the contract: a group kill
+    // that ALSO signalled the direct child would double-signal `m3l`.
+    expect(harness.child.kill).not.toHaveBeenCalled();
+  });
+
+  test("a timed-out CHILD-scope run still uses child.kill and never the process-level kill", async () => {
+    vi.useFakeTimers();
+    const child = createFakeChild(4242);
+    const { spawn } = createFakeSpawn(child);
+    const kill = vi.fn<ProcessKillLike>();
+    const resultPromise = runCliProcess({
+      ...baseOptions,
+      spawn,
+      kill,
+      timeoutMs: 5_000,
+    });
+
+    await vi.advanceTimersByTimeAsync(5_000);
+    const result = await resultPromise;
+
+    expect(result.disposition).toBe("timed-out");
+    expect(child.kill).toHaveBeenNthCalledWith(1, "SIGTERM");
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(child.kill).toHaveBeenNthCalledWith(2, "SIGKILL");
+    expect(kill).not.toHaveBeenCalled();
+  });
+
+  test.each([
+    ["aborted", "aborted"],
+    ["output-truncated", "output-truncated"],
+  ])(
+    "the '%s' settle path shares the same group sender",
+    async (_label, expected) => {
+      const harness = createGroupHarness(4242);
+      const controller = new AbortController();
+      const resultPromise = runCliProcess({
+        ...harness.options,
+        maxOutputBytes: 4,
+        signal: controller.signal,
+      });
+
+      if (expected === "aborted") {
+        controller.abort();
+      } else {
+        harness.child.stdout.emit("data", Buffer.from("0123456789"));
+      }
+      const result = await resultPromise;
+
+      expect(result.disposition).toBe(expected);
+      expect(harness.killCalls).toEqual([{ pid: -4242, signal: "SIGTERM" }]);
+    },
+  );
+
+  test("a 'close' inside the grace window cancels the escalation in group mode too", async () => {
+    vi.useFakeTimers();
+    const harness = createGroupHarness(4242);
+    const resultPromise = runCliProcess({
+      ...harness.options,
+      timeoutMs: 5_000,
+    });
+
+    await vi.advanceTimersByTimeAsync(5_000);
+    const result = await resultPromise;
+    expect(result.disposition).toBe("timed-out");
+    expect(harness.killCalls).toHaveLength(1);
+
+    // The group drained from the SIGTERM: a second signal would be aimed at
+    // a pgid the OS may already have reused.
+    harness.child.emit("close", null, "SIGTERM");
+    await vi.advanceTimersByTimeAsync(60_000);
+
+    expect(harness.killCalls).toEqual([{ pid: -4242, signal: "SIGTERM" }]);
+  });
+
+  test.each<[string, "exited" | "signalled" | "spawn-failed"]>([
+    ["exited", "exited"],
+    ["signalled", "signalled"],
+    ["spawn-failed", "spawn-failed"],
+  ])(
+    "never signals the group on the '%s' disposition — the group is already gone or never existed",
+    async (_label, disposition) => {
+      const harness = createGroupHarness(4242);
+      const resultPromise = runCliProcess(harness.options);
+
+      if (disposition === "exited") {
+        harness.child.emit("close", 0, null);
+      } else if (disposition === "signalled") {
+        harness.child.emit("close", null, "SIGKILL");
+      } else {
+        harness.child.emit("error", errnoError("ENOENT", "spawn ENOENT"));
+      }
+      const result = await resultPromise;
+
+      expect(result.disposition).toBe(disposition);
+      expect(harness.killCalls).toEqual([]);
+      expect(harness.child.kill).not.toHaveBeenCalled();
+    },
+  );
+});
+
+describe("runCliProcess — group teardown: the pid guard", () => {
+  // `process.kill(-0, sig)` IS `process.kill(0, sig)` — "every process in the
+  // caller's own group", i.e. agent-operator (or the Vitest worker) signalling
+  // itself. `-NaN` and a fractional pid are a coin flip. Each row asserts the
+  // fallback POSITIVELY as well, so "the process kill was never called" cannot
+  // pass because nothing happened at all.
+  test.each<[string, number | undefined]>([
+    ["absent", undefined],
+    ["0", 0],
+    // `kill(-1, sig)` is "every process the caller may signal" — strictly
+    // worse than the `-0` self-group case, and refused for the same reason.
+    ["1", 1],
+    ["negative", -5],
+    ["fractional", 3.7],
+    ["NaN", Number.NaN],
+  ])(
+    "a %s pid falls back to child.kill and never reaches the process-level kill",
+    async (_label, pid) => {
+      vi.useFakeTimers();
+      const harness = createGroupHarness(pid);
+      const resultPromise = runCliProcess({
+        ...harness.options,
+        timeoutMs: 5_000,
+      });
+
+      await vi.advanceTimersByTimeAsync(5_000);
+      const result = await resultPromise;
+
+      expect(result.disposition).toBe("timed-out");
+      expect(harness.child.kill).toHaveBeenCalledWith("SIGTERM");
+      expect(harness.killCalls).toEqual([]);
+    },
+  );
+
+  // The guard runs at TWO call sites — the settle-path signal and the exit
+  // reaper's registration — so a guard added to only one of them still leaks
+  // a `kill(-0, "SIGKILL")` at process exit.
+  test.each<[string, number | undefined]>([
+    ["absent", undefined],
+    ["0", 0],
+    // `kill(-1, sig)` is "every process the caller may signal" — strictly
+    // worse than the `-0` self-group case, and refused for the same reason.
+    ["1", 1],
+    ["negative", -5],
+    ["fractional", 3.7],
+    ["NaN", Number.NaN],
+  ])(
+    "a %s pid is never registered with the exit reaper either",
+    async (_label, pid) => {
+      const harness = createGroupHarness(pid);
+      const resultPromise = runCliProcess(harness.options);
+
+      harness.emitter.emit("exit");
+      harness.child.emit("close", 0, null);
+      await resultPromise;
+
+      expect(harness.killCalls).toEqual([]);
+    },
+  );
+});
+
+describe("runCliProcess — group teardown: errno handling", () => {
+  test("an ESRCH from the group kill is silent — the group draining before the signal is a benign race", async () => {
+    vi.useFakeTimers();
+    const stderr = vi
+      .spyOn(process.stderr, "write")
+      .mockImplementation(() => true);
+    const harness = createGroupHarness(4242, () => {
+      throw errnoError("ESRCH", "kill ESRCH");
+    });
+    const resultPromise = runCliProcess({
+      ...harness.options,
+      timeoutMs: 5_000,
+    });
+
+    await vi.advanceTimersByTimeAsync(5_000);
+    const result = await resultPromise;
+
+    expect(result.disposition).toBe("timed-out");
+    expect(stderr).not.toHaveBeenCalled();
+    // And deliberately NO fallback: the group is already gone, so a
+    // follow-up direct kill would aim at a pid the OS may have reused.
+    expect(harness.child.kill).not.toHaveBeenCalled();
+  });
+
+  test("an EPERM from the group kill is reported by errno code only — never the pid, the path, or the raw message", async () => {
+    vi.useFakeTimers();
+    const stderr = vi
+      .spyOn(process.stderr, "write")
+      .mockImplementation(() => true);
+    const rawMessage = `kill /repo/packages/m3l-cli/bin/m3l.mjs EPERM`;
+    const harness = createGroupHarness(4242, () => {
+      throw errnoError("EPERM", rawMessage);
+    });
+    const resultPromise = runCliProcess({
+      ...harness.options,
+      timeoutMs: 5_000,
+    });
+
+    await vi.advanceTimersByTimeAsync(5_000);
+    const result = await resultPromise;
+
+    // The promise still resolves with its original disposition: a teardown
+    // fault must never become a throw or a changed outcome.
+    expect(result.disposition).toBe("timed-out");
+    expect(stderr).toHaveBeenCalledTimes(1);
+    const written = String(stderr.mock.calls[0]?.[0] ?? "");
+    expect(written).toContain("EPERM");
+    expect(written).toContain("SIGTERM");
+    expect(written).not.toContain(rawMessage);
+    expect(written).not.toContain(baseOptions.entrypoint);
+    expect(written).not.toContain("4242");
+    // A real fault must DEGRADE to the direct child, never report-and-return:
+    // reporting alone would leave the tree entirely unsignalled.
+    expect(harness.child.kill).toHaveBeenCalledWith("SIGTERM");
+  });
+
+  // The failure mode this closes: a `"group"` run whose negative-pid send is
+  // rejected outright — which is exactly what Windows does — used to report
+  // to stderr and return having signalled NOTHING, strictly worse than the
+  // child-only teardown it replaced.
+  test.each([
+    ["EPERM", "EPERM"],
+    ["EINVAL (the Windows-shaped rejection)", "EINVAL"],
+    ["ENOSYS", "ENOSYS"],
+  ])(
+    "a %s group send degrades to the direct child for BOTH signals, so teardown is never a no-op",
+    async (_label, code) => {
+      vi.useFakeTimers();
+      vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+      const harness = createGroupHarness(4242, () => {
+        throw errnoError(code, `kill ${code}`);
+      });
+      const resultPromise = runCliProcess({
+        ...harness.options,
+        timeoutMs: 5_000,
+      });
+
+      await vi.advanceTimersByTimeAsync(5_000);
+      const result = await resultPromise;
+
+      expect(result.disposition).toBe("timed-out");
+      expect(harness.child.kill).toHaveBeenNthCalledWith(1, "SIGTERM");
+
+      await vi.advanceTimersByTimeAsync(5_000);
+      expect(harness.child.kill).toHaveBeenNthCalledWith(2, "SIGKILL");
+      // The group send is still attempted first, every time — the fallback is
+      // a degradation, not a replacement.
+      expect(harness.killCalls).toEqual([
+        { pid: -4242, signal: "SIGTERM" },
+        { pid: -4242, signal: "SIGKILL" },
+      ]);
+    },
+  );
+
+  test("a code-less throw from the group kill is still reported, as UNKNOWN", async () => {
+    vi.useFakeTimers();
+    const stderr = vi
+      .spyOn(process.stderr, "write")
+      .mockImplementation(() => true);
+    const harness = createGroupHarness(4242, () => {
+      throw new Error("no code here");
+    });
+    const resultPromise = runCliProcess({
+      ...harness.options,
+      timeoutMs: 5_000,
+    });
+
+    await vi.advanceTimersByTimeAsync(5_000);
+    const result = await resultPromise;
+
+    expect(result.disposition).toBe("timed-out");
+    expect(String(stderr.mock.calls[0]?.[0] ?? "")).toContain("UNKNOWN");
+    expect(String(stderr.mock.calls[0]?.[0] ?? "")).not.toContain(
+      "no code here",
+    );
+  });
+
+  // The `catch {}` around `process.stderr.write` is the one deliberate swallow
+  // in the module, and every other errno test mocks `write` to SUCCEED — so
+  // without these, nothing pins the behaviour that comment claims to protect:
+  // a broken stderr must not propagate out of the report, must still let the
+  // degrade-to-child fallback run, and must not abandon the teardown.
+  test("a throwing stderr does not abort the teardown — the degraded child kill still happens", async () => {
+    vi.useFakeTimers();
+    vi.spyOn(process.stderr, "write").mockImplementation(() => {
+      throw Object.assign(new Error("write EPIPE"), { code: "EPIPE" });
+    });
+    const harness = createGroupHarness(4242, () => {
+      throw errnoError("EPERM", "kill EPERM");
+    });
+    const resultPromise = runCliProcess({
+      ...harness.options,
+      timeoutMs: 5_000,
+    });
+
+    await vi.advanceTimersByTimeAsync(5_000);
+    const result = await resultPromise;
+
+    expect(result.disposition).toBe("timed-out");
+    // The report threw, yet the fallback still ran: `reportTeardownFailure`
+    // must swallow the write failure AND still return "this was a real fault".
+    expect(harness.child.kill).toHaveBeenCalledWith("SIGTERM");
+  });
+
+  test("a throwing stderr inside the exit reaper does not abandon the remaining group pids", async () => {
+    vi.spyOn(process.stderr, "write").mockImplementation(() => {
+      throw Object.assign(new Error("write EPIPE"), { code: "EPIPE" });
+    });
+    const emitter = new EventEmitter();
+    const killCalls: RecordedKill[] = [];
+    const children = [createFakeChild(7101), createFakeChild(7102)];
+    const promises = children.map((child) => {
+      const { spawn } = createFakeSpawn(child);
+      return runCliProcess({
+        ...baseOptions,
+        spawn,
+        teardown: "group",
+        kill: vi.fn<ProcessKillLike>((target, signal) => {
+          killCalls.push({ pid: target, signal });
+          throw errnoError("EPERM", "kill EPERM");
+        }),
+        exitEmitter: emitter,
+      });
+    });
+
+    emitter.emit("exit");
+
+    // The FIRST pid's report throws. If that escaped the catch, the loop would
+    // abandon the second group — the exact failure the swallow exists to stop.
+    expect(killCalls).toEqual([
+      { pid: -7101, signal: "SIGKILL" },
+      { pid: -7102, signal: "SIGKILL" },
+    ]);
+
+    for (const child of children) child.emit("close", 0, null);
+    await Promise.all(promises);
+  });
+
+  test("a throw on the ESCALATED kill, 5s after the promise resolved, never becomes an uncaught exception", async () => {
+    vi.useFakeTimers();
+    vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    const harness = createGroupHarness(4242, () => {
+      throw errnoError("EPERM", "kill EPERM");
+    });
+    const resultPromise = runCliProcess({
+      ...harness.options,
+      timeoutMs: 5_000,
+    });
+
+    await vi.advanceTimersByTimeAsync(5_000);
+    await resultPromise;
+
+    // If the SIGKILL send sat outside the try, this advance would throw out
+    // of the timer callback and fail the run, not just this test. The paired
+    // length assertion is what proves the escalation actually happened.
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(harness.killCalls).toHaveLength(2);
+  });
+});
+
+describe("runCliProcess — group teardown: the exit reaper", () => {
+  test("a live detached group at process 'exit' is group-SIGKILLed", async () => {
+    const harness = createGroupHarness(4242);
+    const resultPromise = runCliProcess(harness.options);
+
+    // The operator is going away with the group still live — a double-Ctrl-C
+    // (whose second signal is a JS `process.exit()`), an uncaught throw, or a
+    // normal exit with a straggler.
+    harness.emitter.emit("exit");
+
+    expect(harness.killCalls).toEqual([{ pid: -4242, signal: "SIGKILL" }]);
+
+    harness.child.emit("close", 0, null);
+    await resultPromise;
+  });
+
+  // Sibling of the test above, and vacuous without it: "kills nothing" passes
+  // trivially against a reaper that never fires at all.
+  test("a group whose child already closed is NOT signalled at 'exit' — the pid is reusable by then", async () => {
+    const harness = createGroupHarness(4242);
+    const resultPromise = runCliProcess(harness.options);
+
+    harness.child.emit("close", 0, null);
+    await resultPromise;
+    harness.emitter.emit("exit");
+
+    expect(harness.killCalls).toEqual([]);
+  });
+
+  // The reaper iterates a `Map<pid, ProcessKillLike>`, and production reaches
+  // that loop with more than one entry whenever two flow runs overlap. Every
+  // other test here drives one group at a time, which exercises the loop only
+  // at length 1.
+  test("two simultaneously-live groups on one emitter are BOTH group-SIGKILLed by a single 'exit'", async () => {
+    const emitter = new EventEmitter();
+    const killCalls: RecordedKill[] = [];
+    const kill = vi.fn<ProcessKillLike>((target, signal) => {
+      killCalls.push({ pid: target, signal });
+    });
+    const children = [createFakeChild(5101), createFakeChild(5102)];
+    const promises = children.map((child) => {
+      const { spawn } = createFakeSpawn(child);
+      return runCliProcess({
+        ...baseOptions,
+        spawn,
+        teardown: "group",
+        kill,
+        exitEmitter: emitter,
+      });
+    });
+
+    // Neither child has closed — both groups are live at exit time.
+    emitter.emit("exit");
+
+    expect(killCalls).toEqual([
+      { pid: -5101, signal: "SIGKILL" },
+      { pid: -5102, signal: "SIGKILL" },
+    ]);
+
+    for (const child of children) child.emit("close", 0, null);
+    await Promise.all(promises);
+  });
+
+  // The `"exit"` listener is registered ONCE per emitter, so a reaper that
+  // closed over the first run's killer would reap every later run's group
+  // through a seam that run never supplied — invisible in production (always
+  // the real `process.kill`) but enough to make a test believe it exercised
+  // its own spy when it did not.
+  test("each live group is reaped through the kill seam ITS OWN run supplied", async () => {
+    const emitter = new EventEmitter();
+    const callsA: RecordedKill[] = [];
+    const callsB: RecordedKill[] = [];
+    const children = [createFakeChild(6101), createFakeChild(6102)];
+    const promises = [callsA, callsB].map((sink, index) => {
+      const child = children[index];
+      expect(child).toBeDefined();
+      const { spawn } = createFakeSpawn(child as FakeChildProcess);
+      return runCliProcess({
+        ...baseOptions,
+        spawn,
+        teardown: "group",
+        kill: vi.fn<ProcessKillLike>((target, signal) => {
+          sink.push({ pid: target, signal });
+        }),
+        exitEmitter: emitter,
+      });
+    });
+
+    emitter.emit("exit");
+
+    expect(callsA).toEqual([{ pid: -6101, signal: "SIGKILL" }]);
+    expect(callsB).toEqual([{ pid: -6102, signal: "SIGKILL" }]);
+
+    for (const child of children) child.emit("close", 0, null);
+    await Promise.all(promises);
+  });
+
+  test("the 'exit' listener is registered once per emitter, not once per spawn", async () => {
+    const emitter = new EventEmitter();
+    for (const pid of [4242, 4243, 4244]) {
+      const child = createFakeChild(pid);
+      const { spawn } = createFakeSpawn(child);
+      const resultPromise = runCliProcess({
+        ...baseOptions,
+        spawn,
+        teardown: "group",
+        kill: vi.fn<ProcessKillLike>(),
+        exitEmitter: emitter,
+      });
+      child.emit("close", 0, null);
+      await resultPromise;
+    }
+
+    expect(emitter.listenerCount("exit")).toBe(1);
+  });
+
+  test("a child-scope run registers no exit listener at all", async () => {
+    const emitter = new EventEmitter();
+    const child = createFakeChild(4242);
+    const { spawn } = createFakeSpawn(child);
+    const resultPromise = runCliProcess({
+      ...baseOptions,
+      spawn,
+      exitEmitter: emitter,
+    });
+
+    child.emit("close", 0, null);
+    await resultPromise;
+
+    expect(emitter.listenerCount("exit")).toBe(0);
   });
 });

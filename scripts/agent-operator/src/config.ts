@@ -37,17 +37,27 @@ const FLOW_TIMEOUT_MS_MAX = 1_800_000; // 30 minutes
  * Deliberately NOT `dryRunTimeoutMs`, unlike `run`/`triageRun`, which reuse
  * that budget because one script's config load and work dwarf a `list`. A
  * flow spawns N scripts sequentially, so `dryRunTimeoutMs`'s 120,000 ms is
- * the wrong unit here, and the failure mode is worse than a lost read:
- * `cli-process` resolves `"timed-out"` and sends SIGTERM only to its direct
- * child, the `m3l` CLI — which traps SIGTERM in a survival scope and keeps
- * running, so the follow-up SIGKILL never reaches the flow step spawned as
- * its own grandchild. `flowRun` rejects while an AWS-mutating step may keep
- * running to completion, unobserved, with no envelope and no step account,
- * and this seam deliberately never emits `--resume` (see
- * `lib/cli-surface.ts`'s `buildArgv` case for `flowRun`), so there is no
- * automated recovery either way. This is UNSOLVED — the budget is generous
- * and operator-controlled precisely because it only bounds how long before
- * a human has to go check by hand, not because expiry is safe. That
+ * the wrong unit here, and what expiry costs is larger than a lost read.
+ *
+ * This budget now bounds a flow's blast radius rather than only bounding how
+ * long before a human has to go look. `flowRun` is the one surface method
+ * that opts into `"group"` teardown (`lib/cli-process.ts`'s
+ * {@link "./lib/cli-process.js".CliTeardownScope}): its `m3l` child is
+ * spawned `detached`, so on expiry the `SIGTERM` — and the `SIGKILL` five
+ * seconds later — reach the whole process group, including the flow step
+ * `m3l` spawned as its own grandchild. A step that ignores the cooperative
+ * first signal is killed with the group, so an expired flow stops within
+ * roughly `flowTimeoutMs + 5s` instead of running to completion unobserved.
+ * POSIX-only.
+ *
+ * What expiry still does NOT buy, and why the budget should stay generous:
+ * the run's effects are INDETERMINATE, not undone. A step killed mid-mutation
+ * leaves whatever it had already written, this seam deliberately never emits
+ * `--resume` (see `lib/cli-surface.ts`'s `buildArgv` case for `flowRun`), and
+ * no envelope or step account survives the kill — `steps/build-flow-tools.ts`
+ * records the run indeterminate and escalates, which is the truth, not a
+ * recovery. A human still has to reconcile by hand; expiry now guarantees
+ * they are reconciling a stopped flow rather than chasing a live one. That
  * asymmetry is why `flowTimeoutMs` is its own declared parameter rather
  * than an alias.
  */

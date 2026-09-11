@@ -57,10 +57,14 @@
  * still holds the original rejection, so that is where the recording and the
  * structural no-retry guard both live now.
  *
- * The underlying orphan-grandchild problem is NOT fixed here, and is tracked
- * separately: fixing it means spawning `detached` and group-killing on
- * timeout, which changes signal semantics in `lib/cli-process.ts` shared by
- * all seven `AgentCliSurface` methods, not just `flowRun`.
+ * The teardown half of the timeout is not this module's either: it lives in
+ * `lib/cli-process.ts`, which spawns `flowRun`'s child `detached` and
+ * signals the whole process group on expiry (`CliTeardownScope`), so the
+ * flow step spawned as `m3l`'s grandchild is killed with it. That scope is
+ * opted into per method by `lib/cli-surface.ts`'s `CliInvocationSpec`, so
+ * the other six `AgentCliSurface` methods keep child-only signalling.
+ * Teardown bounds the flow; it does not make the run's effects known, which
+ * is why the INDETERMINATE recording below stays exactly as it is.
  *
  * @packageDocumentation
  */
