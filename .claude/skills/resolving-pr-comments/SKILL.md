@@ -368,6 +368,13 @@ based on the findings resolved:
   ```
   Acknowledged-Should-Fix: 1 fixed, 1 left as a structural change — see body
   ```
+  **Keep this line under 100 characters** — commitlint's default
+  `footer-max-line-length` rule (no override in `commitlint.config.js`)
+  rejects the whole commit outright if the trailer line is longer, even
+  though the body above it can run much longer. A rejected commit here
+  means nothing lands (git leaves the staged changes intact), so retry with
+  a shorter trailer rather than a shorter body — the "Not addressed"
+  bullets already carry the detail this trailer only needs to point at.
   If Step 4 fixed every Should-fix finding and there is nothing else to commit
   (a PASS invocation where every fix was itself a targeted line change already
   staged), a normal commit carries the footer fine. If Step 4 left every
