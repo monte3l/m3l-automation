@@ -1,6 +1,7 @@
 # 0061. Agent decision log: an append-only audit artifact class
 
 - **Status:** Accepted
+- **Relations:** amended-by: 0102
 - **Date:** 2026-08-20
 - **Deciders:** Enrico Lionello (maintainer); Claude (design synthesis)
 
@@ -86,6 +87,39 @@ writer producing a new artifact class:
 - **Semver impact:** none from this ADR (docs only). Implementation is an
   **additive minor** on `m3l-common`.
 
+## Update (2026-09-12) — the tamper-evidence exclusion is lifted, in a bounded scope
+
+[ADR-0102](./0102-sealed-segment-manifest.md) amends this ADR. The
+Consequences bullet above concedes that "append-only" here is
+"filesystem-honest, not cryptographically tamper-evident (recorded as out of
+scope)". That exclusion no longer holds as written: the decision log's writer
+now seals each segment it rotates away from into one directory-wide
+`manifest.jsonl` carrying that segment's entry count, byte length and a plain
+sha256 of its raw bytes, and a sealed segment that later goes missing
+escalates instead of passing silently.
+
+The lift is partial, and the boundary is worth stating precisely rather than
+leaving a reader to infer that the whole exclusion fell:
+
+- Now tamper-**evident**: a sealed segment's contents and its existence.
+  Mutating or deleting one after it was sealed is detected — including the
+  deletion of a date's own last segment, which the read path's
+  `assertNoSequenceGap` explicitly could not see.
+- Still only filesystem-honest: the **active** segment (not yet sealed), any
+  segment written before the manifest's `baseline` record (never
+  retro-digested, because a digest taken now cannot vouch for bytes an
+  earlier process wrote), and the manifest itself — deleting it downgrades
+  the trail to unproven rather than raising an alarm. ADR-0102 records each
+  of these explicitly, and none of them is closable without state outside the
+  stream directory.
+
+Nothing in this ADR's Decision changes: the `data/agent-log/` location, the
+entry schema, the names-never-values stance and the loud-write rule all
+stand. The seal is deliberately **not** governed by the loud-write rule — it
+is best-effort, and a failed seal never fails the append it follows, because
+refusing an append would discard a new auditable record to defend a proof
+about an older one. The Status stays Accepted.
+
 ## Links
 
 - Programme: [ADR-0058](./0058-agent-operator-programme.md). Verdict
@@ -94,3 +128,5 @@ writer producing a new artifact class:
 - Taxonomy: [ADR-0035](./0035-failure-reporting-and-diagnostics.md) (its
   2026-08-20 Update registers this class).
 - Research: [`docs/research/agent-cli-integration.md`](../research/agent-cli-integration.md).
+- Amended by: [ADR-0102](./0102-sealed-segment-manifest.md) (the
+  sealed-segment manifest; it lifts the tamper-evidence exclusion in part).

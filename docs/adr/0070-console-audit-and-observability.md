@@ -1,6 +1,7 @@
 # 0070. Console audit, self-observability, and the display-vs-persist rule
 
 - **Status:** Accepted
+- **Relations:** trigger-fired-by: 0102
 - **Date:** 2026-08-20
 - **Deciders:** Enrico Lionello (maintainer); Claude (design synthesis)
 
@@ -860,6 +861,72 @@ console configuration happens to run it locally.
   becomes a universal boot failure with a confusing stack. Recorded here as
   the escalation path if X8a-class drift recurs after this shape ships.
 
+## Update (2026-09-12) — X8b's trigger fires: the trail becomes bounded because archival becomes provable
+
+The 2026-09-05 (second) Update above filed **X8b** and named its own revisit
+condition: "Bounding it needs a writer-format change — a per-segment entry
+count or a chained digest — so whole-date archival becomes provable rather
+than merely tolerated." That trigger has fired. The design is recorded in
+[ADR-0102](./0102-sealed-segment-manifest.md): the writer seals each segment
+it rotates away from into one directory-wide `manifest.jsonl` carrying the
+segment's entry count, byte length and a plain sha256 of its raw bytes.
+
+### Two sentences above are retired
+
+Both are in the 2026-09-05 (second) Update's own accounting, and both were
+true when written:
+
+- **"It does not claim the audit trail is now bounded. It is not: it grows
+  without limit by design, and the new report is the only signal an operator
+  gets about that"** (§ What this Update does not claim). All three clauses
+  change. The trail is now boundable, because whole-date archival is provable
+  rather than merely tolerated; the usage report is no longer the only
+  signal, since `verify()` reports per-segment verdicts and an
+  `unprovenBefore` marker; and the work is owned by a tracker row (X8b), not
+  unowned as that paragraph closes by saying.
+- **"X8b — the audit trail is unbounded by design, and the new usage report
+  is the only signal an operator gets about it"** (§ What X8 does not close).
+  Superseded by this Update, in the same way the X8a row's two predecessor
+  paragraphs were.
+
+"Boundable" is deliberate, and narrower than "bounded": nothing here prunes
+anything. ADR-0102 supplies the proof that makes the manual whole-date
+archival procedure safe to actually perform; the retention policy above —
+audit streams are **segment + retain** — is unchanged, and no automated
+pruning is introduced on any path.
+
+### What the retain rule's safety half now rests on
+
+The 2026-09-05 Update's argument that "retain" is a safety property, not a
+preference, stands and gets stronger. Its force came from the read path
+refusing a trail it cannot vouch for; ADR-0102 widens what that path can
+detect. A sealed segment that later goes missing escalates, which closes the
+two holes that Update and `assertNoSequenceGap`'s own TSDoc both conceded: a
+date's deleted **last** segment, and a wholly deleted date. Deletion is now
+distinguishable from archival — tolerated only when the caller supplies an
+`onArchivedSegment` handler and the manifest can still state what the
+segment held.
+
+**§ Why the listing does not assert continuity is re-affirmed, not
+retired.** `verify()` is the same stance applied a second time: it reports
+rather than throws, precisely because an operator reaches for it after
+something has already gone wrong. Detection that _refuses_ still lives only
+on `read()`.
+
+### What this Update does not claim
+
+It does not make intra-date archival permitted. Sealing makes it technically
+safe the moment it ships — a sealed hole inside a date routes to the archival
+escalation instead of the sequence-gap throw — but this ADR forbids it as a
+safety property whose second half, custody of the archive, ADR-0102 does not
+address. The capability is unlocked; the permission is withheld and filed as
+its own tracker row.
+
+It does not revisit the display-vs-persist rule, the correlation seam, the
+audited-route set, or the telemetry retention policy. Nothing about what the
+trail _records_ changes here — only what can be proven about the bytes it
+recorded into.
+
 ## Links
 
 - Programme: [ADR-0064](./0064-m3l-console-programme.md). Store/index:
@@ -871,3 +938,5 @@ console configuration happens to run it locally.
   (fourth dated Update registers the exposure rule + the human-action
   stream); semantics precedent:
   [ADR-0061](./0061-agent-decision-log.md).
+- Trigger fired by: [ADR-0102](./0102-sealed-segment-manifest.md) (X8b — the
+  sealed-segment manifest makes whole-date archival provable).

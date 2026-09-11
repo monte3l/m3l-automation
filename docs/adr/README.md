@@ -233,5 +233,6 @@ surface).
 | 0099 | [Observation/insight vocabulary replaces the undefined "lesson"](./0099-observation-and-insight-vocabulary.md)                                            | Accepted             |
 | 0100 | [Test I/O is governed by sandbox isolation, not by an I/O ban](./0100-test-fs-sandbox-isolation.md)                                                       | Accepted             |
 | 0101 | [Pre-flight parameter-resolution check for `m3l flow run`](./0101-flow-preflight-parameter-resolution-check.md)                                           | Accepted             |
+| 0102 | [Sealed-segment manifest: the append-only audit trail becomes bounded and provable](./0102-sealed-segment-manifest.md)                                    | Accepted             |
 
 <!-- END GENERATED ADR INDEX -->

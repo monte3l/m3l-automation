@@ -881,7 +881,7 @@
       },
       {
         "path": "docs/adr/README.md",
-        "blob": "cf4fe6719f9389b80053ce76e1cddc225f4e5d2b"
+        "blob": "7f0afc9d86c94061e104355f26b6554ac53b63c6"
       },
       {
         "path": "docs/logs/2026-08-14-aws-rds-data.md",
@@ -1500,7 +1500,7 @@
       },
       {
         "path": "docs/plans/2026-08-20-m3l-console.md",
-        "blob": "a49f57fc8b38ac4b361f91a7dec584bfa42ad8d8"
+        "blob": "88827669ee25b6533fcfe5d6092ab72e0081c3c7"
       },
       {
         "path": "docs/plans/IMPLEMENTATION.md",
@@ -1583,7 +1583,7 @@
     "sourceFiles": [
       {
         "path": "docs/plans/2026-08-20-m3l-console.md",
-        "blob": "a49f57fc8b38ac4b361f91a7dec584bfa42ad8d8"
+        "blob": "88827669ee25b6533fcfe5d6092ab72e0081c3c7"
       },
       {
         "path": "docs/plans/IMPLEMENTATION.md",
@@ -1622,7 +1622,7 @@
     "sourceFiles": [
       {
         "path": "docs/plans/2026-08-20-m3l-console.md",
-        "blob": "a49f57fc8b38ac4b361f91a7dec584bfa42ad8d8"
+        "blob": "88827669ee25b6533fcfe5d6092ab72e0081c3c7"
       },
       {
         "path": "docs/plans/IMPLEMENTATION.md",
@@ -2379,7 +2379,7 @@
       },
       {
         "path": "docs/adr/README.md",
-        "blob": "cf4fe6719f9389b80053ce76e1cddc225f4e5d2b"
+        "blob": "7f0afc9d86c94061e104355f26b6554ac53b63c6"
       },
       {
         "path": "docs/contributing/filing-work.md",
@@ -2390,7 +2390,7 @@
         "blob": "0915d8bc8a00fb43f0c943b5ccf8019d094a65cc"
       }
     ],
-    "verifiedAt": "2026-09-10"
+    "verifiedAt": "2026-09-11"
   },
   "0095": {
     "sourceFiles": [
@@ -2400,7 +2400,7 @@
       },
       {
         "path": "docs/adr/README.md",
-        "blob": "cf4fe6719f9389b80053ce76e1cddc225f4e5d2b"
+        "blob": "7f0afc9d86c94061e104355f26b6554ac53b63c6"
       },
       {
         "path": "docs/decision-notes/README.md",
@@ -2411,7 +2411,7 @@
         "blob": "0915d8bc8a00fb43f0c943b5ccf8019d094a65cc"
       }
     ],
-    "verifiedAt": "2026-09-10"
+    "verifiedAt": "2026-09-11"
   },
   "0096": {
     "sourceFiles": [
@@ -2606,5 +2606,22 @@
       }
     ],
     "verifiedAt": "2026-09-10"
+  },
+  "0102": {
+    "sourceFiles": [
+      {
+        "path": "docs/adr/README.md",
+        "blob": "7f0afc9d86c94061e104355f26b6554ac53b63c6"
+      },
+      {
+        "path": "docs/plans/2026-08-20-m3l-console.md",
+        "blob": "88827669ee25b6533fcfe5d6092ab72e0081c3c7"
+      },
+      {
+        "path": "packages/m3l-console-server/src/boot/audit-rebuild.ts",
+        "blob": "f2d496b3a7a60ab9e7229cd8707453522255695a"
+      }
+    ],
+    "verifiedAt": "2026-09-11"
   }
 }
