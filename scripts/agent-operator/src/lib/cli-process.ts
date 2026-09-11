@@ -328,15 +328,25 @@ function isGroupTargetablePid(pid: number | undefined): pid is number {
  *   `internal/script/signalHandlers.ts` precedent for exactly this shape: a
  *   failure that is not actionable from here must still not vanish silently.
  *
+ * Returns whether the failure was a **real fault** — `true` for anything
+ * reported, `false` for the benign `ESRCH` race. That return is what lets
+ * {@link signalTarget} decide whether a fallback teardown is warranted:
+ * after a real fault there is still a live tree to signal, whereas after
+ * `ESRCH` there is nothing left and a fallback would aim at a pid the OS may
+ * have reused.
+ *
  * The message carries **only** the errno code and the signal name — never a
  * pid, a path, or the raw error message. A Node error message embeds the
  * resolved absolute entrypoint path, and this process's stderr is collected
  * and read by a model, so this mirrors {@link readFailureCode}'s allow-list
  * posture rather than relaxing it.
  */
-function reportTeardownFailure(cause: unknown, signal: NodeJS.Signals): void {
+function reportTeardownFailure(
+  cause: unknown,
+  signal: NodeJS.Signals,
+): boolean {
   const code = readFailureCode(cause);
-  if (code === "ESRCH") return;
+  if (code === "ESRCH") return false;
   try {
     process.stderr.write(
       `agent-operator: process-group ${signal} failed (${code ?? "UNKNOWN"})\n`,
@@ -348,16 +358,32 @@ function reportTeardownFailure(cause: unknown, signal: NodeJS.Signals): void {
     // propagate out of the exit reaper's loop and abandon every group pid
     // after this one — losing the teardown to protect a log line.
   }
+  return true;
 }
 
 /**
- * Sends one teardown signal at the plan's scope.
+ * Sends one teardown signal at the plan's scope, and **never leaves the
+ * target unsignalled**.
  *
- * `"group"` falls back to the direct `child.kill` when the pid is not
- * group-targetable (see {@link isGroupTargetablePid}). That fallback is the
- * correct answer rather than a degradation: a child that never got a pid
- * never became a group leader, so there is no group to address, and
- * `child.kill` on such a child is itself a no-op.
+ * Three paths reach the direct `child.kill`, and only the first is the
+ * ordinary one:
+ *
+ * 1. `"child"` scope — the default, unchanged.
+ * 2. `"group"` scope with a pid that is not group-targetable (see
+ *    {@link isGroupTargetablePid}). Not a degradation: a child that never
+ *    got a pid never became a group leader, so there is no group to address,
+ *    and `child.kill` on such a child is itself a no-op.
+ * 3. `"group"` scope whose negative-pid send threw a **real fault**. This
+ *    one IS a degradation, and it is load-bearing rather than tidy: without
+ *    it, every non-`ESRCH` errno would report to stderr and return having
+ *    signalled nothing at all — so on Windows, where `process.kill(-pid)` is
+ *    rejected outright, a `"group"` run would tear down NOTHING, strictly
+ *    worse than the child-only teardown it replaced. Degrading here is what
+ *    makes this module's POSIX-only claim mean "the group half is
+ *    POSIX-only" rather than "teardown is POSIX-only".
+ *
+ * The `ESRCH` arm deliberately does NOT degrade: the group is already gone,
+ * so a follow-up `child.kill` would aim at a pid the OS may have reused.
  */
 function signalTarget(
   child: CliChildProcess,
@@ -372,7 +398,9 @@ function signalTarget(
   try {
     plan.kill(-pid, signal);
   } catch (cause) {
-    reportTeardownFailure(cause, signal);
+    if (reportTeardownFailure(cause, signal)) {
+      child.kill(signal);
+    }
   }
 }
 
@@ -436,6 +464,10 @@ function trackDetachedGroup(
         try {
           kill(-groupPid, "SIGKILL");
         } catch (cause) {
+          // The reaper holds pids, not child handles, so unlike
+          // `signalTarget` it has no direct-child fallback to degrade to —
+          // the report is all there is. The return value is deliberately
+          // unused for that reason.
           reportTeardownFailure(cause, "SIGKILL");
         }
       }

@@ -936,6 +936,9 @@ describe("runCliProcess — group teardown: errno handling", () => {
 
     expect(result.disposition).toBe("timed-out");
     expect(stderr).not.toHaveBeenCalled();
+    // And deliberately NO fallback: the group is already gone, so a
+    // follow-up direct kill would aim at a pid the OS may have reused.
+    expect(harness.child.kill).not.toHaveBeenCalled();
   });
 
   test("an EPERM from the group kill is reported by errno code only — never the pid, the path, or the raw message", async () => {
@@ -965,7 +968,48 @@ describe("runCliProcess — group teardown: errno handling", () => {
     expect(written).not.toContain(rawMessage);
     expect(written).not.toContain(baseOptions.entrypoint);
     expect(written).not.toContain("4242");
+    // A real fault must DEGRADE to the direct child, never report-and-return:
+    // reporting alone would leave the tree entirely unsignalled.
+    expect(harness.child.kill).toHaveBeenCalledWith("SIGTERM");
   });
+
+  // The failure mode this closes: a `"group"` run whose negative-pid send is
+  // rejected outright — which is exactly what Windows does — used to report
+  // to stderr and return having signalled NOTHING, strictly worse than the
+  // child-only teardown it replaced.
+  test.each([
+    ["EPERM", "EPERM"],
+    ["EINVAL (the Windows-shaped rejection)", "EINVAL"],
+    ["ENOSYS", "ENOSYS"],
+  ])(
+    "a %s group send degrades to the direct child for BOTH signals, so teardown is never a no-op",
+    async (_label, code) => {
+      vi.useFakeTimers();
+      vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+      const harness = createGroupHarness(4242, () => {
+        throw errnoError(code, `kill ${code}`);
+      });
+      const resultPromise = runCliProcess({
+        ...harness.options,
+        timeoutMs: 5_000,
+      });
+
+      await vi.advanceTimersByTimeAsync(5_000);
+      const result = await resultPromise;
+
+      expect(result.disposition).toBe("timed-out");
+      expect(harness.child.kill).toHaveBeenNthCalledWith(1, "SIGTERM");
+
+      await vi.advanceTimersByTimeAsync(5_000);
+      expect(harness.child.kill).toHaveBeenNthCalledWith(2, "SIGKILL");
+      // The group send is still attempted first, every time — the fallback is
+      // a degradation, not a replacement.
+      expect(harness.killCalls).toEqual([
+        { pid: -4242, signal: "SIGTERM" },
+        { pid: -4242, signal: "SIGKILL" },
+      ]);
+    },
+  );
 
   test("a code-less throw from the group kill is still reported, as UNKNOWN", async () => {
     vi.useFakeTimers();

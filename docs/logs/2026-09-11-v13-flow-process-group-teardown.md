@@ -171,6 +171,45 @@ memory: the pid guard fails 10 tests when relaxed to `pid > 0` (`1` rows) or
 own test when replaced with the captured plan's, and the loop fails when
 truncated to one entry.
 
+## The finding three reviewers missed
+
+`claude-pr-review` on the PR raised a Should-fix that `code-reviewer`,
+`security-reviewer`, `silent-failure-hunter` and I had all read past, and it
+was a genuine bug:
+
+> when the group send throws, `signalTarget` reports to stderr and returns
+> without ever falling back to `child.kill(signal)`, so the direct child is
+> left entirely unsignalled.
+
+Correct, and worse than it first reads. Every non-`ESRCH` errno landed there —
+including the Windows negative-pid rejection — so a `"group"` run on Windows
+tore down **nothing at all**, strictly worse than the child-only teardown it
+replaced. And the ADR Update and the module TSDoc both asserted the opposite in
+plain words ("leaving Windows with exactly today's child-only semantics"), so
+the docs were not merely incomplete, they were false.
+
+`reportTeardownFailure` now returns whether the failure was a real fault, and
+`signalTarget` degrades to `child.kill` when it was. `ESRCH` deliberately still
+does not degrade: the group is already gone, so a follow-up direct kill would
+aim at a pid the OS may have reused.
+
+The near-miss is the instructive part. `security-reviewer` flagged the adjacent
+asymmetry as a nit — that `child.kill` sits outside the `try` — and I declined
+it after reasoning about `child.kill` throwing. I never asked the mirrored
+question: what happens when the call _inside_ the `try` throws. The three new
+degradation tests (`EPERM`, `EINVAL`, `ENOSYS`) fail when the fallback is
+removed, and the `ESRCH` test fails when the benign arm is made to degrade.
+
+The bot's second Should-fix was **disputed, not fixed**: it claimed
+`docs/implementation-status.md`'s Notes count had to move because
+`.claude/rules/tests.md` requires it for any new test. `check:test-counts` is
+scoped to `packages/m3l-common/tests` (`bin/check-test-counts.mjs:41`, whose own
+comment records that `scripts/*/tests` files were deliberately excluded to avoid
+name collisions), `docs/implementation-status.md` contains no agent-operator
+row, and the gate passed green with all ~28 new script tests already in place.
+Both decisions are recorded in an `Acknowledged-Should-Fix:` footer, which the
+gate requires either way.
+
 ## Insights
 
 - **A type-system fact can invalidate a plan's forcing function without
