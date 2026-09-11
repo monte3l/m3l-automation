@@ -749,6 +749,39 @@ describe("detectHostProfile — Darwin", () => {
     expect(profile.pressure).toBeNull();
     expect(profile.sessions).toBe(1);
   });
+
+  test("a vm_stat output that legitimately computes to 0 GiB available does not push a false 'detection failed' warning", () => {
+    const io = makeDarwinIo();
+    const zeroAvailableIo = {
+      ...io,
+      run(cmd: string, args: string[]): string | null {
+        if (cmd === "vm_stat") {
+          // Pages free/inactive/purgeable/speculative all near zero — a
+          // legitimate (if extreme) 0.0 GiB available-memory result, not a
+          // parse failure. Regression test for the bot-review fix: the old
+          // `if (!vmStat)` guard was falsy for a real 0, incorrectly
+          // claiming detection failed and availableMemGiB was defaulted.
+          return (
+            "Mach Virtual Memory Statistics: (page size of 4096 bytes)\n" +
+            "Pages free:                                        0.\n" +
+            "Pages active:                                3212305.\n" +
+            "Pages inactive:                                    0.\n" +
+            "Pages speculative:                                 0.\n" +
+            "Pages purgeable:                                   0.\n"
+          );
+        }
+        return io.run(cmd, args);
+      },
+    };
+    const profile = detectHostProfile({
+      io: zeroAvailableIo,
+      platform: "darwin",
+    });
+    expect(profile.availableMemGiB).toBe(0);
+    expect(profile.warnings).not.toContain(
+      "vm_stat detection failed — availableMemGiB defaulted to totalMemGiB, which overstates real available memory.",
+    );
+  });
 });
 
 // ---------------------------------------------------------------------------

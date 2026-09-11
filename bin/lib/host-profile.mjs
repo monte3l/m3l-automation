@@ -619,7 +619,7 @@ function gatherDarwinProfile(io, common) {
   );
   const swapGiB = parseDarwinSwapUsage(io.run("sysctl", ["vm.swapusage"]));
   const vmStat = parseDarwinVmStat(io.run("vm_stat", []));
-  if (!vmStat) {
+  if (vmStat === null) {
     warnings.push(
       "vm_stat detection failed — availableMemGiB defaulted to totalMemGiB, " +
         "which overstates real available memory.",
