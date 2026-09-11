@@ -236,3 +236,51 @@ moment a parameter's value could come from nowhere traceable. X11e's UI
 (`SessionStepLauncher.tsx`) reuses `ParameterForm` for display/pre-fill only
 and builds the actual launch request from binding records, never from the
 form's own submitted values.
+
+## Update (2026-09-11) — session → flow export is designed to snapshot bindings to literals
+
+X13 (session → flow export, this ADR's Decision) is designed, landing as a
+PR sequence (`docs/plans/2026-08-20-m3l-console.md`'s P1–P6 rows;
+`docs/plans/IMPLEMENTATION.md`'s X13 row stays `To Do` until that sequence
+completes). The Decision section's "steps become flow steps; bindings
+become the flow's inter-step data references" will be met differently than
+it reads: **snapshot at export, not live references.**
+
+The reason is structural, not a shortcut. `M3LCliFlowStep.parameters`
+(`packages/m3l-cli/src/flow/types.ts`) is a literal
+`Readonly<Record<string, unknown>>`, validated key-by-key against the target
+script's declared parameters (`flow/validate.ts`); the shipped `m3l flow`
+engine passes only an exit code and `run-report.json`'s discriminated
+`outcome` between steps. There is no inter-step data transport in the format
+or the engine for an exported reference to resolve against — adding one is a
+flow-format change with its own validator surface and semver event, which
+X13's scope never claimed.
+
+What snapshot-at-export gets for free: `addStep` already resolves every
+binding into the exact `Record<string, string>` a step launched with, and
+persists it verbatim on the step row (`M3LSessionStepRecord.parameters`).
+Export will read that row directly — `script` from `step.operation` (already
+the launch-validated script name the launcher itself required), `parameters`
+from `step.parameters` unchanged. No re-resolution through the artifact
+store, and no store migration, is needed to make this lossless.
+
+What it costs: the exported flow will be a point-in-time freeze. Re-running
+it will not re-derive a later step's input from an earlier step's fresh
+output — it replays the values the session happened to see. A session whose
+first step's result changes between exploration and replay (a queue that
+has since drained, a record that has since been deleted) will not notice;
+the flow just runs with the frozen value. `docs/reference/console.md`'s
+Known limits list will state this plainly for an operator reading the
+exported file, once the route ships.
+
+Session decision points will not be carried either — this ADR's own
+"Considered options" already rejected extending `m3l flow` with
+pause/ask-user steps, so the format has nowhere to put one. The export will
+count how many were dropped and report the count in its response; it will
+never write a prompt or an answer into the committed file.
+
+The reference-carrying variant this ADR's Decision literally describes
+remains open work, tracked as **X13a** (gated: unblocked only once the flow
+engine gains its own inter-step data transport — see ADR-0056's matching
+Update). Nothing else about the binding/artifact convention changes; X6's
+grammar, caps, and promoted `core/orchestration` types stand as decided.
