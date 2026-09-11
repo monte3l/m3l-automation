@@ -87,10 +87,15 @@ writer producing a new artifact class:
 - **Semver impact:** none from this ADR (docs only). Implementation is an
   **additive minor** on `m3l-common`.
 
-## Update (2026-09-12) — the tamper-evidence exclusion is lifted, in a bounded scope
+## Update (2026-09-12) — a sealed-segment manifest, recorded in ADR-0102
 
-[ADR-0102](./0102-sealed-segment-manifest.md) amends this ADR. The
-Consequences bullet above concedes that "append-only" here is
+[ADR-0102](./0102-sealed-segment-manifest.md) amends this ADR; the decision
+is recorded there, not here, because this ADR declared no revisit trigger
+covering it (`docs/adr/README.md`, the Update rule). This section is a
+pointer, and states the scope so a reader of this ADR is not left to infer
+it.
+
+The Consequences bullet above concedes that "append-only" here is
 "filesystem-honest, not cryptographically tamper-evident (recorded as out of
 scope)". That exclusion no longer holds as written: the decision log's writer
 now seals each segment it rotates away from into one directory-wide

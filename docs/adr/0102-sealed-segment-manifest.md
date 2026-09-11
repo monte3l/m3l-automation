@@ -1,4 +1,4 @@
-# 0102. Sealed-segment manifest: the append-only audit trail becomes bounded and provable
+# 0102. Sealed-segment manifest: the append-only audit trail becomes boundable and provable
 
 - **Status:** Accepted
 - **Relations:** amends: 0061, fires-trigger-of: 0070
@@ -7,14 +7,23 @@
 
 ## Context and problem statement
 
-ADR-0070's 2026-09-05 (second) Update filed **X8b**: the human-action audit
-trail is unbounded by design, and the report-only fourth section of
+ADR-0070 declared this revisit trigger across two Updates, and the
+distinction matters because the repo cites Updates by exact date. The
+**2026-09-05** Update named the direction, in § What this Update does not
+claim: "It does not claim the audit trail is now bounded. It is not: it
+grows without limit by design, and the new report is the only signal an
+operator gets about that. Making it bounded would need a writer-format
+change (a per-segment entry count or a chained digest) so that whole-date
+archival is provable rather than merely tolerated — out of scope here, and
+not owned by a tracker row." The **2026-09-05 (second)** Update then gave it
+an owner, filing **X8b** in § What X8 does not close: "the audit trail is
+unbounded by design, and the new usage report is the only signal an operator
+gets about it (Update above). Bounding it needs a writer-format change."
+
+The signal an operator gets today is the report-only fourth section of
 `m3l-console-server cleanup` that X8 slice 5a-ii shipped
-(`audit-trail-usage.ts`'s `reportAuditTrailUsage`) is the only signal an
-operator gets about its footprint. That Update also named the direction —
-"Bounding it needs a writer-format change — a per-segment entry count or a
-chained digest — so whole-date archival becomes provable rather than merely
-tolerated." This ADR executes that declared revisit trigger.
+(`audit-trail-usage.ts`'s `reportAuditTrailUsage`). This ADR executes the
+trigger those two Updates declared.
 
 Both ADRs classify the audit streams as **segment + retain** (ADR-0070
 § Self-telemetry and retention; ADR-0061 § Decision), and ADR-0070's same
@@ -191,9 +200,14 @@ assumed.
 
 ### The digest is plain sha256 of the file's raw bytes — a contract
 
-The writer re-reads the sealed file in one bounded sequential pass (at most
-`maxSegmentBytes`, default 8 MiB) and yields `entryCount`, `byteLength` and
-`sha256` together. An in-memory incremental hash maintained while appending
+The writer re-reads the sealed file in one bounded sequential pass and yields
+`entryCount`, `byteLength` and `sha256` together. The bound is
+`maxSegmentBytes + maxLineBytes`, **not** `maxSegmentBytes` (8 MiB by
+default): `shouldRotate` tests `segment.size >= maxSegmentBytes` _before_ the
+append, so the line that crosses the ceiling is written into the outgoing
+segment rather than the new one. A sealer sizing its read at
+`maxSegmentBytes` would therefore truncate exactly the segments that rotated
+on size — the common case. An in-memory incremental hash maintained while appending
 is rejected: it cannot cover an adopted segment, a crashed process's segment,
 or two interleaved writers, and it would digest "what I wrote" rather than
 "what is on disk" — inverting the point of a tamper proof.
@@ -301,14 +315,20 @@ deliberately does not have.
   reader meeting a newer `formatVersion` fails closed by design. One extra
   bounded read of the sealed segment on the append that rotates (the latency
   figure is probed on the host before any number enters public TSDoc, not
-  guessed). Manifest growth is O(segments) at roughly 200 bytes per segment
-  and the manifest is **not itself rotated**, which grows the append-only
-  stream's public "limitations are part of the public contract" list from
-  three items to five. A seal is best-effort, so `unsealed` is a reachable
-  steady state rather than an anomaly. Deleting the manifest silently
-  downgrades the trail (above). Four public TSDoc sites plus one module
-  header advertise "no index file is kept" and stop being true — they must
-  change together with the code.
+  guessed). The append-only stream's public "limitations are part of the
+  public contract" list grows from **three items to five**, and the two
+  additions are named here so the implementer does not have to derive them:
+  (4) manifest growth is O(segments) at roughly 200 bytes per segment and the
+  manifest is **not itself rotated**; (5) a seal is best-effort, so
+  `unsealed` is a reachable steady state rather than an anomaly. The deferred
+  mismatch throw and the silent downgrade on manifest deletion are documented
+  on `read()` and `verify()` respectively, not in that class-level list.
+  Deleting the manifest silently downgrades the trail (above). Five sites
+  advertise "no index file is kept" and stop being true — **two public**
+  (`core/storage/M3LAppendOnlyStream.ts`, `core/agent/decision-log.ts`), two
+  `internal/` (`append-only-writer.ts`, `decision-log-writer.ts`, free to
+  change), and one module header (`append-only-segments.ts`). Only the two
+  public ones are semver-visible, and all five must change with the code.
 - **Semver impact:** **minor**. The implementation is purely additive on
   `@m3l-automation/m3l-common`: a public `verify()` method, the manifest
   types, a new `M3LAppendOnlyStreamManifestError` with code
@@ -320,8 +340,9 @@ deliberately does not have.
 ## Links
 
 - Trigger: [ADR-0070](./0070-console-audit-and-observability.md)'s 2026-09-05
-  (second) Update, which filed X8b and named the writer-format direction.
-  Amended: [ADR-0061](./0061-agent-decision-log.md) (its § Consequences
+  Update named the writer-format direction; its 2026-09-05 (second) Update
+  filed X8b as the owning tracker row. Amended:
+  [ADR-0061](./0061-agent-decision-log.md) (its § Consequences
   tamper-evidence exclusion).
 - Taxonomy: [ADR-0035](./0035-failure-reporting-and-diagnostics.md). Slice
   discipline: [ADR-0072](./0072-reviewable-slice-discipline.md).

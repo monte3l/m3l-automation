@@ -861,33 +861,37 @@ console configuration happens to run it locally.
   becomes a universal boot failure with a confusing stack. Recorded here as
   the escalation path if X8a-class drift recurs after this shape ships.
 
-## Update (2026-09-12) — X8b's trigger fires: the trail becomes bounded because archival becomes provable
+## Update (2026-09-12) — X8b's trigger fires: the trail becomes boundable because archival becomes provable
 
-The 2026-09-05 (second) Update above filed **X8b** and named its own revisit
-condition: "Bounding it needs a writer-format change — a per-segment entry
-count or a chained digest — so whole-date archival becomes provable rather
-than merely tolerated." That trigger has fired. The design is recorded in
+Two Updates above declared this trigger between them. The **2026-09-05**
+Update named the direction, in § What this Update does not claim: "Making it
+bounded would need a writer-format change (a per-segment entry count or a
+chained digest) so that whole-date archival is provable rather than merely
+tolerated — out of scope here, and not owned by a tracker row." The
+**2026-09-05 (second)** Update then gave it an owner, filing **X8b**. That
+trigger has now fired. The design is recorded in
 [ADR-0102](./0102-sealed-segment-manifest.md): the writer seals each segment
 it rotates away from into one directory-wide `manifest.jsonl` carrying the
 segment's entry count, byte length and a plain sha256 of its raw bytes.
 
 ### Two sentences above are retired
 
-Both are in the 2026-09-05 (second) Update's own accounting, and both were
-true when written:
+One sits in each of those Updates, and both were true when written:
 
 - **"It does not claim the audit trail is now bounded. It is not: it grows
   without limit by design, and the new report is the only signal an operator
-  gets about that"** (§ What this Update does not claim). All three clauses
-  change. The trail is now boundable, because whole-date archival is provable
+  gets about that"** (the **2026-09-05** Update, § What this Update does not
+  claim — the dated qualifier matters, since three sections now carry that
+  heading). All three clauses change. The trail is now boundable, because
+  whole-date archival is provable
   rather than merely tolerated; the usage report is no longer the only
   signal, since `verify()` reports per-segment verdicts and an
   `unprovenBefore` marker; and the work is owned by a tracker row (X8b), not
   unowned as that paragraph closes by saying.
 - **"X8b — the audit trail is unbounded by design, and the new usage report
-  is the only signal an operator gets about it"** (§ What X8 does not close).
-  Superseded by this Update, in the same way the X8a row's two predecessor
-  paragraphs were.
+  is the only signal an operator gets about it"** (the **2026-09-05
+  (second)** Update, § What X8 does not close). Superseded by this Update, in
+  the same way the X8a row's two predecessor paragraphs were.
 
 "Boundable" is deliberate, and narrower than "bounded": nothing here prunes
 anything. ADR-0102 supplies the proof that makes the manual whole-date
@@ -906,6 +910,15 @@ date's deleted **last** segment, and a wholly deleted date. Deletion is now
 distinguishable from archival — tolerated only when the caller supplies an
 `onArchivedSegment` handler and the manifest can still state what the
 segment held.
+
+"Escalates" is a claim about the **library** read path, and it is worth being
+precise about what that buys the console today. This console's only
+`read()` call site is `rebuildHumanActionIndexOnBoot`, which never throws by
+contract — so an escalation there is still a logged `error` and a `return 0`,
+not a refused boot. Deciding what the console does with an archived or
+mismatched segment (supply the handler and proceed, or surface it in the
+cleanup report) is **X8b5**'s scope, not ADR-0102's; the library half simply
+makes the distinction available to it for the first time.
 
 **§ Why the listing does not assert continuity is re-affirmed, not
 retired.** `verify()` is the same stance applied a second time: it reports
