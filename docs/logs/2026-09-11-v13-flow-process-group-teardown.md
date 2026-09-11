@@ -10,7 +10,8 @@ the grandchild flow step. The tracker's gate was explicit: resolve before an
 operator allowlists a flow on a profile that matters.
 
 Tracker row: [`docs/plans/IMPLEMENTATION.md`](../plans/IMPLEMENTATION.md) V13
-(issue #1120). Decision record: ADR-0049's 2026-09-11 Update.
+(issue #1120), shipped as PR #1190. Decision record: ADR-0049's 2026-09-11
+Update.
 
 ## Summary
 
