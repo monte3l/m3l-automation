@@ -393,7 +393,7 @@
     "sourceFiles": [
       {
         "path": ".claude/rules/tests.md",
-        "blob": "e530d81b069101b79efeff7a7e8eef777d67866b"
+        "blob": "5ce2ad467fea0ba00c2226ba6b4bfdaae54a6c53"
       },
       {
         "path": ".github/dependabot.yml",
@@ -2525,7 +2525,7 @@
       },
       {
         "path": ".claude/rules/tests.md",
-        "blob": "e530d81b069101b79efeff7a7e8eef777d67866b"
+        "blob": "5ce2ad467fea0ba00c2226ba6b4bfdaae54a6c53"
       },
       {
         "path": "bin/check-deps.mjs",
