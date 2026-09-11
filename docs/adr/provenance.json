@@ -974,7 +974,7 @@
       },
       {
         "path": "docs/logs/README.md",
-        "blob": "ba51c3f4674a03c77f8201a7ed4979b8c4256345"
+        "blob": "7e44f3f7d3c0f0c2779c21c86a4e866389835f4f"
       },
       {
         "path": "docs/plans/IMPLEMENTATION.md",
@@ -989,7 +989,7 @@
         "blob": "8aee3c67210fa14e06271a87d163eb76b7bc7551"
       }
     ],
-    "verifiedAt": "2026-09-10"
+    "verifiedAt": "2026-09-11"
   },
   "0033": {
     "sourceFiles": [
@@ -1536,10 +1536,10 @@
     "sourceFiles": [
       {
         "path": "docs/reference/console.md",
-        "blob": "befbe839563b4a0ea65af1cab16de821db88c43f"
+        "blob": "77ef565e50c89fe162827228d04bdad789bec212"
       }
     ],
-    "verifiedAt": "2026-09-06"
+    "verifiedAt": "2026-09-11"
   },
   "0067": {
     "sourceFiles": [
@@ -1566,10 +1566,10 @@
       },
       {
         "path": "docs/reference/console.md",
-        "blob": "befbe839563b4a0ea65af1cab16de821db88c43f"
+        "blob": "77ef565e50c89fe162827228d04bdad789bec212"
       }
     ],
-    "verifiedAt": "2026-09-09"
+    "verifiedAt": "2026-09-11"
   },
   "0070": {
     "sourceFiles": [
@@ -1583,7 +1583,7 @@
       },
       {
         "path": "docs/reference/console.md",
-        "blob": "befbe839563b4a0ea65af1cab16de821db88c43f"
+        "blob": "77ef565e50c89fe162827228d04bdad789bec212"
       },
       {
         "path": "docs/ROADMAP.md",
@@ -1594,7 +1594,7 @@
         "blob": "55ae1207f7068ba133455349bbfdede7ec65bcdc"
       }
     ],
-    "verifiedAt": "2026-09-09"
+    "verifiedAt": "2026-09-11"
   },
   "0071": {
     "sourceFiles": [
@@ -1925,7 +1925,7 @@
       },
       {
         "path": "docs/plans/2026-09-08-adaptive-host-budgeting.md",
-        "blob": "249738d758414c5bddc5f7f260a23721f88a0586"
+        "blob": "5000eda40e6b7b814aad748ab3a5efeeca42f30d"
       },
       {
         "path": "package.json",
@@ -1936,7 +1936,7 @@
         "blob": "d2b88dbb4423408a33153335c055b088c6fd628a"
       }
     ],
-    "verifiedAt": "2026-09-10"
+    "verifiedAt": "2026-09-11"
   },
   "0081": {
     "sourceFiles": [
@@ -2444,10 +2444,10 @@
       },
       {
         "path": "docs/logs/README.md",
-        "blob": "ba51c3f4674a03c77f8201a7ed4979b8c4256345"
+        "blob": "7e44f3f7d3c0f0c2779c21c86a4e866389835f4f"
       }
     ],
-    "verifiedAt": "2026-09-10"
+    "verifiedAt": "2026-09-11"
   },
   "0100": {
     "sourceFiles": [

@@ -25,6 +25,38 @@ import type {
   M3LHumanActionTarget,
 } from "../audit/record.js";
 import type { M3LRequestContext } from "../http/context.js";
+import type { M3LRoute } from "../http/router.js";
+
+/**
+ * Builds the `"<METHOD> <path-template>"` key {@link HUMAN_ACTION_SPECS} is
+ * keyed by — the single source of truth for that grammar.
+ *
+ * Takes `Pick<M3LRoute, "method" | "path">` rather than the full
+ * `M3LRoute`, so any object carrying just those two fields — including an
+ * `M3LRequestContext`, whose `method`/`path` are the request's own — satisfies
+ * it structurally with no adapter.
+ *
+ * Extracted so `boot/human-action-audit.ts` never hand-constructs this
+ * string itself: before this helper existed it built the same template
+ * literal in three places (the spec lookup, and two error messages), any one
+ * of which could drift from the grammar this table's own keys use.
+ *
+ * @param route - Anything carrying the `method`/`path` pair a spec key is
+ *   built from.
+ * @returns The `"<METHOD> <path-template>"` key.
+ * @example
+ * ```ts
+ * import { humanActionSpecKey } from "@m3l-automation/m3l-console-server/boot/human-action-specs.js";
+ *
+ * humanActionSpecKey({ method: "POST", path: "/api/v1/runs" });
+ * // => "POST /api/v1/runs"
+ * ```
+ */
+export function humanActionSpecKey(
+  route: Pick<M3LRoute, "method" | "path">,
+): string {
+  return `${route.method} ${route.path}`;
+}
 
 /**
  * What a route's spec projects out of a live request: everything

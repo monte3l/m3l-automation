@@ -48,7 +48,10 @@ import { chainSecondaryFailure } from "../errors/chain-secondary-failure.js";
 import type { M3LRequestContext } from "../http/context.js";
 import type { M3LConsoleHandler } from "../http/middleware.js";
 import type { M3LRoute } from "../http/router.js";
-import { HUMAN_ACTION_SPECS } from "./human-action-specs.js";
+import {
+  HUMAN_ACTION_SPECS,
+  humanActionSpecKey,
+} from "./human-action-specs.js";
 import type { HumanActionSpec } from "./human-action-specs.js";
 
 /**
@@ -78,7 +81,7 @@ function operatorOf(ctx: M3LRequestContext): M3LHumanActionOperator {
   if (operator === undefined) {
     throw new M3LConsoleError(
       "ERR_CONSOLE_INTERNAL",
-      `audited route '${ctx.method} ${ctx.path}' was reached with no resolved operator`,
+      `audited route '${humanActionSpecKey(ctx)}' was reached with no resolved operator`,
     );
   }
   return { name: operator.name, email: operator.email };
@@ -198,12 +201,12 @@ export function applyHumanActionAudit(
   nowMs: () => number = Date.now,
 ): readonly M3LRoute[] {
   return routes.map((route) => {
-    const spec = HUMAN_ACTION_SPECS.get(`${route.method} ${route.path}`);
+    const spec = HUMAN_ACTION_SPECS.get(humanActionSpecKey(route));
     if (spec === undefined) {
       if (route.method !== "GET") {
         throw new M3LConsoleError(
           "ERR_CONSOLE_INTERNAL",
-          `route '${route.method} ${route.path}' performs a write but has no human-action audit spec; ` +
+          `route '${humanActionSpecKey(route)}' performs a write but has no human-action audit spec; ` +
             `add one in boot/human-action-specs.ts rather than shipping an unaudited write route`,
         );
       }
@@ -211,6 +214,140 @@ export function applyHumanActionAudit(
     }
     return decorate(route, spec, port, nowMs);
   });
+}
+
+/**
+ * The wiring subset {@link assertHumanActionSpecsAreLive} needs to know
+ * which `HUMAN_ACTION_SPECS` keys are even SUPPOSED to be registered right
+ * now.
+ *
+ * Deliberately just the two flags `createBuiltInRoutes` gates its
+ * conditionally-registered groups on — `boot/dispatch-router.ts` derives
+ * both from its own `runs`/`sessions` parameters (`runs !== undefined`, and
+ * likewise for `sessions`) at the one call site that has them.
+ *
+ * **No `telemetry` field.** No entry in `HUMAN_ACTION_SPECS` names a
+ * telemetry route — ADR-0070's 2026-09-04 Update makes telemetry reads
+ * deliberately unaudited — so whether telemetry is wired can never change
+ * the set of keys this check expects to find live, and a flag for it would
+ * be dead weight.
+ *
+ * @example
+ * ```ts
+ * const wiring: HumanActionRouteWiring = { runs: true, sessions: false };
+ * ```
+ */
+export interface HumanActionRouteWiring {
+  /** Whether the X4 run-governor route group is registered. */
+  readonly runs: boolean;
+  /** Whether the X6 workbench-sessions route group is registered. */
+  readonly sessions: boolean;
+}
+
+/**
+ * Which conditionally-registered route group a `HUMAN_ACTION_SPECS` key
+ * belongs to, derived from the key's own path template — not from the
+ * (mutable) registered-routes table, which is exactly the "derive from route
+ * prefix" heuristic this module's TSDoc already rejects for going silent on
+ * a whole-group route deletion. A spec key's own text never vanishes, so
+ * this classification is as stable as the table itself.
+ *
+ * @throws {@link M3LConsoleError} `ERR_CONSOLE_INTERNAL` for a key naming
+ *   neither known family — unreachable today (T7 exhaustively proves every
+ *   real `HUMAN_ACTION_SPECS` key falls under `/api/v1/runs` or
+ *   `/api/v1/sessions`); defense-in-depth against a THIRD family being added
+ *   to the spec table without updating this classifier.
+ */
+function humanActionSpecGroup(key: string): keyof HumanActionRouteWiring {
+  if (key.includes(" /api/v1/runs")) return "runs";
+  if (key.includes(" /api/v1/sessions")) return "sessions";
+  throw new M3LConsoleError(
+    "ERR_CONSOLE_INTERNAL",
+    `human-action audit spec '${key}' does not belong to a known route group ` +
+      `(runs/sessions) — assertHumanActionSpecsAreLive's group classifier in ` +
+      `boot/human-action-audit.ts needs updating for this key's route family`,
+  );
+}
+
+/**
+ * The boot-time COMPLEMENT of {@link applyHumanActionAudit}'s own guard: that
+ * function checks route → spec (every non-`GET` route has a spec), and this
+ * checks the reverse, spec → route (every spec names a route that is
+ * actually registered). Neither subsumes the other — a stale or typo'd key
+ * left behind in `HUMAN_ACTION_SPECS` (a renamed path template, a dropped
+ * route) would pass `applyHumanActionAudit` silently, since that guard only
+ * ever looks at routes present in the table it is handed, never at specs
+ * with nothing to attach to.
+ *
+ * **Why a separate function, not folded into `applyHumanActionAudit`.** That
+ * function is applied PER ROUTE, and ~17 existing tests drive it with
+ * hand-built single-route tables; a reverse, whole-table check folded into
+ * the same pass would trip every one of them by demanding the other eleven
+ * keys' routes exist too. This is a whole-table precondition — a pre-pass —
+ * while the map's per-route guard stays exactly where it is.
+ *
+ * **Why gated PER GROUP, not unconditional, and not all-or-nothing either.**
+ * Every one of the twelve `HUMAN_ACTION_SPECS` keys belongs to either the
+ * `runs` group (four keys) or the `sessions` group (eight keys) of
+ * `createBuiltInRoutes`'s conditionally-registered route groups, and each
+ * key's own group is derived from its path template by
+ * {@link humanActionSpecGroup}. `BuiltInRouteOptions.runs`'s own TSDoc
+ * documents that absent wiring means "there is no 'routes registered but
+ * always 404' middle state" — restated here as a PRECONDITION, but per KEY
+ * rather than for the table as a whole: a console with run orchestration
+ * disabled legitimately never registers the four runs-group routes, so those
+ * four keys are exempt when `wiring.runs` is `false` — but that says nothing
+ * about whether the (separately wired) sessions-group keys are live, and
+ * checking unconditionally would refuse to boot every partially-wired
+ * console, which is a supported, documented configuration. `wiring` is how
+ * the caller states which groups it actually expects to be live; a console
+ * wired for `runs` alone is still held to its own four runs-group keys,
+ * exactly as it would be if `sessions` were wired too.
+ *
+ * **Why throw, not log.** Contrast with `boot/audit-rebuild.ts`'s
+ * `rebuildHumanActionIndexOnBoot`, which never throws — it is triggered by
+ * data an OPERATOR did not write and cannot fix at 3am, so a console that
+ * cannot rebuild its index must still boot and serve. An orphaned spec key
+ * is the opposite: repo-side wiring, deterministic, and entirely within the
+ * author's control to fix before shipping — the same class of defect as
+ * `applyHumanActionAudit`'s own guard, which already throws for an unaudited
+ * write route. Both raise `ERR_CONSOLE_INTERNAL` for exactly that reason.
+ *
+ * @param routes - The route table to check, e.g. `createBuiltInRoutes`'s
+ *   output before {@link applyHumanActionAudit} decorates it.
+ * @param wiring - Which conditionally-registered route groups are expected
+ *   to be live; see {@link HumanActionRouteWiring}.
+ * @returns Nothing on success — including, deliberately, when `wiring.runs`
+ *   and `wiring.sessions` are both `false`, since then no key is expected to
+ *   be live at all.
+ * @throws {@link M3LConsoleError} `ERR_CONSOLE_INTERNAL` naming every
+ *   `HUMAN_ACTION_SPECS` key with no matching route in `routes`, collected
+ *   and thrown as ONE error rather than on the first mismatch found — an
+ *   operator fixing this should see every orphan in one pass, not
+ *   whack-a-mole through them one boot at a time.
+ * @example
+ * ```ts
+ * assertHumanActionSpecsAreLive(consoleRoutes, {
+ *   runs: options.runs !== undefined,
+ *   sessions: options.sessions !== undefined,
+ * });
+ * ```
+ */
+export function assertHumanActionSpecsAreLive(
+  routes: readonly M3LRoute[],
+  wiring: HumanActionRouteWiring,
+): void {
+  const live = new Set(routes.map(humanActionSpecKey));
+  const orphans = [...HUMAN_ACTION_SPECS.keys()].filter((key) => {
+    if (!wiring[humanActionSpecGroup(key)]) return false;
+    return !live.has(key);
+  });
+  if (orphans.length === 0) return;
+  throw new M3LConsoleError(
+    "ERR_CONSOLE_INTERNAL",
+    `human-action audit spec(s) name no registered route: ${orphans.join(", ")}; ` +
+      `remove them or fix the key(s) in boot/human-action-specs.ts`,
+  );
 }
 
 /**
