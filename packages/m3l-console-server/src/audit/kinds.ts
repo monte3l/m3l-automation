@@ -51,6 +51,7 @@ export type M3LHumanActionKind =
   | "session.binding.select"
   | "session.close"
   | "session.reopen"
+  | "session.flow.export"
   | "view.run.report"
   | "view.run.stream"
   | "view.session.artifact";
@@ -66,6 +67,7 @@ export const ACTION_KINDS: ReadonlySet<M3LHumanActionKind> = new Set([
   "session.binding.select",
   "session.close",
   "session.reopen",
+  "session.flow.export",
   "view.run.report",
   "view.run.stream",
   "view.session.artifact",

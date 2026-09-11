@@ -721,9 +721,9 @@ function insertRun(database: DatabaseSync, row: RunRowFixture): void {
 }
 
 describe("CONSOLE_MIGRATIONS — the real registry (v3: console_runs)", () => {
-  test("has exactly eleven migrations, versions strictly increasing and gap-free (1..11)", () => {
+  test("has exactly twelve migrations, versions strictly increasing and gap-free (1..12)", () => {
     expect(CONSOLE_MIGRATIONS.map((migration) => migration.version)).toEqual([
-      1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11,
+      1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12,
     ]);
   });
 
@@ -1653,8 +1653,8 @@ describe("applyMigrations — v9 to v10 (add_session_binding_parameter_name)", (
 
     const applied = applyMigrations(database, CONSOLE_MIGRATIONS);
 
-    expect(applied).toBe(2);
-    expect(readUserVersion(database)).toBe(11);
+    expect(applied).toBe(3);
+    expect(readUserVersion(database)).toBe(12);
 
     const survived = database
       .prepare(

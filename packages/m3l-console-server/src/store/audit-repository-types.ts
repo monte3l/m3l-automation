@@ -31,6 +31,7 @@ export type M3LHumanActionIndexKind =
   | "session.binding.select"
   | "session.close"
   | "session.reopen"
+  | "session.flow.export"
   | "view.run.report"
   | "view.run.stream"
   | "view.session.artifact";
