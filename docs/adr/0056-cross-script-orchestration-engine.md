@@ -174,22 +174,25 @@ parameter, rather than letting that surface as a late, mid-run failure.
 Nothing else in this ADR changes — the engine's placement, command name, and
 acceptance flow stand as decided.
 
-## Update 2026-09-11 — the session-export bridge landed without extending the format
+## Update 2026-09-11 — the session-export bridge is designed to land without extending the format
 
-X13 (`m3l-console-server`'s session → flow export, ADR-0068's Decision)
-shipped. The 2026-08-20 Update above named X13 as the bridge from an
-exploratory session into a committed flow definition "using the same
-references" — that promise is met by **snapshot at export**, not by adding
-a reference form to `parameters`. Every exported step's `parameters` is the
-concrete value snapshot the session step actually launched with, not a
-reference the engine resolves at run time.
+X13 (`m3l-console-server`'s session → flow export, ADR-0068's Decision) is
+designed, landing as a PR sequence (`docs/plans/2026-08-20-m3l-console.md`'s
+P1–P6 rows; `docs/plans/IMPLEMENTATION.md`'s X13 row stays `To Do` until
+that sequence completes). The 2026-08-20 Update above named X13 as the
+bridge from an exploratory session into a committed flow definition "using
+the same references" — that promise will be met by **snapshot at export**,
+not by adding a reference form to `parameters`. Every exported step's
+`parameters` will be the concrete value snapshot the session step actually
+launched with, not a reference the engine resolves at run time.
 
-This ADR's format and engine are therefore unchanged by X13: no new key
-joins `FLOW_KEYS`/`STEP_KEYS`, `M3LCliFlowStep.parameters` stays a literal
-record, and the engine still passes only an exit code and `run-report.json`
-between steps. `m3l flow run <name>` cannot tell an exported flow from a
-hand-authored one — which is the point: the exported file is required to be
-ordinary, validator-clean input, not a new dialect.
+This ADR's format and engine are therefore unchanged by X13's design: no
+new key joins `FLOW_KEYS`/`STEP_KEYS`, `M3LCliFlowStep.parameters` stays a
+literal record, and the engine still passes only an exit code and
+`run-report.json` between steps. `m3l flow run <name>` will not be able to
+tell an exported flow from a hand-authored one — which is the point: the
+exported file is required to be ordinary, validator-clean input, not a new
+dialect.
 
 A reference-carrying flow format — where a step's `parameters` value can
 name a prior step's output instead of embedding it — remains future work,
