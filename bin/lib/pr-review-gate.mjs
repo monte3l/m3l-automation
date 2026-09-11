@@ -25,6 +25,18 @@
 //
 // Mirrors bin/lib/pr-diff-filter.mjs's shape: a pure lib module, consumed by
 // a thin CLI wrapper (bin/pr-review-gate.mjs) the workflow shells out to.
+//
+// Also covers the should-fix-ack gate's per-round binding (issue #1193):
+// `collectShouldFixRounds`, `planShouldFixAckRanges`, and
+// `describeShouldFixAckOutcome` — see bin/check-should-fix-ack.mjs, which
+// composes them with git-backed classification of each round's reviewed
+// commit. This replaced ADR-0097's original design, which read
+// `selectShouldFixComment`'s single "loudest round" against one
+// `base..head` presence test: PR #1190 proved live that a footer answering
+// round 1's findings also satisfied round 2's unrelated, later findings —
+// the under-reporting direction ADR-0097 did not anticipate (it documented
+// only the opposite, over-reporting trade-off). `selectShouldFixComment`
+// itself is unchanged and still backs the historical backfill measurement.
 
 /** Matches the `### Verdict` heading's bullet line — `- PASS` or `- FAIL`,
  * immediately after the heading (only blank lines between). Anchored to the
@@ -206,32 +218,33 @@ export function hasShouldFixAcknowledgment(commitLog) {
 
 /**
  * Among a PR's posted `claude[bot]` comment bodies, the one that carries the
- * largest number of Should-fix findings — i.e. the round that actually
- * enumerated them as bullets, not a later re-review's suppressed
- * count-only summary. REVIEW.md's "Re-review convergence" rule instructs
- * the reviewer to suppress new Should-fix/Nit bullets on any round after
- * the first, reporting only a count in the summary line — so a naive
- * "read the most recent comment" strategy would silently stop enforcing
- * acknowledgment the moment a PR reaches a second review round, even
- * though the first round's findings are still outstanding. Taking the
- * max-count comment instead is correct regardless of how many rounds a PR
- * goes through: round 1 either has bullets or doesn't, and no later round
- * ever posts more than round 1 did (it only ever posts the same or fewer,
- * per that suppression rule), so round 1's comment — or whichever comment
- * first listed the current count — always wins.
+ * largest number of Should-fix findings — i.e. a round that enumerated them
+ * as bullets, not a later re-review's suppressed count-only summary.
+ * REVIEW.md's "Re-review convergence" rule instructs the reviewer to
+ * suppress new Should-fix/Nit bullets on any round after the first,
+ * reporting only a count in the summary line — so a naive "read the most
+ * recent comment" strategy would silently stop enforcing acknowledgment the
+ * moment a PR reaches a second review round, even though the first round's
+ * findings are still outstanding.
  *
- * Known limitation this trades for that correctness: because round 2+
- * NEVER restates Should-fix as freshly-recomputed bullets (only a summary
- * count, per the same suppression rule), this function structurally cannot
- * distinguish "still outstanding, just suppressed" from "genuinely fixed,
- * and round 2 correctly says so" — both look identical to a caller that
- * only sees bullet-less rounds after the first. Once round 1 posts N &gt; 0
- * findings, the max never drops back to 0 through re-review alone; an
- * `Acknowledged-Should-Fix:` footer becomes the only path a caller built on
- * this function's output can recognize, even for a finding that was
- * actually fixed. Closing this needs REVIEW.md's convergence rule itself to
- * restate current Should-fix status on every round, not a change to this
- * function.
+ * **This function is retained only for
+ * {@link import("./should-fix-backfill.mjs").classifyPr}'s historical
+ * measurement and `bin/pr-review-gate.mjs`'s matching CLI mode — it is NOT
+ * how `bin/check-should-fix-ack.mjs` enforces acknowledgment.**
+ * Its max-count heuristic rests on a premise later disproven live: PR #1190
+ * round 2 posted 2 Should-fix findings structurally different from round
+ * 1's 2 findings (a win32 `detached` cost and an untested `catch`, versus a
+ * group-send fallback bug and a disputed Notes-count claim) — REVIEW.md's
+ * suppression rule is not reliably obeyed by the reviewer in practice (round
+ * 3 on that same PR did suppress correctly, from the identical unconditional
+ * prompt), so "no later round ever posts more than round 1 did" does not
+ * hold. Collapsing a PR's whole history to one "loudest" comment silently
+ * discards whichever round did not win the max, whose specific findings
+ * then never surface in a failure message and can be satisfied by an
+ * unrelated round's footer. See {@link collectShouldFixRounds}, which
+ * `check-should-fix-ack.mjs` uses instead: it keeps every round with
+ * findings, each bound to its own reviewed commit, so no round is lost to
+ * another round's count.
  *
  * Only bodies that parse a real verdict are considered (same filter as
  * {@link countReviewComments}), so an unrelated `claude-assistant.yml`
@@ -258,6 +271,210 @@ export function selectShouldFixComment(bodies) {
     }
   }
   return best;
+}
+
+/**
+ * @typedef {object} ShouldFixRound
+ * @property {number} round 1-based ordinal among verdict-parsing bodies only
+ *   (matches what a human means by "round 2") — not an index into `bodies`,
+ *   since a non-verdict reply does not consume a round number.
+ * @property {string | null} sha This round's `claude-review-sha` marker
+ *   value, or `null` when the comment carries none.
+ * @property {number} count Number of Should-fix findings this round posted.
+ * @property {string} section The raw, non-empty `### Should-fix` section
+ *   body.
+ */
+
+/**
+ * Every review round that posted at least one Should-fix finding, in
+ * posting order — the basis for binding an acknowledgment to the specific
+ * round that raised it (`bin/check-should-fix-ack.mjs`), in place of
+ * {@link selectShouldFixComment}'s single "loudest round" selection for
+ * enforcement. Unlike that function, this reports EVERY round with
+ * findings, each carrying its own reviewed `sha` — the case PR #1190 proved
+ * live (round 2 raising two findings structurally different from round 1's
+ * two) is exactly what a single "loudest round" selection collapses to one
+ * round, silently discarding the other's specific findings.
+ *
+ * Two rounds that resolve to the same non-null `sha` (an edited or
+ * re-posted comment for the same reviewed commit) collapse to one entry,
+ * keeping the larger count — they describe one review, not two.
+ *
+ * @param {string[]} bodies Chronological, oldest first (GitHub's default
+ *   comment ordering, and what the `round` ordinal assumes).
+ * @returns {ShouldFixRound[]}
+ */
+export function collectShouldFixRounds(bodies) {
+  /** @type {ShouldFixRound[]} */
+  const rounds = [];
+  let round = 0;
+  for (const body of bodies) {
+    if (parseVerdict(body) === null) continue;
+    round += 1;
+    const section = parseShouldFixSection(body);
+    const count = countShouldFixFindings(section);
+    if (count === 0) continue;
+    rounds.push({
+      round,
+      sha: parseReviewedSha(body),
+      count,
+      section: /** @type {string} */ (section),
+    });
+  }
+
+  /** @type {Map<string, number>} sha -> index in `deduped` of the kept entry */
+  const keptIndexBySha = new Map();
+  /** @type {ShouldFixRound[]} */
+  const deduped = [];
+  for (const entry of rounds) {
+    if (entry.sha === null) {
+      deduped.push(entry);
+      continue;
+    }
+    const keptIndex = keptIndexBySha.get(entry.sha);
+    if (keptIndex === undefined) {
+      keptIndexBySha.set(entry.sha, deduped.length);
+      deduped.push(entry);
+      continue;
+    }
+    const kept = /** @type {ShouldFixRound} */ (deduped[keptIndex]);
+    if (entry.count >= kept.count) {
+      // Keep the FIRST-seen round ordinal — it matches this entry's fixed
+      // array position — even when a later duplicate for the same sha wins
+      // on count. Swapping in the later entry's `round` here would decouple
+      // the ordinal from the position a caller indexes by, so a failure
+      // message could read "Round 2" for the array's first entry.
+      deduped[keptIndex] = { ...entry, round: kept.round };
+    }
+  }
+  return deduped;
+}
+
+/**
+ * A reviewed commit's trustworthiness as a range boundary, from the CLI's
+ * git-backed classification (`bin/check-should-fix-ack.mjs`'s
+ * `classifyReviewedSha`): `"usable"` when present locally and an ancestor of
+ * the head under test; `"missing"` when the object does not exist in this
+ * checkout at all (force-pushed away, or never fetched); `"unreachable"`
+ * when it exists but is not an ancestor (the branch was rebased or amended
+ * since that review was posted).
+ *
+ * @typedef {"usable" | "missing" | "unreachable"} ReviewedShaStatus
+ */
+
+/**
+ * @typedef {object} AckRangePlan
+ * @property {ShouldFixRound} round
+ * @property {string} from
+ * @property {string} to
+ * @property {boolean} degraded Whether `from` fell back to `base` because
+ *   `round.sha` could not be trusted as a range boundary.
+ * @property {string | null} degradeReason Human-readable explanation, or
+ *   `null` when not degraded.
+ * @property {boolean} empty `from === to` — the round's own reviewed commit
+ *   IS the head under test (it just posted these findings against this very
+ *   commit), so no commit yet exists that could carry an acknowledgment for
+ *   it. Never true for a degraded round unless `base === head` too.
+ */
+
+/**
+ * Resolve the commit range each round's acknowledgment footer must appear
+ * in: `<round's reviewed sha>..<head>`, falling back to the full
+ * `<base>..<head>` (today's un-scoped range, the correct floor) whenever the
+ * reviewed sha cannot be trusted as an ancestor of `head`. Degradation only
+ * ever WIDENS a round's range, so it can never make the gate stricter than
+ * it was before per-round scoping — contrast {@link resolveVerdict}'s
+ * fail-closed policy, which concerns verdict *trust*, not range
+ * *resolution*: a range gap here is an infrastructure limitation, not a
+ * reason to fail a PR that may be entirely blameless for it.
+ *
+ * @param {ShouldFixRound[]} rounds
+ * @param {{ base: string, head: string, shaStatus: Record<string, ReviewedShaStatus> }} ctx
+ *   `shaStatus` should have an entry for every round's non-null `sha`; a
+ *   missing entry degrades the same as `"missing"`.
+ * @returns {AckRangePlan[]}
+ */
+export function planShouldFixAckRanges(rounds, { base, head, shaStatus }) {
+  return rounds.map((round) => {
+    if (round.sha !== null && shaStatus[round.sha] === "usable") {
+      const from = round.sha;
+      return {
+        round,
+        from,
+        to: head,
+        degraded: false,
+        degradeReason: null,
+        empty: from === head,
+      };
+    }
+    const degradeReason =
+      round.sha === null
+        ? `round ${round.round}'s review comment carries no claude-review-sha marker`
+        : shaStatus[round.sha] === "unreachable"
+          ? `round ${round.round}'s reviewed commit ${round.sha} is present in this checkout but is not an ancestor of ${head} (branch rebased or amended since that review)`
+          : `round ${round.round}'s reviewed commit ${round.sha} is not present in this checkout (force-pushed away, or never fetched)`;
+    return {
+      round,
+      from: base,
+      to: head,
+      degraded: true,
+      degradeReason,
+      empty: base === head,
+    };
+  });
+}
+
+/**
+ * @typedef {AckRangePlan & { acknowledged: boolean }} AckEvaluation
+ */
+
+/**
+ * Render the pass/fail decision and human-readable messages for a set of
+ * per-round ranges already checked for an `Acknowledged-Should-Fix:`
+ * footer — pure string/decision work, kept out of the CLI so it is testable
+ * with no git/gh seam at all.
+ *
+ * The empty-range case (`evaluation.empty`) gets its own message: it is not
+ * a footer that failed to appear, it is a round whose reviewed commit IS the
+ * head under test, so literally no commit yet exists that could carry one.
+ * This is a forced, deliberate consequence of binding an acknowledgment to
+ * the round that raised it — a round that just posted findings always fails
+ * its own CI run once, and passes on the next push that carries the footer
+ * (issue #1193).
+ *
+ * @param {AckEvaluation[]} evaluations
+ * @returns {{ ok: boolean, unacknowledged: AckEvaluation[], degraded: AckEvaluation[], messages: string[], summary: string }}
+ */
+export function describeShouldFixAckOutcome(evaluations) {
+  const degraded = evaluations.filter((evaluation) => evaluation.degraded);
+  const unacknowledged = evaluations.filter(
+    (evaluation) => !evaluation.acknowledged,
+  );
+  const messages = unacknowledged.map((evaluation) => {
+    const shaLabel = evaluation.round.sha ?? "an unmarked commit";
+    if (evaluation.empty) {
+      return (
+        `Round ${evaluation.round.round}'s ${evaluation.round.count} Should-fix finding(s) ` +
+        `(reviewed ${shaLabel}) were posted against the commit under test — no commit exists ` +
+        `yet that could acknowledge them. Push a commit carrying ` +
+        "`Acknowledged-Should-Fix: <reason>` on top of " +
+        `${evaluation.to}; the next review round's gate run will read ` +
+        `${evaluation.to}..<new head> and find it.`
+      );
+    }
+    return (
+      `Round ${evaluation.round.round}'s ${evaluation.round.count} Should-fix finding(s) ` +
+      `(reviewed ${shaLabel}) have no Acknowledged-Should-Fix: commit footer in ` +
+      `${evaluation.from}..${evaluation.to}:\n\n${evaluation.round.section}`
+    );
+  });
+  const ok = unacknowledged.length === 0;
+  const summary = ok
+    ? evaluations.length === 0
+      ? "No Should-fix findings ever posted — nothing to acknowledge."
+      : `${evaluations.length} review round(s) with Should-fix findings — all acknowledged in their own post-review commit range.`
+    : `${unacknowledged.length} of ${evaluations.length} review round(s) with Should-fix findings are unacknowledged.`;
+  return { ok, unacknowledged, degraded, messages, summary };
 }
 
 /**

@@ -816,7 +816,7 @@
     "sourceFiles": [
       {
         "path": ".claude/skills/resolving-pr-comments/SKILL.md",
-        "blob": "5e8bc733d5719c0d68967e04378f76b42956bef4"
+        "blob": "9d3ad90f7ca4d4f48b9aad0ed3d3c257ba0bbf77"
       },
       {
         "path": ".claude/skills/triaging-ci/SKILL.md",
@@ -2454,11 +2454,15 @@
     "sourceFiles": [
       {
         "path": "bin/check-should-fix-ack.mjs",
-        "blob": "b47b120e41259447e485e071dbd5848d50d6a9cc"
+        "blob": "b03f8c8042d61993e2f869668e78c6e4436c950c"
       },
       {
         "path": "bin/lib/pr-review-gate.mjs",
-        "blob": "de7df384b5a777b6b709e34d27a12288eecf1859"
+        "blob": "acc4a628dc48c909b52e6ba167982122a2702b55"
+      },
+      {
+        "path": "bin/lib/should-fix-backfill.mjs",
+        "blob": "2d7825427688f1b5f704852af4932aed2cfeebd8"
       },
       {
         "path": "docs/adr/0016-signed-commits-and-decision-gate.md",
@@ -2469,7 +2473,7 @@
         "blob": "1349156a0c2f39058a85c101086f5736306fb356"
       }
     ],
-    "verifiedAt": "2026-09-10"
+    "verifiedAt": "2026-09-11"
   },
   "0098": {
     "sourceFiles": [

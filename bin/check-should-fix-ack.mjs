@@ -12,38 +12,50 @@
  * still merge unfixed under this gate — it just may never merge silently
  * unacknowledged.
  *
- * Picks the review comment carrying the MAX Should-fix finding count across
- * the PR's whole comment history (`selectShouldFixComment`), not just the
- * most recently posted one — REVIEW.md's "Re-review convergence" rule
- * instructs the reviewer to suppress new Should-fix bullets on any round
- * after the first, reporting only a count in the summary line. Reading only
- * the latest comment would silently stop enforcing acknowledgment the
- * moment a PR reaches a second review round; see that function's JSDoc in
- * bin/lib/pr-review-gate.mjs for the full reasoning.
+ * Binds each review round's Should-fix findings to that round's OWN
+ * commit range (`<round's reviewed sha>..<head>`), not one presence test
+ * over the PR's whole `<base>..<head>` range
+ * (`bin/lib/pr-review-gate.mjs`'s `collectShouldFixRounds`/
+ * `planShouldFixAckRanges`/`describeShouldFixAckOutcome`). The original
+ * design read only `selectShouldFixComment`'s single "loudest" comment
+ * against the whole-PR range — live on PR #1190, a footer answering round
+ * 1's two findings was found to silently satisfy round 2's two unrelated,
+ * later findings (issue #1193): the gate reported "acknowledged" while real,
+ * current findings sat unaddressed. Per-round scoping closes that: an
+ * earlier round's footer can no longer satisfy a later round's findings,
+ * because it necessarily predates the commit that raised them.
+ *
+ * A forced consequence: the round that JUST posted a finding has its own
+ * reviewed commit as `head`, so its range is empty and it fails this very
+ * run — no commit yet exists that could carry the footer. This is correct,
+ * not a bug (an acknowledgment cannot predate the finding it acknowledges);
+ * it passes once a commit carrying the footer is pushed and the gate
+ * re-runs on the new head.
  *
  * PR-only — needs the PR number/repo (to fetch its posted review comments
- * via `gh api`) and the base/head commits (to read the PR's full commit
- * range for an acknowledgment footer, mirroring `check-exports-semver.mjs`'s
- * `--base`/`--head` shape and its own `git log --format=%B base..head` read):
+ * via `gh api`) and the base/head commits (`base` is the fallback range's
+ * floor when a round's reviewed commit can't be trusted as an ancestor of
+ * `head`; mirrors `check-exports-semver.mjs`'s `--base`/`--head` shape):
  *
  *   node bin/check-should-fix-ack.mjs --repo <owner/repo> --pr <number> --base <sha> --head <sha>
  *
  * Exit codes:
- *   0  No Should-fix findings ever posted, or the ones that exist are
- *      acknowledged.
- *   1  Unresolved, unacknowledged Should-fix findings — or the comment
- *      thread/commit range could not be resolved at all (fails closed, same
- *      policy as `resolveVerdict`'s "no trustworthy verdict" case: an
- *      infrastructure failure here must never read as a silent pass).
+ *   0  No Should-fix findings ever posted, or every round that posted one
+ *      is acknowledged in its own post-review commit range.
+ *   1  Some round's Should-fix findings are unacknowledged in its range —
+ *      or the comment thread/commit range could not be resolved at all
+ *      (fails closed, same policy as `resolveVerdict`'s "no trustworthy
+ *      verdict" case: an infrastructure failure here must never read as a
+ *      silent pass).
  */
 import process from "node:process";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import {
-  countShouldFixFindings,
+  collectShouldFixRounds,
+  describeShouldFixAckOutcome,
   hasShouldFixAcknowledgment,
-  parseShouldFixSection,
-  selectShouldFixComment,
+  planShouldFixAckRanges,
 } from "./lib/pr-review-gate.mjs";
 import { createReporter, parseJsonFlag, repoRoot } from "./lib/report.mjs";
 
@@ -72,7 +84,7 @@ export function parseArgs(argv) {
 /**
  * Fetch every issue-comment body on a PR authored by `claude[bot]`, in
  * posting order (oldest first — GitHub's default, and what
- * `selectShouldFixComment`'s tie-break assumes).
+ * `collectShouldFixRounds`'s round-ordinal and same-sha dedup both assume).
  *
  * `gh api ... --paginate` on an array-returning endpoint concatenates every
  * page into a single flat JSON array (verified live against a real PR) —
@@ -85,12 +97,13 @@ export function parseArgs(argv) {
  * `countReviewComments`'s own JSDoc (bin/lib/pr-review-gate.mjs) documents:
  * `claude-assistant.yml` replies to any `@claude` mention from any
  * commenter under that identical login, with no actor allowlist. This
- * function does not close that gap itself — `selectShouldFixComment`'s
+ * function does not close that gap itself — `collectShouldFixRounds`'s
  * `parseVerdict(body) !== null` filter is what excludes a non-review reply
  * downstream, the same way `countReviewComments` does. A spoofed reply that
- * happened to contain a parseable `### Verdict` block could only ever
- * inflate the selected finding count (never deflate it, since selection is
- * max-based), so it cannot be used to bypass this gate — only to pollute
+ * happened to contain a parseable `### Verdict` block could only ever ADD a
+ * spurious round (never remove or merge into a real one, since the dedup
+ * key is the reviewed sha, which a spoofed reply is unlikely to share with a
+ * real round), so it cannot be used to bypass this gate — only to pollute
  * the findings text quoted in a failure message.
  *
  * @param {string} repo `owner/repo`
@@ -109,6 +122,127 @@ function fetchClaudeBotCommentBodies(repo, pr) {
     .map((comment) => comment.body ?? "");
 }
 
+/**
+ * Classify a review round's reviewed commit against `head`: `"usable"` when
+ * it exists in this checkout AND is an ancestor of `head` (the un-rebased
+ * common case); `"missing"` when the object is absent entirely
+ * (force-pushed away, or never fetched); `"unreachable"` when it exists but
+ * is NOT an ancestor — the branch was rebased or amended since that review
+ * (PR #1190's round-1 reviewed commit, after that PR's mid-review rebase, is
+ * exactly this case: present locally, orphaned from `main`).
+ *
+ * Two separate git calls, not one, because the two failure modes need
+ * different remediation text ({@link import("./lib/pr-review-gate.mjs").planShouldFixAckRanges}'s
+ * degradation message) even though both degrade identically to the full
+ * `base..head` range: `git cat-file -e` alone cannot tell "gone" from
+ * "present but orphaned", and `git log <sha>..<head>` on an orphaned sha
+ * does not error — it silently returns everything reachable from `head`
+ * minus that sha's ancestors, which can sweep in an unrelated PR's own
+ * footer and reopen the exact vacuous-pass bug this gate exists to close.
+ *
+ * @param {string} sha
+ * @param {string} head
+ * @returns {import("./lib/pr-review-gate.mjs").ReviewedShaStatus}
+ */
+function classifyReviewedSha(sha, head) {
+  try {
+    execFileSync("git", ["cat-file", "-e", `${sha}^{commit}`], {
+      cwd: root,
+      stdio: ["ignore", "ignore", "ignore"],
+    });
+  } catch {
+    return "missing";
+  }
+  try {
+    execFileSync("git", ["merge-base", "--is-ancestor", sha, head], {
+      cwd: root,
+      stdio: ["ignore", "ignore", "ignore"],
+    });
+    return "usable";
+  } catch {
+    return "unreachable";
+  }
+}
+
+/**
+ * @param {string} from
+ * @param {string} to
+ * @returns {string}
+ */
+function readCommitLog(from, to) {
+  return execFileSync("git", ["log", "--format=%B", `${from}..${to}`], {
+    cwd: root,
+    encoding: "utf8",
+  });
+}
+
+/**
+ * The gate's testable core: no `gh`/`git` calls of its own, only the
+ * injected `classifySha`/`readCommitLog` seams — so the regression this
+ * fixes (a footer answering one round silently satisfying another's later,
+ * unrelated findings) can be pinned with fixture data and no network or real
+ * git repo, per `.claude/rules/tests.md`'s no-network/no-real-fs rule for
+ * unit tests. The main block below wires the real git-backed
+ * implementations.
+ *
+ * @param {object} deps
+ * @param {string[]} deps.bodies Every `claude[bot]` comment body on the PR,
+ *   oldest first.
+ * @param {string} deps.base
+ * @param {string} deps.head
+ * @param {(sha: string, head: string) => import("./lib/pr-review-gate.mjs").ReviewedShaStatus} deps.classifySha
+ * @param {(from: string, to: string) => string} deps.readCommitLog
+ * @returns {{ ok: boolean, messages: string[], warnings: string[], summary: string }}
+ */
+export function evaluateShouldFixAck({
+  bodies,
+  base,
+  head,
+  classifySha,
+  readCommitLog: readLog,
+}) {
+  const rounds = collectShouldFixRounds(bodies);
+  if (rounds.length === 0) {
+    return {
+      ok: true,
+      messages: [],
+      warnings: [],
+      summary: "No Should-fix findings ever posted — nothing to acknowledge.",
+    };
+  }
+
+  /** @type {Record<string, import("./lib/pr-review-gate.mjs").ReviewedShaStatus>} */
+  const shaStatus = {};
+  for (const round of rounds) {
+    if (round.sha !== null && !(round.sha in shaStatus)) {
+      shaStatus[round.sha] = classifySha(round.sha, head);
+    }
+  }
+
+  const plans = planShouldFixAckRanges(rounds, { base, head, shaStatus });
+  const evaluations = plans.map((plan) => ({
+    ...plan,
+    acknowledged: plan.empty
+      ? false
+      : hasShouldFixAcknowledgment(readLog(plan.from, plan.to)),
+  }));
+
+  const outcome = describeShouldFixAckOutcome(evaluations);
+  const warnings = outcome.degraded.map(
+    (evaluation) =>
+      `${evaluation.degradeReason} — falling back to the full ` +
+      `${evaluation.from}..${evaluation.to} range for round ${evaluation.round.round}. ` +
+      "A footer from ANY round can now satisfy it; this is a deliberate " +
+      "widening, not a guarantee the finding was handled.",
+  );
+  return {
+    ok: outcome.ok,
+    messages: outcome.messages,
+    warnings,
+    summary: outcome.summary,
+  };
+}
+
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const { json, argv } = parseJsonFlag();
   const reporter = createReporter(json);
@@ -123,55 +257,36 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
 
   try {
     const bodies = fetchClaudeBotCommentBodies(repo, pr);
-    const selected = selectShouldFixComment(bodies);
-    const section = selected === null ? null : parseShouldFixSection(selected);
-    const count = countShouldFixFindings(section);
+    const result = evaluateShouldFixAck({
+      bodies,
+      base,
+      head,
+      classifySha: classifyReviewedSha,
+      readCommitLog,
+    });
 
-    if (count === 0) {
-      reporter.succeed(
-        "No unresolved Should-fix findings — nothing to acknowledge.",
-      );
+    for (const warning of result.warnings) reporter.warn(warning);
+
+    if (result.ok) {
+      reporter.succeed(result.summary);
       reporter.finish();
       process.exit(0);
     }
 
-    const commitLog = execFileSync(
-      "git",
-      ["log", "--format=%B", `${base}..${head}`],
-      { cwd: root, encoding: "utf8" },
-    );
-
-    if (hasShouldFixAcknowledgment(commitLog)) {
-      reporter.succeed(
-        `${count} Should-fix finding(s) present and acknowledged via an ` +
-          "Acknowledged-Should-Fix: commit footer.",
-      );
-      reporter.finish();
-      process.exit(0);
-    }
-
+    for (const message of result.messages) reporter.error(message);
     // NOTE for a future reader confused why fixing the code alone didn't
-    // clear this: REVIEW.md's "Re-review convergence" rule suppresses
-    // Should-fix bullets on every round after the first, reporting only a
-    // free-text count in the summary line — never a parseable,
-    // freshly-recomputed bullet list. selectShouldFixComment therefore
-    // can't distinguish "still outstanding, just suppressed" from
-    // "genuinely fixed, round 2 correctly says so" — it always keeps round
-    // 1's max count. Fixing the code is still the right response when the
-    // finding is real; the footer is how that response gets RECORDED, since
-    // no re-review this gate can see proves the fix on its own. The footer
-    // is one required record covering three different underlying
-    // decisions — fixed, deliberately deferred, or disputed as wrong — the
-    // gate only checks that a decision was made and written down, not which
-    // one.
+    // clear this: a re-review's suppressed Should-fix section (REVIEW.md's
+    // "Re-review convergence" rule) can never prove a fix to this gate on
+    // its own, so the footer is how a fix, a deferral, or a dispute gets
+    // RECORDED — the gate only checks that a decision was made and written
+    // down, not which one. And it must be recorded per round: an earlier
+    // round's footer no longer satisfies a later round's findings, because
+    // it necessarily predates the commit that raised them (issue #1193).
     reporter.error(
-      `${count} Should-fix finding(s) from the review have no ` +
-        `Acknowledged-Should-Fix: commit footer:\n\n${section}\n\nWhatever ` +
-        "you decide — fix it, defer it, or dispute it as wrong — add an " +
-        "`Acknowledged-Should-Fix: <reason>` footer to a commit in this PR " +
-        "recording that decision; a re-review's suppressed Should-fix " +
-        "section can't prove a fix on its own, so this gate needs the " +
-        "footer either way. See REVIEW.md's Should-fix tier.",
+      "Whatever you decide for each round above — fix it, defer it, or " +
+        "dispute it as wrong — add an `Acknowledged-Should-Fix: <reason>` " +
+        "footer to a commit pushed AFTER that round's reviewed commit. See " +
+        "REVIEW.md's Should-fix tier.",
     );
     reporter.finish();
     process.exit(1);

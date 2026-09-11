@@ -488,12 +488,15 @@ turning an open, mergeable PR into one. Three outcomes, one **default**:
 
 - **Default — merge after the verdict lands.** Wait for `claude-pr-review.yml`'s
   `review` check to report, then check the posted comment's `### Should-fix`
-  section (not just the verdict): if it is non-empty and the PR's commit range
-  carries no `Acknowledged-Should-Fix:` footer, invoke `/resolving-pr-comments`
-  first — it now continues past a PASS verdict specifically for this case,
-  attempting the Should-fix fixes and adding the required footer
-  (`docs/adr/0097`) — before merging. `should-fix-ack` is the job that will
-  enforce this as a required check once its dogfood period ends
+  section (not just the verdict): if it is non-empty and no commit pushed after
+  that comment's reviewed sha carries an `Acknowledged-Should-Fix:` footer,
+  invoke `/resolving-pr-comments` first — it now continues past a PASS verdict
+  specifically for this case, attempting the Should-fix fixes and adding the
+  required footer (`docs/adr/0097`) — before merging. An earlier round's
+  footer does not satisfy this round's findings (issue #1193): `should-fix-ack`
+  binds each round's acknowledgment to that round's own commit range, not the
+  PR's whole range. `should-fix-ack` is the job that will enforce this as a
+  required check once its dogfood period ends
   (`docs/contributing/branch-protection.md`); treat it as a precondition now
   regardless, so a PR merged during the dogfood period doesn't need a
   retrofit once it's promoted to required.
