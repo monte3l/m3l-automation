@@ -1960,8 +1960,16 @@
         "blob": "4400077cec4085ef5e02094aaaff5c38e77e9669"
       },
       {
+        "path": ".claude/rules/harness-artifacts.md",
+        "blob": "286ceed05bf2fa7712ced61ab2fad9ffa755d2cb"
+      },
+      {
         "path": ".claude/settings.json",
         "blob": "6dad00b55562b5d1a60a913209662f16d7b7644a"
+      },
+      {
+        "path": "bin/check-host-resources.mjs",
+        "blob": "9d0ba30ae59fe9af91e5ab855c6af0f1623261e3"
       },
       {
         "path": "bin/mcp-server.mjs",
@@ -1969,7 +1977,7 @@
       },
       {
         "path": "bin/setup-host-resources.mjs",
-        "blob": "e1ae2dc50a0521161214528266770e560065a039"
+        "blob": "00e2d4182f79787d868b834fd27d374d9414c480"
       },
       {
         "path": "bin/worktree-setup.mjs",
@@ -1981,7 +1989,7 @@
       },
       {
         "path": "docs/contributing/host-resources.md",
-        "blob": "3ac898946b565d8afb588dc27f9e597ec1a9d22c"
+        "blob": "b96a3522439e4fef4f0c61b40e1968fd0e8d71b5"
       },
       {
         "path": "docs/logs/2026-08-19-check-test-counts-contention.md",
