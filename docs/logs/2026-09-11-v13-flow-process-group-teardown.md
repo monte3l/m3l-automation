@@ -121,6 +121,55 @@ Tracker row: [`docs/plans/IMPLEMENTATION.md`](../plans/IMPLEMENTATION.md) V13
   pass this tool's allowed-name check" — a message about the _name_ for a fault
   in the _path_.
 
+## Pre-push review round
+
+`code-reviewer`, `security-reviewer` and `silent-failure-hunter` ran on the
+committed diff before it was pushed (no auto-merge armed). No Must-fix from
+any of the three. Four findings actioned, two declined:
+
+**Actioned.**
+
+- **`pid === 1` reached `kill(-1, sig)`** — "every process the caller has
+  permission to signal", strictly worse than the `-0` self-group case the
+  guard was written for. `security-reviewer` reached it by executing the
+  module with a stubbed `process.kill`, not by reading. Fixed as `pid > 1`; a
+  real `spawn` never yields pid 1, so refusing it costs nothing and the guard
+  is now sound by construction instead of by that assumption.
+- **The exit reaper closed over the FIRST run's `kill` seam.** The `"exit"`
+  listener is registered once per emitter, so a second concurrent group was
+  reaped through a killer it never supplied. Zero production impact
+  (`defaultKill` always) — but it would let a test believe it exercised its own
+  spy when it did not, which is the vacuous-fixture failure mode. The registry
+  is now `Map<pid, ProcessKillLike>`, not `Set<pid>`.
+- **The reaper's multi-pid loop was only ever exercised at length 1**
+  (`code-reviewer`). Every reaper test drove one group at a time. Added a
+  two-simultaneously-live-groups case; mutating the loop to reap only the first
+  entry fails it.
+- **`process.stderr.write` was unguarded inside the reaper's loop** — an EPIPE
+  on a broken stderr would abandon every group pid after the failing one,
+  losing the teardown to protect a log line. Now wrapped, with the reason
+  written down: this is the one place in the module where swallowing is right,
+  because there is no remaining channel to report to.
+
+**Declined, with reasons.**
+
+- **Attach the pre-resolve SIGTERM failure to `CliRunResult`** (a
+  `teardownFailureCode` field, `silent-failure-hunter` MEDIUM). Genuinely
+  better information — the first send's outcome IS known synchronously before
+  `resolve()`, unlike the escalation's — but the approved scope chose the
+  stderr diagnostic precisely to avoid a new public field and six fake-builder
+  edits. Recorded, not actioned.
+- **Wrap `child.kill(signal)` in the same `try`** as the group send. Unreachable
+  with literal signals on a real `ChildProcess`, and wrapping it would change
+  behaviour for the six methods this change promises are byte-for-byte
+  unaffected.
+
+Mutation results, all run and restored from a byte copy rather than from
+memory: the pid guard fails 10 tests when relaxed to `pid > 0` (`1` rows) or
+`pid !== undefined` (all rows), the reaper's per-pid killer lookup fails its
+own test when replaced with the captured plan's, and the loop fails when
+truncated to one entry.
+
 ## Insights
 
 - **A type-system fact can invalidate a plan's forcing function without

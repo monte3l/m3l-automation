@@ -865,6 +865,9 @@ describe("runCliProcess — group teardown: the pid guard", () => {
   test.each<[string, number | undefined]>([
     ["absent", undefined],
     ["0", 0],
+    // `kill(-1, sig)` is "every process the caller may signal" — strictly
+    // worse than the `-0` self-group case, and refused for the same reason.
+    ["1", 1],
     ["negative", -5],
     ["fractional", 3.7],
     ["NaN", Number.NaN],
@@ -893,6 +896,9 @@ describe("runCliProcess — group teardown: the pid guard", () => {
   test.each<[string, number | undefined]>([
     ["absent", undefined],
     ["0", 0],
+    // `kill(-1, sig)` is "every process the caller may signal" — strictly
+    // worse than the `-0` self-group case, and refused for the same reason.
+    ["1", 1],
     ["negative", -5],
     ["fractional", 3.7],
     ["NaN", Number.NaN],
@@ -1033,6 +1039,73 @@ describe("runCliProcess — group teardown: the exit reaper", () => {
     harness.emitter.emit("exit");
 
     expect(harness.killCalls).toEqual([]);
+  });
+
+  // The reaper iterates a SET, and production reaches that loop with more than
+  // one entry whenever two flow runs overlap. Every other test here drives one
+  // group at a time, which exercises the loop only at length 1.
+  test("two simultaneously-live groups on one emitter are BOTH group-SIGKILLed by a single 'exit'", async () => {
+    const emitter = new EventEmitter();
+    const killCalls: RecordedKill[] = [];
+    const kill = vi.fn<ProcessKillLike>((target, signal) => {
+      killCalls.push({ pid: target, signal });
+    });
+    const children = [createFakeChild(5101), createFakeChild(5102)];
+    const promises = children.map((child) => {
+      const { spawn } = createFakeSpawn(child);
+      return runCliProcess({
+        ...baseOptions,
+        spawn,
+        teardown: "group",
+        kill,
+        exitEmitter: emitter,
+      });
+    });
+
+    // Neither child has closed — both groups are live at exit time.
+    emitter.emit("exit");
+
+    expect(killCalls).toEqual([
+      { pid: -5101, signal: "SIGKILL" },
+      { pid: -5102, signal: "SIGKILL" },
+    ]);
+
+    for (const child of children) child.emit("close", 0, null);
+    await Promise.all(promises);
+  });
+
+  // The `"exit"` listener is registered ONCE per emitter, so a reaper that
+  // closed over the first run's killer would reap every later run's group
+  // through a seam that run never supplied — invisible in production (always
+  // the real `process.kill`) but enough to make a test believe it exercised
+  // its own spy when it did not.
+  test("each live group is reaped through the kill seam ITS OWN run supplied", async () => {
+    const emitter = new EventEmitter();
+    const callsA: RecordedKill[] = [];
+    const callsB: RecordedKill[] = [];
+    const children = [createFakeChild(6101), createFakeChild(6102)];
+    const promises = [callsA, callsB].map((sink, index) => {
+      const child = children[index];
+      expect(child).toBeDefined();
+      const { spawn } = createFakeSpawn(child as FakeChildProcess);
+      return runCliProcess({
+        ...baseOptions,
+        spawn,
+        teardown: "group",
+        kill: vi.fn<ProcessKillLike>((target, signal) => {
+          sink.push({ pid: target, signal });
+        }),
+        exitEmitter: emitter,
+      });
+    });
+
+    emitter.emit("exit");
+
+    expect(callsA).toEqual([{ pid: -6101, signal: "SIGKILL" }]);
+    expect(callsB).toEqual([{ pid: -6102, signal: "SIGKILL" }]);
+
+    for (const child of children) child.emit("close", 0, null);
+    await Promise.all(promises);
   });
 
   test("the 'exit' listener is registered once per emitter, not once per spawn", async () => {

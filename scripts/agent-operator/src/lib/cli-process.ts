@@ -291,14 +291,24 @@ interface TeardownPlan {
 /**
  * Whether a pid can safely be negated into a process-group target.
  *
- * This guard is load-bearing, not hygiene. `process.kill(-0, sig)` is
- * `process.kill(0, sig)`, which POSIX defines as "every process in the
- * **caller's own** group" — agent-operator would signal itself, and a test
- * would signal the Vitest worker and its siblings. `-NaN` and a fractional
- * pid are a coin flip. Only a positive integer is addressable.
+ * This guard is load-bearing, not hygiene. Two pids are catastrophic rather
+ * than merely wrong once negated, and neither is refused by a truthiness or
+ * sign check:
+ *
+ * - `process.kill(-0, sig)` IS `process.kill(0, sig)`, which POSIX defines as
+ *   "every process in the **caller's own** group" — agent-operator would
+ *   signal itself, and a test would signal the Vitest worker and its
+ *   siblings.
+ * - `process.kill(-1, sig)` is "every process the caller has permission to
+ *   signal", which is strictly worse still. Hence `pid > 1`, not `pid > 0`:
+ *   a real `spawn` never yields pid 1, so refusing it costs nothing and the
+ *   guard becomes sound by construction rather than by that assumption.
+ *
+ * `-NaN` and a fractional pid are a coin flip, and `Number.isInteger` does
+ * not coerce, so a runtime-unsound `"4242"` or `4242n` is refused too.
  */
 function isGroupTargetablePid(pid: number | undefined): pid is number {
-  return pid !== undefined && Number.isInteger(pid) && pid > 0;
+  return pid !== undefined && Number.isInteger(pid) && pid > 1;
 }
 
 /**
@@ -327,9 +337,17 @@ function isGroupTargetablePid(pid: number | undefined): pid is number {
 function reportTeardownFailure(cause: unknown, signal: NodeJS.Signals): void {
   const code = readFailureCode(cause);
   if (code === "ESRCH") return;
-  process.stderr.write(
-    `agent-operator: process-group ${signal} failed (${code ?? "UNKNOWN"})\n`,
-  );
+  try {
+    process.stderr.write(
+      `agent-operator: process-group ${signal} failed (${code ?? "UNKNOWN"})\n`,
+    );
+  } catch {
+    // The diagnostic channel itself is gone (a closed or broken stderr). This
+    // is the one place in this module where swallowing is the right answer:
+    // there is no remaining channel to report to, and a throw from here would
+    // propagate out of the exit reaper's loop and abandon every group pid
+    // after this one — losing the teardown to protect a log line.
+  }
 }
 
 /**
@@ -359,17 +377,29 @@ function signalTarget(
 }
 
 /**
- * The live detached group pids each exit emitter is responsible for reaping.
+ * The live detached group pids each exit emitter is responsible for reaping,
+ * each mapped to the {@link ProcessKillLike} of the run that registered it.
  *
- * A `WeakMap` keyed by the emitter, rather than one module-level `Set` plus
- * a `WeakSet` of wired emitters, for two reasons: the map's own key presence
- * already makes listener registration idempotent per emitter, and keying the
- * pid set by emitter keeps a test's injected fake emitter from ever reaping
+ * A `WeakMap` keyed by the emitter, rather than one module-level collection
+ * plus a `WeakSet` of wired emitters, for two reasons: the map's own key
+ * presence already makes listener registration idempotent per emitter, and
+ * keying by emitter keeps a test's injected fake emitter from ever reaping
  * (or being blamed for) another test's pids — no `vi.resetModules`, whose
  * first-test cost this repo has measured, and no test-only reset export.
  * Weak so an emitter that goes out of scope is not retained.
+ *
+ * The value is a `Map` to a per-pid killer, not a bare `Set`, because the
+ * `"exit"` listener is registered exactly once per emitter: closing over the
+ * FIRST run's killer would silently reap every later run's group through a
+ * seam that run never supplied. Production only ever passes
+ * {@link defaultKill}, so that would be invisible there — but it would let a
+ * test believe it exercised its own injected killer when it did not, which
+ * is the vacuous-fixture failure mode, not a cosmetic one.
  */
-const groupPidsByEmitter = new WeakMap<CliExitEmitter, Set<number>>();
+const groupReapersByEmitter = new WeakMap<
+  CliExitEmitter,
+  Map<number, ProcessKillLike>
+>();
 
 /**
  * Registers a detached group pid with the best-effort exit reaper, and wires
@@ -397,23 +427,23 @@ function trackDetachedGroup(
 ): void {
   const pid = child.pid;
   if (!isGroupTargetablePid(pid)) return;
-  const existing = groupPidsByEmitter.get(emitter);
-  const pids = existing ?? new Set<number>();
+  const existing = groupReapersByEmitter.get(emitter);
+  const live = existing ?? new Map<number, ProcessKillLike>();
   if (existing === undefined) {
-    groupPidsByEmitter.set(emitter, pids);
+    groupReapersByEmitter.set(emitter, live);
     emitter.on("exit", () => {
-      for (const live of pids) {
+      for (const [groupPid, kill] of live) {
         try {
-          plan.kill(-live, "SIGKILL");
+          kill(-groupPid, "SIGKILL");
         } catch (cause) {
           reportTeardownFailure(cause, "SIGKILL");
         }
       }
     });
   }
-  pids.add(pid);
+  live.set(pid, plan.kill);
   child.on("close", () => {
-    pids.delete(pid);
+    live.delete(pid);
   });
 }
 
@@ -440,8 +470,11 @@ const SIGKILL_GRACE_MS = 5_000;
  * within the grace period is never sent a second signal against a pid — or,
  * under `"group"`, a pgid — the OS may have already reused.
  *
- * Both signals go through the one {@link signalTarget} call shape, so the
- * `SIGTERM` and the `SIGKILL` can never disagree about scope or pid.
+ * Both signals go through the one {@link signalTarget} call shape, so they
+ * can never disagree about scope or about how a pid is validated. Each
+ * re-reads `child.pid`, which a real `ChildProcess` retains through both
+ * `"exit"` and `"close"`, so the escalation addresses the same group the
+ * `SIGTERM` did.
  */
 function killWithEscalation(child: CliChildProcess, plan: TeardownPlan): void {
   signalTarget(child, plan, "SIGTERM");
