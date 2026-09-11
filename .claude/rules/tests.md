@@ -12,8 +12,7 @@ paths:
 
 - **Runner/layout, what to test, mocking basics, type-level tests, fixtures,
   and parameterization** are covered in full by style-guide.md's Part 2
-  subsections above — this file only adds what that guide doesn't already
-  say.
+  subsections above.
 - **Assert the named behavior, not a proxy** — not `length > 0`, and not
   merely that the call "doesn't throw". A positive and a negative claim
   BOTH met by nothing happening need the positive one asserted explicitly
@@ -90,9 +89,9 @@ extends Port { ... }` (TS2430). Let the factory return the inferred
 - **Test-first, not test-after** — write tests from the doc contract, watch
   them fail for the right reason, then implement — don't backfill a test
   that just mirrors code you already wrote.
-- **Update `docs/implementation-status.md`'s Notes count in the same commit
-  as any new test** — `check:test-counts` asserts it against the live
-  Vitest count.
+- **A new test under `packages/m3l-common/tests` must move
+  `docs/implementation-status.md`'s Notes count in the same commit** —
+  `check:test-counts` is scoped to that tree; `scripts/*/tests` has no row.
 - **Per-file test size is ratcheted, not capped** (`pnpm check:file-budget`,
   ADR-0072). Name a seam-plan slice's test file `<mod>-<facet>.test.ts` and
   import **only** the symbols that slice ships — the whole barrel defeats
