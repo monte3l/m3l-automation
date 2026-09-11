@@ -29,7 +29,7 @@ instead of carrying a stale table.
 | ---------------------------------------------------------------- | ----------------------------------------------------------- |
 | [`2026-08-20-agent-operator.md`](./2026-08-20-agent-operator.md) | Agent-operator programme (V-series) — V10/V11/V13 remaining |
 | [`2026-08-20-cli-evolution.md`](./2026-08-20-cli-evolution.md)   | CLI-first evolution programme (U-series) — U13 remaining    |
-| [`2026-08-20-m3l-console.md`](./2026-08-20-m3l-console.md)       | m3l console programme (X-series) — X8a-d, X13 remaining     |
+| [`2026-08-20-m3l-console.md`](./2026-08-20-m3l-console.md)       | m3l console programme (X-series) — X8b-d, X13 remaining     |
 
 ## Archive
 
