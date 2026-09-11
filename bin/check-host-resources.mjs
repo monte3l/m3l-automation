@@ -93,7 +93,12 @@ export function parseMemoryMax(output) {
 
 /**
  * Count processes whose command name is exactly `claude` from a
- * `ps -eo comm` listing (one name per line, as produced with `--no-headers`).
+ * `ps -eo comm=` listing (one name per line — `comm=`'s empty header is the
+ * portable no-header form, working on both BSD `ps` (macOS) and procps
+ * (Linux); BSD's long-option parser rejects the GNU-only `--no-headers`).
+ * BSD `comm` also renders the path as invoked (e.g. `/usr/libexec/logd`)
+ * where GNU `comm` always yields a bare basename, so a leading path is
+ * stripped before the exact-match compare.
  *
  * @param {string} psOutput
  * @returns {number}
@@ -101,7 +106,7 @@ export function parseMemoryMax(output) {
 export function countClaudeProcesses(psOutput) {
   return psOutput
     .split("\n")
-    .map((l) => l.trim())
+    .map((l) => l.trim().replace(/^.*\//, ""))
     .filter((l) => l === "claude").length;
 }
 
@@ -210,9 +215,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
       ]),
     ),
     toolMemoryLimitEnv: process.env.CLAUDE_CODE_TOOL_MEMORY_LIMIT,
-    claudeProcessCount: countClaudeProcesses(
-      runQuiet("ps", ["-eo", "comm", "--no-headers"]),
-    ),
+    claudeProcessCount: countClaudeProcesses(runQuiet("ps", ["-eo", "comm="])),
     totalMemGiB,
   };
 

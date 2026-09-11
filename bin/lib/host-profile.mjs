@@ -69,12 +69,22 @@ const DEFAULT_NODE_OS = { availableParallelism, totalmem, freemem };
  * profile because one optional probe (e.g. `lscpu` missing in a minimal
  * container) failed.
  *
+ * `LC_ALL=C` is forced on every child process — without it, a host whose
+ * locale uses a comma decimal separator (e.g. `it_IT`) makes commands like
+ * `sysctl vm.swapusage` print `total = 1024,00M` instead of `1024.00M`,
+ * silently breaking every numeric parser below it. Confirmed live: this
+ * exact host's `LC_NUMERIC=it_IT.UTF-8` made `parseDarwinSwapUsage` return
+ * `0` for a host that actually has 1 GiB of swap provisioned.
+ *
  * @type {HostProfileIo}
  */
 export const DEFAULT_IO = {
   run(cmd, args) {
     try {
-      return execFileSync(cmd, args, { encoding: "utf8" }).trim();
+      return execFileSync(cmd, args, {
+        encoding: "utf8",
+        env: { ...process.env, LC_ALL: "C" },
+      }).trim();
     } catch {
       return null;
     }
@@ -132,7 +142,13 @@ export function resolveSessions({ override, liveCount }) {
 
 /**
  * Count processes whose command name is exactly `claude`, from a
- * `ps -eo comm --no-headers` listing. Duplicated (not imported) from
+ * `ps -eo comm=` listing. `comm=` (not the GNU-only `comm --no-headers`) is
+ * the portable no-header form — it works on both BSD `ps` (macOS) and
+ * procps (Linux); BSD's long-option parser rejects `--no-headers` outright.
+ * BSD `comm` also renders the path as invoked (e.g. `/usr/libexec/logd`)
+ * where GNU `comm` always yields a bare basename, so a leading path is
+ * stripped before the exact-match compare — harmless on Linux, removes the
+ * launch-path dependency on macOS. Duplicated (not imported) from
  * `bin/check-host-resources.mjs`'s `countClaudeProcesses`: importing a
  * top-level script into a `bin/lib/*.mjs` module the script itself might
  * later import back from would invert the intended dependency direction.
@@ -143,7 +159,7 @@ export function resolveSessions({ override, liveCount }) {
 export function countClaudeProcesses(psOutput) {
   return psOutput
     .split("\n")
-    .map((l) => l.trim())
+    .map((l) => l.trim().replace(/^.*\//, ""))
     .filter((l) => l === "claude").length;
 }
 
@@ -418,16 +434,30 @@ export function parseDarwinSysctlCore(output) {
 }
 
 /**
- * Parse Apple Silicon's P/E split from
- * `sysctl -n hw.perflevel0.logicalcpu` output (performance cores; Apple
- * lists perflevel0 as the P-cores). Returns `null` on an Intel Mac or any
- * host where the sysctl doesn't exist.
+ * Parse Apple Silicon's P/E split from `sysctl -n hw.perflevel0.logicalcpu`
+ * output (performance cores; Apple lists perflevel0 as the P-cores) — but
+ * ONLY when `nperflevelsOutput` (`sysctl -n hw.nperflevels`) confirms more
+ * than one performance level actually exists.
  *
- * @param {string | null} output
- * @returns {number | null} performance-core count
+ * `hw.perflevel0` alone cannot tell a real P/E split from a single uniform
+ * level: macOS 12+ exposes the `perflevel*` sysctl tree on every Mac,
+ * hybrid or not, and on a non-hybrid CPU `perflevel0.logicalcpu` reports
+ * ALL logical cores, not a performance-core subset. Confirmed live on an
+ * Intel i9-9980HK: `hw.perflevel0.logicalcpu` returned `16` (every logical
+ * core, hyperthreading included) while `hw.nperflevels` was `1` — the
+ * previous version of this function returned `16` as "performance cores"
+ * there, silently doubling every derived concurrency budget. `nperflevels
+ * > 1` is Apple's own documented signal for a genuine P/E split.
+ *
+ * @param {string | null} output `sysctl -n hw.perflevel0.logicalcpu`
+ * @param {string | null} nperflevelsOutput `sysctl -n hw.nperflevels`
+ * @returns {number | null} performance-core count; `null` on a non-hybrid
+ *   Mac (including every Intel Mac) or when either sysctl is unavailable
  */
-export function parseDarwinPerformanceCores(output) {
+export function parseDarwinPerformanceCores(output, nperflevelsOutput) {
   if (!output) return null;
+  const nperflevels = Number(nperflevelsOutput);
+  if (!Number.isFinite(nperflevels) || nperflevels <= 1) return null;
   const performanceCores = Number(output.split("\n")[0]);
   return Number.isFinite(performanceCores) && performanceCores > 0
     ? performanceCores
@@ -436,15 +466,60 @@ export function parseDarwinPerformanceCores(output) {
 
 /**
  * Parse `sysctl vm.swapusage` output, e.g.
- * `vm.swapusage: total = 3072.00M  used = 0.00M  free = 3072.00M`.
+ * `vm.swapusage: total = 3072.00M  used = 0.00M  free = 3072.00M`. Accepts
+ * either `.` or `,` as the decimal separator — `DEFAULT_IO.run` forces
+ * `LC_ALL=C` so a live read is always `.`, but this parser is also exercised
+ * directly against fixture text, so it stays locale-tolerant on its own.
  *
  * @param {string | null} output
  * @returns {number} swap size in GiB, 0 if unparseable
  */
 export function parseDarwinSwapUsage(output) {
   if (!output) return 0;
-  const match = /total\s*=\s*([\d.]+)M/.exec(output);
-  return match ? Math.round((Number(match[1]) / 1024) * 10) / 10 : 0;
+  const match = /total\s*=\s*([\d.,]+)M/.exec(output);
+  if (!match) return 0;
+  const totalM = Number(match[1].replace(",", "."));
+  return Number.isFinite(totalM) ? Math.round((totalM / 1024) * 10) / 10 : 0;
+}
+
+/**
+ * Parse `vm_stat` output into an available-memory estimate. macOS has no
+ * `/proc/meminfo`-equivalent single number, so this sums the page states
+ * that represent memory the kernel can hand out without swapping — free,
+ * inactive (reclaimable), purgeable, and speculative (opportunistic
+ * readahead, not yet actually used) — the same category macOS's own
+ * Activity Monitor "Memory Used" calculation excludes. "Pages active" and
+ * "Pages wired down" are deliberately excluded: those are genuinely in use.
+ * The page size is read from `vm_stat`'s own header line rather than
+ * assumed, since it is not always 4096 (e.g. 16384 on some Apple Silicon
+ * configurations).
+ *
+ * @param {string | null} output
+ * @returns {number | null} available memory in GiB, `null` if unparseable
+ */
+export function parseDarwinVmStat(output) {
+  if (!output) return null;
+  const pageSize = Number(
+    /page size of (\d+) bytes/.exec(output)?.[1] ?? "4096",
+  );
+  /** @param {string} label */
+  const pages = (label) =>
+    Number(new RegExp(`${label}:\\s*(\\d+)\\.`).exec(output)?.[1]);
+  const free = pages("Pages free");
+  const inactive = pages("Pages inactive");
+  const purgeable = pages("Pages purgeable");
+  const speculative = pages("Pages speculative");
+  if (
+    !Number.isFinite(pageSize) ||
+    !Number.isFinite(free) ||
+    !Number.isFinite(inactive) ||
+    !Number.isFinite(purgeable) ||
+    !Number.isFinite(speculative)
+  ) {
+    return null;
+  }
+  const availableBytes = (free + inactive + purgeable + speculative) * pageSize;
+  return Math.round((availableBytes / 1024 ** 3) * 10) / 10;
 }
 
 // ---------------------------------------------------------------------------
@@ -515,12 +590,10 @@ function gatherLinuxProfile(io, common) {
 }
 
 /**
- * Darwin collector — behind the same seam as the Linux one, but unproven on
- * real hardware as of this wave (no Mac available to this project yet). No
- * PSI equivalent exists on Darwin; `pressure` is reported `null` rather than
- * faked. Memory availability falls back to total memory (no `vm_stat`
- * parsing — a `pages free` estimate is noisy and this profile only needs a
- * defensible order of magnitude until validated on real hardware).
+ * Darwin collector — behind the same seam as the Linux one. Validated live
+ * on an Intel Mac (darwin x64, i9-9980HK) as of this fix; still unvalidated
+ * on Apple Silicon. No PSI equivalent exists on Darwin; `pressure` is
+ * reported `null` rather than faked.
  *
  * @param {HostProfileIo} io
  * @param {{ isCI: boolean, sessions: number }} common
@@ -542,8 +615,16 @@ function gatherDarwinProfile(io, common) {
   const core = rawCore ?? { physicalCores: 1, logicalCores: 1, totalMemGiB: 0 };
   const performanceCores = parseDarwinPerformanceCores(
     io.run("sysctl", ["-n", "hw.perflevel0.logicalcpu"]),
+    io.run("sysctl", ["-n", "hw.nperflevels"]),
   );
   const swapGiB = parseDarwinSwapUsage(io.run("sysctl", ["vm.swapusage"]));
+  const vmStat = parseDarwinVmStat(io.run("vm_stat", []));
+  if (vmStat === null) {
+    warnings.push(
+      "vm_stat detection failed — availableMemGiB defaulted to totalMemGiB, " +
+        "which overstates real available memory.",
+    );
+  }
   return {
     os: "darwin",
     distro: null,
@@ -551,9 +632,9 @@ function gatherDarwinProfile(io, common) {
     logicalCores: core.logicalCores,
     physicalCores: core.physicalCores,
     performanceCores,
-    smt: false,
+    smt: core.logicalCores > core.physicalCores,
     totalMemGiB: core.totalMemGiB,
-    availableMemGiB: core.totalMemGiB,
+    availableMemGiB: vmStat ?? core.totalMemGiB,
     swapGiB,
     hasZram: false,
     isCI: common.isCI,
@@ -607,22 +688,25 @@ function gatherFallbackProfile(common, nodeOs) {
  *   sessions?: number,
  *   io?: HostProfileIo,
  *   nodeOs?: { availableParallelism: () => number, totalmem: () => number, freemem: () => number },
+ *   platform?: string,
  * }} [opts] `sessions` overrides the live-detected count (floored at 1
  *   either way); `io`/`nodeOs` are injection seams for tests — omit both to
- *   read the real host.
+ *   read the real host. `platform` overrides `process.platform` — the seam
+ *   that lets a fixture-driven test exercise `gatherDarwinProfile`/
+ *   `gatherLinuxProfile` regardless of which OS the test runner itself is
+ *   on; defaults to the real `process.platform`.
  * @returns {HostProfile}
  */
 export function detectHostProfile(opts = {}) {
   const io = opts.io ?? DEFAULT_IO;
   const nodeOs = opts.nodeOs ?? DEFAULT_NODE_OS;
+  const platform = opts.platform ?? process.platform;
   const isCI = Boolean(process.env.CI);
-  const liveCount = countClaudeProcesses(
-    io.run("ps", ["-eo", "comm", "--no-headers"]) ?? "",
-  );
+  const liveCount = countClaudeProcesses(io.run("ps", ["-eo", "comm="]) ?? "");
   const sessions = resolveSessions({ override: opts.sessions, liveCount });
   const common = { isCI, sessions };
 
-  const osKind = classifyOsFromPlatform(process.platform);
+  const osKind = classifyOsFromPlatform(platform);
   if (osKind === "linux") return gatherLinuxProfile(io, common);
   if (osKind === "darwin") return gatherDarwinProfile(io, common);
   return gatherFallbackProfile(common, nodeOs);

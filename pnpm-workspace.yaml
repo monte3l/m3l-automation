@@ -46,7 +46,13 @@ overrides:
 allowBuilds:
   unrs-resolver: false
   lefthook: true
-  better-sqlite3: true
+  # better-sqlite3 ships prebuilt N-API binaries for every supported
+  # platform/arch under its own prebuilds/ (its runtime binding loader
+  # checks that dir before ever touching a node-gyp build output), so no
+  # compile step is needed despite the binding.gyp pnpm's build-script
+  # detection keys off. Explicitly false (not omitted) so pnpm skips the
+  # build with a notice instead of erroring when node-gyp isn't installed.
+  better-sqlite3: false
 # Supply-chain cooldown: hold back package versions younger than this many
 # minutes (pnpm's minimumReleaseAge feature). Pinned explicitly rather than
 # relying on pnpm v11's default so a future default change cannot silently
