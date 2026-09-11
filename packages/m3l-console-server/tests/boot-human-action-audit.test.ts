@@ -373,6 +373,16 @@ describe("the boot-time reconciliation (X8a)", () => {
     );
   }
 
+  // MUTATION KILLED: dropping the space in the key grammar (or swapping
+  // method/path order) would still let T7 pass, since it only compares
+  // `humanActionSpecKey` outputs against themselves via a `Set` — this pins
+  // the literal format independently.
+  test("humanActionSpecKey formats method and path as `METHOD path`", () => {
+    expect(humanActionSpecKey({ method: "POST", path: "/api/v1/runs" })).toBe(
+      "POST /api/v1/runs",
+    );
+  });
+
   // MUTATION KILLED: deleting the "any key not present is an orphan"
   // collection — a fully-covering table with exactly one key omitted must
   // throw, and the thrown message must name that one key.

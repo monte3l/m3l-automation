@@ -252,6 +252,14 @@ export interface HumanActionRouteWiring {
  * a whole-group route deletion. A spec key's own text never vanishes, so
  * this classification is as stable as the table itself.
  *
+ * Anchored on the path-segment boundary, not a raw substring: the key is
+ * always `${method} ${path}` ({@link humanActionSpecKey}), so this checks
+ * the path portion is exactly `/api/v1/runs`/`/api/v1/sessions` or
+ * starts with that prefix followed by `/`. A prefix-only match (`.includes`)
+ * would silently misclassify a future sibling family like `/api/v1/runsets`
+ * or `/api/v1/sessions-archive` into the wrong group instead of falling
+ * through to the throw below.
+ *
  * @throws {@link M3LConsoleError} `ERR_CONSOLE_INTERNAL` for a key naming
  *   neither known family — unreachable today (T7 exhaustively proves every
  *   real `HUMAN_ACTION_SPECS` key falls under `/api/v1/runs` or
@@ -259,8 +267,13 @@ export interface HumanActionRouteWiring {
  *   to the spec table without updating this classifier.
  */
 function humanActionSpecGroup(key: string): keyof HumanActionRouteWiring {
-  if (key.includes(" /api/v1/runs")) return "runs";
-  if (key.includes(" /api/v1/sessions")) return "sessions";
+  const path = key.slice(key.indexOf(" ") + 1);
+  if (path === "/api/v1/runs" || path.startsWith("/api/v1/runs/")) {
+    return "runs";
+  }
+  if (path === "/api/v1/sessions" || path.startsWith("/api/v1/sessions/")) {
+    return "sessions";
+  }
   throw new M3LConsoleError(
     "ERR_CONSOLE_INTERNAL",
     `human-action audit spec '${key}' does not belong to a known route group ` +
