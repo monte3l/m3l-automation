@@ -15,6 +15,9 @@
  *      `peerDependenciesMeta`.
  *   5. Root devDependency pinning convention (ADR-0010) — every workspace-root
  *      dev dependency is exact-pinned, independent of ADR-0017's library scope.
+ *   6. pnpm packageManager staleness (warn-only) — the pinned pnpm major vs.
+ *      upstream's true latest (`bin/check-pnpm-version.mjs` deliberately
+ *      excludes this network-dependent question; see its own header).
  *
  * Exit codes:
  *   0  All checks passed.
@@ -30,6 +33,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { join } from "node:path";
 import { parseJsonFlag, createReporter, repoRoot } from "./lib/report.mjs";
+import { parsePackageManagerField } from "./check-pnpm-version.mjs";
 
 const root = repoRoot(import.meta.url);
 
@@ -240,6 +244,28 @@ export function findRangedDevDependencies(pkg) {
   return Object.entries(deps)
     .filter(([, range]) => !EXACT_VERSION.test(range))
     .map(([name, range]) => ({ name, range }));
+}
+
+/**
+ * Compare the pinned pnpm major (`package.json`'s `packageManager` field)
+ * against pnpm's true upstream latest. Warn-only by design — this is a
+ * staleness question about mutable remote state, not the local multi-site
+ * consistency question `bin/check-pnpm-version.mjs` gates on, and erroring
+ * here would deepen ADR-0079 hermeticity debt (a blocking gate failing on
+ * remote state it doesn't control). Pure — takes the already-parsed pinned
+ * major and the already-fetched latest version string, so it needs no
+ * network access itself and is trivially fixture-driven.
+ *
+ * @param {number} pinnedMajor
+ * @param {string} latestVersion upstream's reported latest, e.g. "12.4.1"
+ * @returns {{ pinnedMajor: number, latestMajor: number, latestVersion: string } | null}
+ *   null when the pin is unparseable-as-stale (upstream major not newer, or
+ *   `latestVersion` itself didn't parse)
+ */
+export function findPnpmStaleness(pinnedMajor, latestVersion) {
+  const latestMajor = parseInt((latestVersion || "0").split(".")[0], 10);
+  if (isNaN(latestMajor) || latestMajor <= pinnedMajor) return null;
+  return { pinnedMajor, latestMajor, latestVersion };
 }
 
 /**
@@ -461,6 +487,48 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
       { file: rootPkgRel },
     );
     violationCount++;
+  }
+
+  // ── 6. pnpm packageManager staleness (warn-only) ─────────────────────────────
+
+  // Deliberately outside the violationCount tally — see findPnpmStaleness's
+  // doc comment. Skipped entirely if the pin itself doesn't parse as an exact
+  // pnpm version; check:pnpm-version already blocks that case separately.
+  const pmField = parsePackageManagerField(rootPkg.packageManager);
+  if (pmField !== null && /^\d+\.\d+\.\d+$/.test(pmField.version)) {
+    const pinnedMajor = Number(pmField.version.split(".")[0]);
+    // run() throws on a spawn failure (e.g. npm missing from PATH) — catch it
+    // here specifically, unlike the load-bearing pnpm calls above, so an
+    // unspawnable npm degrades to a warning rather than aborting the whole
+    // gate. Aborting would contradict this block's own warn-only contract:
+    // erroring on remote/environment state check:deps doesn't control is
+    // exactly the ADR-0079 hermeticity debt findPnpmStaleness's doc comment
+    // says this check must not deepen.
+    let npmViewRes;
+    try {
+      npmViewRes = run("npm", ["view", "pnpm", "version"]);
+    } catch (err) {
+      reporter.warn(
+        `check:deps: failed to spawn npm view pnpm version; skipping pnpm staleness check. (${/** @type {Error} */ (err).message})`,
+      );
+      npmViewRes = null;
+    }
+    if (npmViewRes !== null && npmViewRes.status !== 0) {
+      reporter.warn(
+        `check:deps: npm view pnpm version exited with status ${String(npmViewRes.status)}; skipping pnpm staleness check.`,
+      );
+    } else if (npmViewRes !== null) {
+      const staleness = findPnpmStaleness(
+        pinnedMajor,
+        (npmViewRes.stdout || "").trim(),
+      );
+      if (staleness !== null) {
+        reporter.warn(
+          `check:deps — package.json pins pnpm@${pmField.version} (major ${staleness.pinnedMajor}), but upstream latest is ${staleness.latestVersion} (major ${staleness.latestMajor}). Not blocking — see ADR-0001 before bumping the packageManager pin.`,
+          { file: rootPkgRel },
+        );
+      }
+    }
   }
 
   // ── Report ───────────────────────────────────────────────────────────────────

@@ -3,6 +3,7 @@ import {
   MAJOR_HOLDS,
   findMajorBumps,
   findPeerMetaInconsistencies,
+  findPnpmStaleness,
   findRangedDependencies,
   findRangedDevDependencies,
   parseOutdated,
@@ -265,6 +266,36 @@ describe("findRangedDevDependencies", () => {
 
   test("missing devDependencies block returns empty array", () => {
     expect(findRangedDevDependencies({})).toEqual([]);
+  });
+});
+
+describe("findPnpmStaleness", () => {
+  test("upstream major strictly newer than pinned returns the staleness record", () => {
+    expect(findPnpmStaleness(12, "13.4.1")).toEqual({
+      pinnedMajor: 12,
+      latestMajor: 13,
+      latestVersion: "13.4.1",
+    });
+  });
+
+  test("upstream major equal to pinned (patch/minor ahead only) returns null", () => {
+    expect(findPnpmStaleness(12, "12.9.9")).toBeNull();
+  });
+
+  test("upstream major older than pinned returns null", () => {
+    expect(findPnpmStaleness(12, "11.0.0")).toBeNull();
+  });
+
+  test("upstream major and version exactly equal to pinned returns null", () => {
+    expect(findPnpmStaleness(12, "12.0.0")).toBeNull();
+  });
+
+  test("empty latestVersion string returns null gracefully", () => {
+    expect(findPnpmStaleness(12, "")).toBeNull();
+  });
+
+  test("non-numeric leading segment in latestVersion returns null gracefully", () => {
+    expect(findPnpmStaleness(12, "vNext.0.0")).toBeNull();
   });
 });
 
