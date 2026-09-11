@@ -16,6 +16,7 @@ import {
   parseDarwinSysctlCore,
   parseDarwinPerformanceCores,
   parseDarwinSwapUsage,
+  parseDarwinVmStat,
   detectHostProfile,
   deriveBudget,
 } from "../lib/host-profile.mjs";
@@ -422,20 +423,34 @@ describe("parseDarwinSysctlCore", () => {
 // ---------------------------------------------------------------------------
 
 describe("parseDarwinPerformanceCores", () => {
-  test("parses a positive performance-core count", () => {
-    expect(parseDarwinPerformanceCores("4")).toBe(4);
+  test("parses a positive performance-core count when nperflevels confirms a real P/E split", () => {
+    expect(parseDarwinPerformanceCores("4", "2")).toBe(4);
+  });
+
+  test("returns null when nperflevels is 1 — no real P/E split — even though perflevel0 reports a value", () => {
+    // Real sysctl output captured live on an Intel i9-9980HK Mac: perflevel0
+    // reports ALL 16 logical cores (not a P-core subset) because macOS 12+
+    // exposes the perflevel* tree uniformly even on non-hybrid CPUs. This is
+    // the exact case that silently doubled every derived concurrency budget
+    // before this fix.
+    expect(parseDarwinPerformanceCores("16", "1")).toBeNull();
   });
 
   test("returns null for '0'", () => {
-    expect(parseDarwinPerformanceCores("0")).toBeNull();
+    expect(parseDarwinPerformanceCores("0", "2")).toBeNull();
   });
 
   test("returns null for non-numeric output", () => {
-    expect(parseDarwinPerformanceCores("not-a-number")).toBeNull();
+    expect(parseDarwinPerformanceCores("not-a-number", "2")).toBeNull();
   });
 
   test("returns null for null input", () => {
-    expect(parseDarwinPerformanceCores(null)).toBeNull();
+    expect(parseDarwinPerformanceCores(null, "2")).toBeNull();
+  });
+
+  test("returns null when nperflevels is missing or non-numeric", () => {
+    expect(parseDarwinPerformanceCores("4", null)).toBeNull();
+    expect(parseDarwinPerformanceCores("4", "not-a-number")).toBeNull();
   });
 });
 
@@ -457,13 +472,76 @@ describe("parseDarwinSwapUsage", () => {
   test("returns 0 for unparseable output", () => {
     expect(parseDarwinSwapUsage("garbage")).toBe(0);
   });
+
+  test("accepts a comma decimal separator (LC_NUMERIC=it_IT locale)", () => {
+    // Real sysctl output captured live on this Intel Mac under
+    // LC_NUMERIC=it_IT.UTF-8 — without comma support this returned 0 for a
+    // host that actually has 1 GiB of swap provisioned.
+    const output =
+      "vm.swapusage: total = 1024,00M  used = 124,00M  free = 900,00M  (encrypted)";
+    expect(parseDarwinSwapUsage(output)).toBe(1);
+  });
 });
 
 // ---------------------------------------------------------------------------
-// detectHostProfile — composed, injected io. Runs the real linux branch since
-// the test runner is always Linux here (see task instructions); Darwin/
-// fallback gathering is private and covered indirectly via the pure parsers
-// above.
+// parseDarwinVmStat
+// ---------------------------------------------------------------------------
+
+describe("parseDarwinVmStat", () => {
+  const fixture =
+    "Mach Virtual Memory Statistics: (page size of 4096 bytes)\n" +
+    "Pages free:                                  9120590.\n" +
+    "Pages active:                                3212305.\n" +
+    "Pages inactive:                              3205644.\n" +
+    "Pages speculative:                             17163.\n" +
+    "Pages throttled:                                   0.\n" +
+    "Pages wired down:                            1196540.\n" +
+    "Pages purgeable:                                5125.\n" +
+    '"Translation faults":                       86138568.\n' +
+    "Pages copy-on-write:                         3696850.\n" +
+    "Pages zero filled:                          52595256.\n" +
+    "Pages reactivated:                            151138.\n";
+
+  test("sums free+inactive+purgeable+speculative pages at the header's page size, rounded to 1 decimal GiB", () => {
+    const expected =
+      Math.round(
+        (((9120590 + 3205644 + 5125 + 17163) * 4096) / 1024 ** 3) * 10,
+      ) / 10;
+    expect(parseDarwinVmStat(fixture)).toBe(expected);
+  });
+
+  test("reads the page size from the header instead of assuming 4096", () => {
+    const nonDefaultFixture =
+      "Mach Virtual Memory Statistics: (page size of 16384 bytes)\n" +
+      "Pages free:                                       10.\n" +
+      "Pages active:                                      1.\n" +
+      "Pages inactive:                                    5.\n" +
+      "Pages speculative:                                 2.\n" +
+      "Pages purgeable:                                   3.\n";
+    const expected =
+      Math.round((((10 + 5 + 3 + 2) * 16384) / 1024 ** 3) * 10) / 10;
+    expect(parseDarwinVmStat(nonDefaultFixture)).toBe(expected);
+  });
+
+  test("returns null for null input", () => {
+    expect(parseDarwinVmStat(null)).toBeNull();
+  });
+
+  test("returns null when a required 'Pages ...' line is missing (e.g. no purgeable line)", () => {
+    const missingPurgeable =
+      "Mach Virtual Memory Statistics: (page size of 4096 bytes)\n" +
+      "Pages free:                                  9120590.\n" +
+      "Pages active:                                3212305.\n" +
+      "Pages inactive:                              3205644.\n" +
+      "Pages speculative:                             17163.\n";
+    expect(parseDarwinVmStat(missingPurgeable)).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// detectHostProfile — Linux. Exercised via an explicit `platform: "linux"`
+// override, not by relying on the test runner's own OS — Darwin has its own
+// sibling block below with a makeDarwinIo() fixture.
 // ---------------------------------------------------------------------------
 
 /** A complete Linux-shaped io fixture with realistic content for every probe. */
@@ -528,7 +606,7 @@ function makeLinuxIo() {
 describe("detectHostProfile", () => {
   test("gathers a full Linux profile matching the fixture", () => {
     const io = makeLinuxIo();
-    const profile = detectHostProfile({ io });
+    const profile = detectHostProfile({ io, platform: "linux" });
     expect(profile.os).toBe("linux");
     expect(profile.arch).toBe(process.arch);
     expect(profile.distro).toBe("Ubuntu 24.04 LTS");
@@ -555,7 +633,7 @@ describe("detectHostProfile", () => {
 
   test("an explicit sessions override wins regardless of the fixture's ps output", () => {
     const io = makeLinuxIo();
-    const profile = detectHostProfile({ sessions: 3, io });
+    const profile = detectHostProfile({ sessions: 3, io, platform: "linux" });
     expect(profile.sessions).toBe(3);
   });
 
@@ -568,7 +646,7 @@ describe("detectHostProfile", () => {
         return io.run(cmd, args);
       },
     };
-    const profile = detectHostProfile({ io: zeroClaudeIo });
+    const profile = detectHostProfile({ io: zeroClaudeIo, platform: "linux" });
     expect(profile.sessions).toBe(1);
   });
 
@@ -598,10 +676,78 @@ describe("detectHostProfile", () => {
         return io.readFile(path);
       },
     };
-    const profile = detectHostProfile({ io: smtIoNoCpuinfo });
+    const profile = detectHostProfile({
+      io: smtIoNoCpuinfo,
+      platform: "linux",
+    });
     expect(profile.physicalCores).toBe(4);
     expect(profile.logicalCores).toBe(8);
     expect(profile.smt).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// detectHostProfile — Darwin. Exercised via an explicit `platform: "darwin"`
+// override with a fixture built from real sysctl/vm_stat output.
+// ---------------------------------------------------------------------------
+
+/** A complete Darwin-shaped io fixture, using real sysctl/vm_stat output captured on an Intel i9-9980HK Mac. */
+function makeDarwinIo() {
+  const swapusage =
+    "vm.swapusage: total = 1024.00M  used = 124.00M  free = 900.00M  (encrypted)";
+  const vmStat =
+    "Mach Virtual Memory Statistics: (page size of 4096 bytes)\n" +
+    "Pages free:                                  9120590.\n" +
+    "Pages active:                                3212305.\n" +
+    "Pages inactive:                              3205644.\n" +
+    "Pages speculative:                             17163.\n" +
+    "Pages throttled:                                   0.\n" +
+    "Pages wired down:                            1196540.\n" +
+    "Pages purgeable:                                5125.\n";
+  const psOutput = "node\nclaude\nbash\n";
+
+  return {
+    run(cmd: string, args: string[]): string | null {
+      if (cmd === "sysctl" && args[0] === "-n") {
+        if (args[1] === "hw.physicalcpu") return "8\n16\n68719476736";
+        if (args[1] === "hw.perflevel0.logicalcpu") return "16";
+        if (args[1] === "hw.nperflevels") return "1";
+      }
+      if (cmd === "sysctl" && args[0] === "vm.swapusage") return swapusage;
+      if (cmd === "vm_stat") return vmStat;
+      if (cmd === "ps") return psOutput;
+      return null;
+    },
+    readFile(): string | null {
+      return null;
+    },
+    exists(): boolean {
+      return false;
+    },
+  };
+}
+
+describe("detectHostProfile — Darwin", () => {
+  test("gathers a full Darwin profile matching the fixture (Intel Mac: no real P/E split)", () => {
+    const io = makeDarwinIo();
+    const profile = detectHostProfile({ io, platform: "darwin" });
+    expect(profile.os).toBe("darwin");
+    expect(profile.arch).toBe(process.arch);
+    expect(profile.physicalCores).toBe(8);
+    expect(profile.logicalCores).toBe(16);
+    expect(profile.smt).toBe(true);
+    expect(profile.performanceCores).toBeNull();
+    expect(profile.totalMemGiB).toBe(64);
+    expect(profile.availableMemGiB).toBe(
+      Math.round(
+        (((9120590 + 3205644 + 5125 + 17163) * 4096) / 1024 ** 3) * 10,
+      ) / 10,
+    );
+    expect(profile.swapGiB).toBe(1);
+    expect(profile.hasZram).toBe(false);
+    expect(profile.isContainer).toBe(false);
+    expect(profile.pressure).toBeNull();
+    expect(profile.sessions).toBe(1);
   });
 });
 
@@ -726,5 +872,17 @@ describe("deriveBudget", () => {
     const budget = deriveBudget(profile);
     expect(budget.workers).toBe(8);
     expect(budget.concurrentLaneWorkers).toBe(8);
+  });
+
+  test("an SMT Intel-Mac profile uses physicalCores, not logicalCores, as effectiveCores when performanceCores is null", () => {
+    const profile = {
+      ...baseProfile,
+      os: "darwin" as const,
+      physicalCores: 8,
+      logicalCores: 16,
+      performanceCores: null,
+      smt: true,
+    };
+    expect(deriveBudget(profile).effectiveCores).toBe(8);
   });
 });
