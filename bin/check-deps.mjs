@@ -497,12 +497,27 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const pmField = parsePackageManagerField(rootPkg.packageManager);
   if (pmField !== null && /^\d+\.\d+\.\d+$/.test(pmField.version)) {
     const pinnedMajor = Number(pmField.version.split(".")[0]);
-    const npmViewRes = run("npm", ["view", "pnpm", "version"]);
-    if (npmViewRes.status !== 0) {
+    // run() throws on a spawn failure (e.g. npm missing from PATH) — catch it
+    // here specifically, unlike the load-bearing pnpm calls above, so an
+    // unspawnable npm degrades to a warning rather than aborting the whole
+    // gate. Aborting would contradict this block's own warn-only contract:
+    // erroring on remote/environment state check:deps doesn't control is
+    // exactly the ADR-0079 hermeticity debt findPnpmStaleness's doc comment
+    // says this check must not deepen.
+    let npmViewRes;
+    try {
+      npmViewRes = run("npm", ["view", "pnpm", "version"]);
+    } catch (err) {
+      reporter.warn(
+        `check:deps: failed to spawn npm view pnpm version; skipping pnpm staleness check. (${/** @type {Error} */ (err).message})`,
+      );
+      npmViewRes = null;
+    }
+    if (npmViewRes !== null && npmViewRes.status !== 0) {
       reporter.warn(
         `check:deps: npm view pnpm version exited with status ${String(npmViewRes.status)}; skipping pnpm staleness check.`,
       );
-    } else {
+    } else if (npmViewRes !== null) {
       const staleness = findPnpmStaleness(
         pinnedMajor,
         (npmViewRes.stdout || "").trim(),

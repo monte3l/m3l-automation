@@ -15,7 +15,7 @@
       },
       {
         "path": "bin/check-deps.mjs",
-        "blob": "fecbb81c0143251f028448b3cf31e8331ef816f5"
+        "blob": "5e2040e8cbdc4adff45f8dc52463aa4e5c644484"
       },
       {
         "path": "bin/check-node-version.mjs",
@@ -101,7 +101,7 @@
       },
       {
         "path": "bin/check-deps.mjs",
-        "blob": "fecbb81c0143251f028448b3cf31e8331ef816f5"
+        "blob": "5e2040e8cbdc4adff45f8dc52463aa4e5c644484"
       },
       {
         "path": "bin/check-node-version.mjs",
@@ -479,7 +479,7 @@
       },
       {
         "path": "bin/check-deps.mjs",
-        "blob": "fecbb81c0143251f028448b3cf31e8331ef816f5"
+        "blob": "5e2040e8cbdc4adff45f8dc52463aa4e5c644484"
       },
       {
         "path": "packages/m3l-common/src/aws/clients/provider.ts",
@@ -799,7 +799,7 @@
       },
       {
         "path": "bin/check-deps.mjs",
-        "blob": "fecbb81c0143251f028448b3cf31e8331ef816f5"
+        "blob": "5e2040e8cbdc4adff45f8dc52463aa4e5c644484"
       },
       {
         "path": "docs/ROADMAP.md",
@@ -1184,7 +1184,7 @@
     "sourceFiles": [
       {
         "path": "bin/check-deps.mjs",
-        "blob": "fecbb81c0143251f028448b3cf31e8331ef816f5"
+        "blob": "5e2040e8cbdc4adff45f8dc52463aa4e5c644484"
       },
       {
         "path": "bin/scaffold-script.mjs",
@@ -2485,7 +2485,7 @@
       },
       {
         "path": "bin/check-deps.mjs",
-        "blob": "fecbb81c0143251f028448b3cf31e8331ef816f5"
+        "blob": "5e2040e8cbdc4adff45f8dc52463aa4e5c644484"
       },
       {
         "path": "bin/check-test-fs-isolation.mjs",
