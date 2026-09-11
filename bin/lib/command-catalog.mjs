@@ -506,6 +506,11 @@ export const COMMAND_CATALOG = [
       "Makes .node-version the single authority for the dev/CI Node runtime (ADR-0003 amendment). Static half (exits non-zero): every workspace manifest's engines.node floor agrees with the pin, every .github/ actions/setup-node site reads node-version-file: .node-version instead of a literal, and @types/node's major tracks the pin so typecheck validates the declared floor rather than a newer API surface. Runtime half (warn-only): the Node executing the command matches the pinned major — run it when a test fails locally but is green in CI. Also runs once per session via a SessionStart hook.",
   },
   {
+    name: "check:pnpm-version",
+    description:
+      "Makes package.json's packageManager field the single authority for the pnpm version used in dev, CI, and both consumer-image Containerfiles — package.json's own pin never moved off pnpm@11.9.0 since the initial commit, since Dependabot has no npm-ecosystem concept of the packageManager field and check:deps never reads it. Asserts an exact pnpm version (not a range or tag), that packages/*/Containerfile's `npm install --global pnpm@X` sites agree with it exactly, that no pnpm/action-setup step overrides it with an explicit version: input, and that at least one site actually reads the pin. The deliberate same-shape sibling of check:claude-cli-version — one gate per pin subject — rather than an extension of check:node-version, which is scoped to .node-version specifically. Fully offline; staleness against pnpm's real upstream latest is check:deps's job, not this gate's.",
+  },
+  {
     name: "setup:host-resources",
     description:
       "Idempotent host-level applier (ADR-0080) for the mitigations check:host-resources reports — earlyoom, zram, vm.swappiness, user-.slice MemoryMax, claude-rc.service ceiling, CLAUDE_CODE_TOOL_MEMORY_LIMIT. Dry-run by default; pass --apply to mutate the host (uses sudo). Never weakens an existing stricter setting it finds.",
