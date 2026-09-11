@@ -208,6 +208,7 @@ target was renamed is repaired via `RENAMED_TARGETS` in
 | 2026-09-01 | V8 `agent-operator` health-checks workload                     | [v8-agent-operator-health-checks](./2026-09-01-v8-agent-operator-health-checks.md)                 |
 | 2026-09-07 | V9 workload expansion — ETL presets, log triage, queue         | [v9-workload-expansion](./2026-09-07-v9-workload-expansion.md)                                     |
 | 2026-09-11 | Issue #1019 — `createAgentCliSurface` deps boundary (PR #1176) | [issue-1019-agent-operator-deps-boundary](./2026-09-11-issue-1019-agent-operator-deps-boundary.md) |
+| 2026-09-11 | V13 — flow-run process-group teardown (issue #1120)            | [v13-flow-process-group-teardown](./2026-09-11-v13-flow-process-group-teardown.md)                 |
 
 ## Agent-reliability wave (A-series)
 

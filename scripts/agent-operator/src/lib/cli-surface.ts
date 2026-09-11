@@ -115,6 +115,7 @@ import {
   runCliProcess,
   type CliRunDisposition,
   type CliRunResult,
+  type CliTeardownScope,
 } from "./cli-process.js";
 import { M3LAgentOperatorCliError } from "./errors.js";
 import {
@@ -384,12 +385,16 @@ export interface CreateAgentCliSurfaceOptions {
    * Timeout applied to `flowRun`, for BOTH modes — a dry-run flow still
    * spawns every step, it just stops each after its config and credential
    * checks. Deliberately not `dryRunTimeoutMs`: a flow spawns N scripts
-   * sequentially, and expiry does not stop an in-flight step — `cli-process`
-   * resolves `"timed-out"` and SIGTERMs only its direct child (the `m3l`
-   * CLI), which traps SIGTERM and keeps running, so the flow step spawned
-   * as its own grandchild can keep mutating AWS to completion, unobserved,
-   * after `flowRun` has already rejected, with no `--resume` path back — see
-   * `config.ts`'s `FLOW_TIMEOUT_MS_DEFAULT` for the full rationale.
+   * sequentially, so the single-script budget is the wrong unit.
+   *
+   * Expiry DOES stop the flow: `flowRun` is the one method that spawns with
+   * `teardown: "group"`, so `cli-process` resolves `"timed-out"` and signals
+   * the whole process group — the `m3l` CLI and the step it spawned as its
+   * own grandchild — escalating to `SIGKILL` after its grace period. The
+   * run's effects are still INDETERMINATE (a step killed mid-mutation is not
+   * undone, and this seam never emits `--resume`), and teardown is
+   * POSIX-only — see `config.ts`'s `FLOW_TIMEOUT_MS_DEFAULT` for the full
+   * rationale.
    */
   readonly flowTimeoutMs: number;
   /** Per-stream byte cap forwarded to `runCliProcess`. */
@@ -482,12 +487,23 @@ function buildProjectionOptions(
   };
 }
 
-/** One method's fixed argv, timeout, exit-code policy, and output parser. */
+/**
+ * One method's fixed argv, timeout, exit-code policy, output parser, and
+ * teardown scope.
+ *
+ * `teardown` is REQUIRED, not optional with a `"child"` default. This is an
+ * internal type with exactly seven construction sites, and requiring the
+ * field makes "`flowRun` is the only method that group-kills" provable by
+ * reading seven literals rather than by reasoning about a default — and
+ * makes an eighth method that forgets it a compile error instead of a silent
+ * revert to the orphan behaviour.
+ */
 interface CliInvocationSpec<T> {
   readonly args: readonly string[];
   readonly timeoutMs: number;
   readonly isAcceptableExitCode: (exitCode: number | null) => boolean;
   readonly parse: (raw: unknown) => ParseResult<T>;
+  readonly teardown: CliTeardownScope;
 }
 
 /**
@@ -989,6 +1005,11 @@ async function runCliInvocation<T>(
     cwd: ctx.cwd,
     timeoutMs: spec.timeoutMs,
     maxOutputBytes: ctx.maxOutputBytes,
+    // Forwarded unconditionally, not through the conditional spread `signal`
+    // uses: `spec.teardown` is always present, and the spread idiom belongs
+    // where a value is genuinely absent — using it here would let a missing
+    // spec field silently fall back to `"child"`.
+    teardown: spec.teardown,
     ...(ctx.signal === undefined ? {} : { signal: ctx.signal }),
   });
   return resolveCliRunResult(result, spec);
@@ -1004,6 +1025,7 @@ async function runList(
     timeoutMs,
     isAcceptableExitCode: (exitCode) => exitCode === 0,
     parse: parseListRows,
+    teardown: "child",
   });
   const opts = buildProjectionOptions(ctx.workspaceRoot);
   return rows.map((row) => projectListRow(row, opts));
@@ -1026,6 +1048,7 @@ async function runDoctor(
       timeoutMs,
       isAcceptableExitCode: (exitCode) => exitCode === 0 || exitCode === 1,
       parse: parseDoctorChecks,
+      teardown: "child",
     },
   );
   return projectDoctorReport(checks, buildProjectionOptions(ctx.workspaceRoot));
@@ -1045,6 +1068,7 @@ async function runInspect(
     timeoutMs,
     isAcceptableExitCode: (exitCode) => exitCode === 0,
     parse: parseParamDescriptors,
+    teardown: "child",
   });
   // `inspect` already knows which parameter names this script declares
   // `secret: true` — thread them into the redactor's `secrets` widening
@@ -1075,6 +1099,7 @@ async function runDryRun(
     timeoutMs,
     isAcceptableExitCode: () => true,
     parse: parseRunEnvelope,
+    teardown: "child",
   });
   return projectRunEnvelope(
     envelope,
@@ -1206,6 +1231,7 @@ async function runRun(
     timeoutMs,
     isAcceptableExitCode: () => true,
     parse: parseRunEnvelope,
+    teardown: "child",
   });
   return projectRunEnvelope(
     envelope,
@@ -1254,6 +1280,7 @@ async function runTriageRun(
     timeoutMs,
     isAcceptableExitCode: () => true,
     parse: parseRunEnvelope,
+    teardown: "child",
   });
   return projectRunEnvelope(
     envelope,
@@ -1292,6 +1319,12 @@ async function runFlowRun(
     timeoutMs,
     isAcceptableExitCode: () => true,
     parse: parseFlowEnvelope,
+    // The ONE method that opts into process-group teardown, in both modes.
+    // A flow spawns each step as a grandchild of the `m3l` CLI, and `m3l`
+    // survives the first SIGTERM by design, so a child-scoped kill leaves a
+    // step mutating AWS after `flowRun` has already rejected. See
+    // `lib/cli-process.ts`'s `CliTeardownScope`.
+    teardown: "group",
   });
   return projectFlowEnvelope(
     envelope,
