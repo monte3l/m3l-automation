@@ -47,71 +47,21 @@
  *   not paid on a path a shipped consumer already writes on every decision.
  */
 
-import { constants } from "node:fs";
 import type { FileHandle } from "node:fs/promises";
 import { appendFile, open } from "node:fs/promises";
 
 import { M3LError } from "../../core/errors/index.js";
+import {
+  APPEND_FLAGS,
+  SEGMENT_EXPECTED_LINK_COUNT,
+  SEGMENT_FILE_MODE,
+} from "./append-only-fs.js";
 import type { ActiveSegment } from "./append-only-segments.js";
 import {
   currentDatePrefix,
   discoverActiveSegment,
   nextSegment,
 } from "./append-only-segments.js";
-
-/**
- * `O_NOFOLLOW` where the platform has it. Typed `number | undefined` rather
- * than trusting `@types/node`'s unconditional `number`: the flag is POSIX-only
- * and Node genuinely reports it as `undefined` on Windows, where a numeric
- * `NaN` flag would make every append fail.
- */
-const O_NOFOLLOW: number | undefined = constants.O_NOFOLLOW;
-
-/**
- * The open flags for one append: the three the `"a"` shorthand stands for —
- * append, create, write-only — plus `O_NOFOLLOW`, so a segment path that has
- * been replaced by a symlink is **refused** rather than followed.
- *
- * Without it, anyone who can create a file in the stream directory can
- * redirect (or silently sink) the audit trail by planting the next segment
- * name as a symlink — the append would resolve it and write outside the
- * directory. With it, `open` fails `ELOOP` and the write is reported as the
- * loud failure it is. On a platform without the flag (Windows) the value
- * falls back to the plain `"a"` trio and this defence simply does not apply.
- *
- * `O_NOFOLLOW` covers a **symlink** at the final path component and nothing
- * else; a **hardlink** is a second directory entry for one inode, so `open`
- * succeeds and the flag never fires. That half is closed separately, by the
- * `nlink` check in {@link AppendOnlyWriter.append}.
- */
-const APPEND_FLAGS: number =
-  constants.O_APPEND |
-  constants.O_CREAT |
-  constants.O_WRONLY |
-  (O_NOFOLLOW ?? 0);
-
-/**
- * The permission mode a segment file is **created** with: owner read/write
- * only, matching the mode this repo already applies to a console session's
- * artifacts (`m3l-console-server/src/sessions/artifacts.ts`) for the same
- * class of data.
- *
- * The mode is applied by `open` on creation only, and the process umask can
- * only **remove** bits from it — never add one. A segment that already exists
- * keeps whatever mode it was created with, and a directory a caller has
- * loosened by hand is not tightened back here.
- */
-const SEGMENT_FILE_MODE = 0o600;
-
-/**
- * The number of directory entries a segment this writer owns may have.
- *
- * Exactly one. A freshly created segment has one name; a segment adopted on a
- * cold start was created by this same writer and has one too. More than one
- * means somebody else has linked the inode into a second place, which is the
- * hardlink variant of the redirection `O_NOFOLLOW` refuses for symlinks.
- */
-const SEGMENT_EXPECTED_LINK_COUNT = 1;
 
 /**
  * How a writer turns one entry into the JSON text of its line.
@@ -324,6 +274,14 @@ export class AppendOnlyWriter<TEntry> {
    * The whole lifecycle — `open`, `fstat`, `write`, `close` — sits under one
    * guard, so a failure at any step is reported in the owner's vocabulary
    * rather than leaking a raw Node error from the middle of it.
+   *
+   * The flags the segment is opened under, the mode a new one is created
+   * with, and the link count proven below all live in `./append-only-fs.js`
+   * ({@link "./append-only-fs.js".APPEND_FLAGS},
+   * {@link "./append-only-fs.js".SEGMENT_FILE_MODE},
+   * {@link "./append-only-fs.js".SEGMENT_EXPECTED_LINK_COUNT}), shared with
+   * the reader rather than duplicated per consumer; each carries the reason
+   * it exists.
    *
    * The `nlink` check is what closes the hardlink half of segment
    * redirection. `O_NOFOLLOW` refuses a **symlink** at the final path
