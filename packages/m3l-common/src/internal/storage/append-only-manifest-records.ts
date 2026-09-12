@@ -168,6 +168,50 @@ function ownInteger(record: object, property: string): number | undefined {
 }
 
 /**
+ * The own `property` of `record` when it is a MEASUREMENT count — an integer
+ * that is not negative — else `undefined`.
+ *
+ * `./append-only-digest.js` counts newline bytes and sums chunk lengths, so
+ * neither an entry count nor a byte length it produced can be below zero. A
+ * negative one was written by something else, and admitting it would parse a
+ * record no honest writer could have produced into a well-formed seal. The
+ * bound is checked on the local {@link ownInteger} already read, never by
+ * reading the property a second time.
+ */
+function ownMeasurement(record: object, property: string): number | undefined {
+  const value = ownInteger(record, property);
+  return value !== undefined && value >= 0 ? value : undefined;
+}
+
+/**
+ * The shape `createHash("sha256").digest("hex")` produces, and the shape
+ * `sha256sum` reproduces off-host: exactly 64 LOWERCASE hex characters.
+ *
+ * Anchored and fixed-length, so it has no backtracking behaviour to reason
+ * about. Uppercase is refused rather than folded: a digest this family wrote
+ * is lowercase by construction, and normalising instead of refusing would
+ * admit a value under a shape the manifest never states.
+ */
+const SHA256_HEX_PATTERN = /^[0-9a-f]{64}$/;
+
+/**
+ * The own `property` of `record` when it is a sha256 digest, else
+ * `undefined`.
+ *
+ * The manifest is the validation boundary for its own bytes, and a `seal`'s
+ * whole worth is that its digest is one `./append-only-digest.js` could have
+ * produced. Accepting any string at all would parse `""` into a well-formed
+ * seal that proves nothing while reading as proof. Checked on the local
+ * {@link ownString} already read, never by reading the property again.
+ */
+function ownDigest(record: object, property: string): string | undefined {
+  const value = ownString(record, property);
+  return value !== undefined && SHA256_HEX_PATTERN.test(value)
+    ? value
+    : undefined;
+}
+
+/**
  * Parses one terminated line into a plain JSON object, or fails.
  *
  * The `SyntaxError` **is** chained as `cause`, in the same register as
@@ -236,7 +280,19 @@ function requireFormatVersion(
   return formatVersion;
 }
 
-/** Parses one `seal` record, or fails if it is incomplete or too new. */
+/**
+ * Parses one `seal` record, or fails if it is incomplete, out of shape, or too
+ * new.
+ *
+ * The measurement is admitted on its SHAPE, never on its type alone: a
+ * `sha256` must be {@link SHA256_HEX_PATTERN}'s 64 lowercase hex characters,
+ * and both counts must be non-negative ({@link ownMeasurement}). A value
+ * outside those shapes is reported through {@link MALFORMED_RECORD_MESSAGE},
+ * the same fatal path a missing field takes — exactly as
+ * {@link parseBaselineRecord} treats a wrongly-typed `upTo`, and on the same
+ * grounds: a measurement `./append-only-digest.js` could not have produced is
+ * not a measurement, so the record states nothing rather than states it badly.
+ */
 function parseSealRecord(
   record: object,
   buildError: AppendOnlyReadFailure,
@@ -244,9 +300,9 @@ function parseSealRecord(
   const formatVersion = requireFormatVersion(record, buildError);
   const at = ownString(record, "at");
   const segment = ownString(record, "segment");
-  const sha256 = ownString(record, "sha256");
-  const entryCount = ownInteger(record, "entryCount");
-  const byteLength = ownInteger(record, "byteLength");
+  const sha256 = ownDigest(record, "sha256");
+  const entryCount = ownMeasurement(record, "entryCount");
+  const byteLength = ownMeasurement(record, "byteLength");
   if (
     at === undefined ||
     segment === undefined ||

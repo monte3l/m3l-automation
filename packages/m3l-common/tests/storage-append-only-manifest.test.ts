@@ -2,9 +2,22 @@
  * Tests for `internal/storage/append-only-manifest` — the sealed-segment
  * manifest of ADR-0102 (X8b slice 4): the directory-wide, append-only
  * `manifest.jsonl` that makes whole-date archival provable. This module owns
- * that file's FORMAT, its bounded guarded read and its append. It does not
- * own the decision of WHEN to seal — that is the sealer, a later slice — so
- * nothing here drives a rotation.
+ * that file's bounded guarded read and its append.
+ *
+ * The two suites mirror the two modules, and that is the whole rule for where
+ * a new test goes — no one should have to measure a file to decide. This suite
+ * owns the FILE: its name and its invisibility to the segment layer, baseline
+ * initialization, the bounded guarded read and its ceiling, the torn tail this
+ * reader frames, and the append.
+ * `storage-append-only-manifest-records.test.ts` owns the RECORD: a record's
+ * shape, its `formatVersion`, its measurement, and how repeated records fold
+ * together.
+ *
+ * Two record rules are still pinned here rather than there — `duplicate seals`
+ * and `inherited field reads` — and they are a known exception, not the
+ * boundary: both state a rule of the parser, and both would read better beside
+ * it. Neither module owns the decision of WHEN to seal — that is the sealer, a
+ * later slice — so nothing here drives a rotation.
  *
  * Three properties carry the whole design and are pinned hardest:
  *
@@ -14,17 +27,15 @@
  *    functions (`listSegmentFiles`, `discoverActiveSegment`, and the public
  *    `listSegments()` / `read()`) over a directory that contains one — the
  *    only assertion that would catch someone widening the pattern.
- * 2. **The integrity rules are deliberately asymmetric.** A torn LAST line is
- *    ignored unconditionally, a malformed MID-FILE line is fatal, an unknown
- *    `kind` is ignored for forward compatibility, and a KNOWN kind — `seal`
- *    or `baseline` alike — at a `formatVersion` above the reader's is FATAL
- *    even though an unknown `kind` at that very same version is merely
- *    ignored. That pairing is the subtle one and is tested as a pair: an
- *    audit reader must never report "verified" for a claim it skipped, so
- *    forward compatibility lives on `kind` and only on `kind`. For a
- *    `baseline` the stakes are the same in a different shape — its `upTo` is
- *    what decides which segments classify `legacy`, so skipping one
- *    mis-classifies every segment behind that boundary.
+ * 2. **A torn LAST line is ignored unconditionally**, and that tolerance is
+ *    safe only because the identical bytes anywhere else are FATAL. The two
+ *    halves of that asymmetry are pinned in two files by design: tornness is
+ *    framing, which only this reader can see, so it is tested here over real
+ *    unterminated bytes; the fatal half — a malformed mid-file line, a record
+ *    at a `formatVersion` above the reader's — belongs to the record parser
+ *    and is pinned in `storage-append-only-manifest-records.test.ts`. A reader
+ *    meeting either half alone is meeting half a rule; changing one without
+ *    the other is how the pair gets broken.
  * 3. **Duplicate seals are compared field by field, never line by line.**
  *    `at` differs by construction between two writers sealing one segment, so
  *    an implementation comparing whole lines manufactures a false positive.
@@ -69,20 +80,11 @@ import {
 import { tmpdir } from "node:os";
 import path from "node:path";
 
-import {
-  afterEach,
-  beforeEach,
-  describe,
-  expect,
-  expectTypeOf,
-  test,
-  vi,
-} from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 import { M3LError } from "../src/core/errors/index.js";
 import { M3LAppendOnlyStream } from "../src/core/storage/index.js";
 import type { M3LAppendOnlyEntry } from "../src/core/storage/index.js";
-import type { SegmentDigestResult } from "../src/internal/storage/append-only-digest.js";
 import type { AppendOnlyReadFailure } from "../src/internal/storage/append-only-lines.js";
 import {
   M3L_APPEND_ONLY_MANIFEST_NAME,
@@ -91,12 +93,7 @@ import {
   loadOrInitializeManifest,
   readManifest,
 } from "../src/internal/storage/append-only-manifest.js";
-import type {
-  ManifestBaselineRecord,
-  ManifestContents,
-  ManifestSealRecord,
-  SegmentSealClaim,
-} from "../src/internal/storage/append-only-manifest.js";
+import type { SegmentSealClaim } from "../src/internal/storage/append-only-manifest.js";
 import {
   discoverActiveSegment,
   listSegmentFiles,
@@ -218,9 +215,15 @@ const SEGMENT_MID = "2026-09-10-0002.jsonl";
 const SEGMENT_NEW = "2026-09-11-0001.jsonl";
 
 /**
- * A string no library-computed fact could ever contain. Planted inside a
- * malformed manifest line so a failure that echoes the offending bytes back
- * to the caller is caught, not merely hoped against.
+ * A string no library-computed fact could ever contain, held in
+ * {@link expectPortFailure}'s no-caller-data check.
+ *
+ * No fixture in this suite plants it today: the malformed-line fixture that
+ * did moved to `storage-append-only-manifest-records.test.ts` with the parser
+ * that refuses it, and the same marker is planted there. It stays armed here
+ * because the check it belongs to is about every failure this suite can raise,
+ * and the next test to write caller-ish bytes into a manifest must find the
+ * guard already in place rather than have to remember to add it.
  */
 const CALLER_SECRET = "SECRET-CALLER-VALUE-9f2c";
 
@@ -730,10 +733,18 @@ describe("readManifest", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Manifest integrity — the deliberately asymmetric rules
+// Torn tails — the half of the asymmetry this reader owns
 // ---------------------------------------------------------------------------
 
-describe("manifest integrity", () => {
+describe("torn tails", () => {
+  // The tolerant half of the format's most subtle rule, kept here because
+  // tornness is a property of the FILE: only the reader that frames the lines
+  // can know a line arrived unterminated, and only real unterminated bytes can
+  // state it. Its fatal twin — the same malformation, the same too-new record,
+  // MID-FILE — is in `storage-append-only-manifest-records.test.ts`, where the
+  // parser that refuses it lives. The pair is split across the two files ON
+  // PURPOSE, and neither half means anything without the other: ignoring a torn
+  // tail is safe only because the identical bytes anywhere else are fatal.
   test("ignores a torn last line unconditionally, so its segment simply reads as unsealed", async () => {
     const torn = sealLine({ segment: SEGMENT_OLD }).slice(0, 40);
     expect(torn.endsWith("\n")).toBe(false); // the fixture really is torn
@@ -771,339 +782,33 @@ describe("manifest integrity", () => {
     expect(contents.seals.size).toBe(0);
   });
 
-  test("is fatal on a malformed mid-file line", async () => {
-    await writeManifestBytes(
-      `${baselineLine(null)}not json at all ${CALLER_SECRET}\n${sealLine()}`,
-    );
-    const port = createFailurePort();
-
-    const thrown = await catchRejected(() =>
-      readManifest(sandbox, AMPLE_MAX_BYTES, port.build),
-    );
-
-    expect(thrown).toBeInstanceOf(M3LError);
-    expectPortFailure(thrown, port);
-  });
-
-  test.each([
-    ["a JSON number", "42"],
-    ["a JSON string", '"a seal"'],
-    ["a JSON array", '["kind","seal"]'],
-    ["JSON null", "null"],
-  ])(
-    "is fatal on a mid-file line that parses to %s rather than a record",
-    async (_label, body) => {
-      await writeManifestBytes(`${baselineLine(null)}${body}\n${sealLine()}`);
-      const port = createFailurePort();
-
-      const thrown = await catchRejected(() =>
-        readManifest(sandbox, AMPLE_MAX_BYTES, port.build),
-      );
-
-      expect(thrown).toBeInstanceOf(M3LError);
-      expectPortFailure(thrown, port);
-    },
-  );
-
-  test("is fatal on a mid-file seal missing a required field", async () => {
-    const withoutSha = `${JSON.stringify({
-      kind: "seal",
-      formatVersion: MANIFEST_FORMAT_VERSION,
-      at: "2026-09-11T01:00:00.000Z",
+  test("tolerates an uppercase sha256 in a TORN last line, because tornness and not shape buys the tolerance", async () => {
+    // The format's sharpest asymmetry, and the reason this case sits in the
+    // I/O suite while the rejection table it twins with lives in
+    // `storage-append-only-manifest-records.test.ts`: what it exercises is the
+    // READER's framing, not the record's shape. A mid-file seal stating an
+    // uppercase `sha256` is FATAL over there — lowercase is what
+    // `createHash(...).digest("hex")` emits and what `sha256sum` reproduces, so
+    // an uppercase digest is one no honest writer of this format produced —
+    // and yet those very bytes, arriving unterminated, are ignored without a
+    // murmur. Tornness and nothing else buys them that tolerance: a
+    // half-written seal claims nothing, so its segment simply reads as
+    // unsealed.
+    const torn = sealLine({
       segment: SEGMENT_OLD,
-      entryCount: 1,
-      byteLength: 10,
-    })}\n`;
-    await writeManifestBytes(`${baselineLine(null)}${withoutSha}${sealLine()}`);
-    const port = createFailurePort();
-
-    const thrown = await catchRejected(() =>
-      readManifest(sandbox, AMPLE_MAX_BYTES, port.build),
-    );
-
-    expect(thrown).toBeInstanceOf(M3LError);
-    expectPortFailure(thrown, port);
-  });
-
-  test("ignores an unknown kind, for forward compatibility", async () => {
-    const unknown = `${JSON.stringify({
-      kind: "checkpoint",
-      formatVersion: MANIFEST_FORMAT_VERSION,
-      at: "2026-09-11T02:00:00.000Z",
-      chain: "whatever a later version adds",
-    })}\n`;
-    await writeManifestBytes(`${baselineLine(null)}${unknown}${sealLine()}`);
+      sha256: SHA_A.toUpperCase(),
+    }).trimEnd();
+    expect(torn.endsWith("\n")).toBe(false); // the fixture really is torn
+    await writeManifestBytes(`${sealLine()}${torn}`);
     const port = createFailurePort();
 
     const contents = await readManifest(sandbox, AMPLE_MAX_BYTES, port.build);
 
     expect(port.calls).toHaveLength(0);
+    expect(contents.seals.has(SEGMENT_OLD)).toBe(false);
+    // The good line ahead of the torn one must still have been read, or the
+    // assertion above would hold for a reader that parsed nothing at all.
     expect(contents.seals.has(SEGMENT_NEW)).toBe(true);
-  });
-
-  test("ignores an unknown kind even at a formatVersion ABOVE the reader's", async () => {
-    // The control half of the pair below: forward compatibility on `kind` is
-    // what makes the seal rule's strictness a deliberate asymmetry rather
-    // than a blanket version check.
-    const unknown = `${JSON.stringify({
-      kind: "checkpoint",
-      formatVersion: MANIFEST_FORMAT_VERSION + 1,
-      at: "2026-09-11T02:00:00.000Z",
-    })}\n`;
-    await writeManifestBytes(`${baselineLine(null)}${unknown}${sealLine()}`);
-    const port = createFailurePort();
-
-    const contents = await readManifest(sandbox, AMPLE_MAX_BYTES, port.build);
-
-    expect(port.calls).toHaveLength(0);
-    expect(contents.seals.has(SEGMENT_NEW)).toBe(true);
-  });
-
-  test("is fatal on a seal whose formatVersion exceeds the reader's, unlike that unknown kind", async () => {
-    // The asymmetry is the point: an audit reader must never report
-    // "verified" for a claim it skipped, which is what forces readers to
-    // upgrade before writers. A record it cannot even name is harmless; a
-    // SEAL it cannot fully understand is not.
-    await writeManifestBytes(
-      `${baselineLine(null)}${sealLine({
-        segment: SEGMENT_OLD,
-        formatVersion: MANIFEST_FORMAT_VERSION + 1,
-      })}`,
-    );
-    const port = createFailurePort();
-
-    const thrown = await catchRejected(() =>
-      readManifest(sandbox, AMPLE_MAX_BYTES, port.build),
-    );
-
-    expect(thrown).toBeInstanceOf(M3LError);
-    expectPortFailure(thrown, port);
-  });
-
-  test("is fatal on a too-new seal even when it is the LAST terminated line", async () => {
-    // Tornness, not position, is what buys tolerance. A terminated too-new
-    // seal at the end of the file is a complete claim this reader cannot
-    // check, so the torn-tail rule must not be widened to cover it.
-    await writeManifestBytes(
-      `${baselineLine(null)}${sealLine()}${sealLine({
-        segment: SEGMENT_MID,
-        formatVersion: MANIFEST_FORMAT_VERSION + 7,
-      })}`,
-    );
-    const port = createFailurePort();
-
-    const thrown = await catchRejected(() =>
-      readManifest(sandbox, AMPLE_MAX_BYTES, port.build),
-    );
-
-    expect(thrown).toBeInstanceOf(M3LError);
-  });
-
-  test("is fatal on a baseline whose formatVersion exceeds the reader's", async () => {
-    // The baseline's `upTo` is what decides which segments classify `legacy`.
-    // A reader that merely SKIPPED a baseline it cannot parse would not just
-    // miss a record — it would silently mis-classify every segment at or
-    // before that boundary, reporting `unsealed` (a false alarm) or `legacy`
-    // (a false reassurance) from a claim it never read. Same rule as the seal
-    // case above, and the pairing with the ignored unknown `kind` at this very
-    // version is what keeps the asymmetry visible: forward compatibility is on
-    // `kind` and only `kind`.
-    await writeManifestBytes(
-      `${baselineLineAtVersion(MANIFEST_FORMAT_VERSION + 1, SEGMENT_OLD)}${sealLine()}`,
-    );
-    const port = createFailurePort();
-
-    const thrown = await catchRejected(() =>
-      readManifest(sandbox, AMPLE_MAX_BYTES, port.build),
-    );
-
-    expect(thrown).toBeInstanceOf(M3LError);
-    expectPortFailure(thrown, port);
-  });
-
-  test("is fatal on a too-new baseline that is the manifest's only record", async () => {
-    // The discriminating half: an implementation that ignored the record
-    // would resolve with `baseline: undefined` — indistinguishable from a
-    // manifest that never had a baseline at all, which is precisely the
-    // "unproven before here" boundary going silently missing.
-    await writeManifestBytes(
-      baselineLineAtVersion(MANIFEST_FORMAT_VERSION + 3, null),
-    );
-    const port = createFailurePort();
-
-    const thrown = await catchRejected(() =>
-      readManifest(sandbox, AMPLE_MAX_BYTES, port.build),
-    );
-
-    expect(thrown).toBeInstanceOf(M3LError);
-  });
-
-  test("accepts a baseline at exactly the reader's formatVersion", async () => {
-    await writeManifestBytes(
-      baselineLineAtVersion(MANIFEST_FORMAT_VERSION, SEGMENT_OLD),
-    );
-    const port = createFailurePort();
-
-    const contents = await readManifest(sandbox, AMPLE_MAX_BYTES, port.build);
-
-    expect(definedOrThrow(contents.baseline, "the baseline").upTo).toBe(
-      SEGMENT_OLD,
-    );
-    expect(port.calls).toHaveLength(0);
-  });
-
-  test("accepts a seal at exactly the reader's formatVersion", async () => {
-    await writeManifestBytes(
-      sealLine({ formatVersion: MANIFEST_FORMAT_VERSION }),
-    );
-    const port = createFailurePort();
-
-    const contents = await readManifest(sandbox, AMPLE_MAX_BYTES, port.build);
-
-    expect(contents.seals.has(SEGMENT_NEW)).toBe(true);
-    expect(port.calls).toHaveLength(0);
-  });
-
-  test.each([
-    [
-      "seal",
-      {
-        kind: "seal",
-        at: "2026-09-11T01:00:00.000Z",
-        segment: SEGMENT_OLD,
-        entryCount: 1,
-        byteLength: 10,
-        sha256: SHA_B,
-      },
-    ],
-    [
-      "baseline",
-      {
-        kind: "baseline",
-        at: "2026-09-11T00:00:00.000Z",
-        upTo: SEGMENT_OLD,
-      },
-    ],
-  ])(
-    "is fatal on a %s carrying no formatVersion at all — absent is MALFORMED, not unknown",
-    async (_kind, record: Readonly<Record<string, unknown>>) => {
-      // The other half of the version rule, and it is not the too-new case in
-      // disguise. This reader RECOGNISES the kind, so the record is one whose
-      // every field it intends to act on — and it cannot even state which
-      // format those fields are in. Treating that as the ignorable
-      // unknown-`kind` case would hand a tamperer a one-field edit that
-      // neutralizes any claim: delete `formatVersion` and the seal reads as
-      // absent (its segment "unsealed", no failure raised), or the baseline
-      // does (its boundary silently unstated). Incomplete is fatal; only an
-      // unrecognised `kind` is skipped.
-      await writeManifestBytes(`${JSON.stringify(record)}\n${sealLine()}`);
-      const port = createFailurePort();
-
-      const thrown = await catchRejected(() =>
-        readManifest(sandbox, AMPLE_MAX_BYTES, port.build),
-      );
-
-      expect(thrown).toBeInstanceOf(M3LError);
-      expectPortFailure(thrown, port);
-    },
-  );
-
-  test("ignores an unknown kind carrying no formatVersion either, which is what makes the rule above about the KIND", async () => {
-    // The discriminating twin of the two rows above: byte for byte the same
-    // omission, and the only difference is whether this reader knows the
-    // `kind`. Both arms are reachable in one manifest here — the unknown
-    // record is skipped while the known records around it are parsed — so an
-    // implementation that threw for either one, or skipped either one, fails.
-    const unknown = `${JSON.stringify({
-      kind: "checkpoint",
-      at: "2026-09-11T02:00:00.000Z",
-      chain: "whatever a later version adds",
-    })}\n`;
-    await writeManifestBytes(`${baselineLine(null)}${unknown}${sealLine()}`);
-    const port = createFailurePort();
-
-    const contents = await readManifest(sandbox, AMPLE_MAX_BYTES, port.build);
-
-    expect(port.calls).toHaveLength(0);
-    expect(definedOrThrow(contents.baseline, "the baseline").upTo).toBeNull();
-    expect(contents.seals.has(SEGMENT_NEW)).toBe(true);
-  });
-
-  test.each([
-    [
-      "no `at` field",
-      { kind: "baseline", formatVersion: MANIFEST_FORMAT_VERSION, upTo: null },
-    ],
-    [
-      "a non-string `at`",
-      {
-        kind: "baseline",
-        formatVersion: MANIFEST_FORMAT_VERSION,
-        at: 20_260_911,
-        upTo: SEGMENT_OLD,
-      },
-    ],
-    [
-      "no `upTo` field at all",
-      {
-        kind: "baseline",
-        formatVersion: MANIFEST_FORMAT_VERSION,
-        at: "2026-09-11T00:00:00.000Z",
-      },
-    ],
-    [
-      "a numeric `upTo`",
-      {
-        kind: "baseline",
-        formatVersion: MANIFEST_FORMAT_VERSION,
-        at: "2026-09-11T00:00:00.000Z",
-        upTo: 42,
-      },
-    ],
-    [
-      "a boolean `upTo`",
-      {
-        kind: "baseline",
-        formatVersion: MANIFEST_FORMAT_VERSION,
-        at: "2026-09-11T00:00:00.000Z",
-        upTo: false,
-      },
-    ],
-  ])(
-    "is fatal on a baseline with %s",
-    async (_shape, record: Readonly<Record<string, unknown>>) => {
-      // `upTo` is required AND explicitly nullable, which is why an absent
-      // field and a `null` are different statements rather than two spellings
-      // of one: `null` asserts "sealed since the first segment", while an
-      // absent field is a boundary nobody ever stated. A writer serializing
-      // `upTo: undefined` produces exactly the "no `upTo` field" row, which
-      // is why that row exists and why it must not be admitted as `null`. A
-      // value of some other type is not a segment name either — accepting it
-      // would let `legacy` classification be decided by a number.
-      await writeManifestBytes(`${JSON.stringify(record)}\n${sealLine()}`);
-      const port = createFailurePort();
-
-      const thrown = await catchRejected(() =>
-        readManifest(sandbox, AMPLE_MAX_BYTES, port.build),
-      );
-
-      expect(thrown).toBeInstanceOf(M3LError);
-      expectPortFailure(thrown, port);
-    },
-  );
-
-  test("accepts a baseline whose upTo is an explicit null, the shape those refusals must not catch", async () => {
-    // The positive control for the rows above: the refusal is about `upTo`
-    // being absent or of the wrong type, never about it being falsy. Without
-    // this, an implementation that rejected `null` outright would still pass
-    // every row above.
-    await writeManifestBytes(baselineLine(null));
-    const port = createFailurePort();
-
-    const contents = await readManifest(sandbox, AMPLE_MAX_BYTES, port.build);
-
-    expect(definedOrThrow(contents.baseline, "the baseline").upTo).toBeNull();
-    expect(port.calls).toHaveLength(0);
   });
 });
 
@@ -1286,6 +991,28 @@ describe("bounded, guarded reads", () => {
     expectPortFailure(thrown, port);
   });
 
+  test("refuses a sole unterminated line of exactly the ceiling", async () => {
+    // A narrow trigger, so the fixture is asserted before the call: anything
+    // OVER the ceiling is caught by the byte counter first, and a TERMINATED
+    // line of this size fits. The wording must be the manifest's own.
+    const maxBytes = 512;
+    const bytes = "x".repeat(maxBytes);
+    expect(Buffer.byteLength(bytes, "utf8")).toBe(maxBytes);
+    expect(bytes.endsWith("\n")).toBe(false);
+    await writeManifestBytes(bytes);
+    const port = createFailurePort();
+
+    const thrown = await catchRejected(() =>
+      readManifest(sandbox, maxBytes, port.build),
+    );
+
+    const call = expectPortFailure(thrown, port);
+    expect(call.message).toBe(
+      "append-only stream: a sealed-segment manifest line exceeds the maximum manifest size",
+    );
+    expect(call.context).toEqual({ maxBytes });
+  });
+
   test("refuses a manifest holding bytes that are not valid UTF-8, rather than decoding them lossily", async () => {
     // The strict decoder is a proof control, not a nicety: a lenient decode
     // substitutes U+FFFD for an invalid sequence, so a tampered manifest
@@ -1454,41 +1181,5 @@ describe("appendSeal", () => {
     expect(thrown).toBeInstanceOf(M3LError);
     // The planted target must not have received the seal.
     expect(await readFile(target, "utf8")).toBe("");
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
-
-describe("manifest record types", () => {
-  test("a seal record carries the digest's measurement verbatim", () => {
-    // Assignability, not equality: a seal record carries `kind`, `at`,
-    // `formatVersion` and `segment` on TOP of the digest's three fields, so
-    // `toEqualTypeOf` would be a different — and false — claim.
-    expectTypeOf<ManifestSealRecord>().toExtend<SegmentDigestResult>();
-    expectTypeOf<ManifestSealRecord>().toExtend<{
-      readonly segment: string;
-    }>();
-  });
-
-  test("the two record kinds are discriminated by `kind`", () => {
-    expectTypeOf<ManifestSealRecord["kind"]>().toEqualTypeOf<"seal">();
-    expectTypeOf<ManifestBaselineRecord["kind"]>().toEqualTypeOf<"baseline">();
-  });
-
-  test("a baseline's upTo is a segment name or an explicit null", () => {
-    expectTypeOf<ManifestBaselineRecord["upTo"]>().toEqualTypeOf<
-      string | null
-    >();
-  });
-
-  test("contents expose the baseline optionally and the seals by segment name", () => {
-    expectTypeOf<ManifestContents["baseline"]>().toEqualTypeOf<
-      ManifestBaselineRecord | undefined
-    >();
-    expectTypeOf<ManifestContents["seals"]>().toEqualTypeOf<
-      ReadonlyMap<string, ManifestSealRecord>
-    >();
   });
 });

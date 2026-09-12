@@ -54,7 +54,7 @@
  */
 
 import type { FileHandle } from "node:fs/promises";
-import { open } from "node:fs/promises";
+import { appendFile, open } from "node:fs/promises";
 import path from "node:path";
 
 import { M3LError } from "../../core/errors/index.js";
@@ -123,6 +123,16 @@ const INVALID_CEILING_MESSAGE =
 /** Reported when the manifest's raw bytes exceed the caller's ceiling. */
 const OVER_CEILING_MESSAGE =
   "append-only stream: the manifest exceeds the maximum manifest size";
+
+/**
+ * Reported when a single manifest line alone would not fit under the caller's
+ * ceiling. Distinct from {@link OVER_CEILING_MESSAGE}: the file itself can sit
+ * exactly ON the ceiling while an unterminated tail of that size could not be
+ * completed within it, so "the manifest exceeds ..." would overstate what was
+ * observed.
+ */
+const OVER_LONG_LINE_MESSAGE =
+  "append-only stream: a sealed-segment manifest line exceeds the maximum manifest size";
 
 /** Reported when the manifest cannot be opened for reading. */
 const OPEN_FAILURE_MESSAGE =
@@ -215,6 +225,17 @@ async function readTerminatedLines(
   // the carry `splitLines` hands back.
   let carry: Buffer = Buffer.alloc(0);
   let byteLength = 0;
+  // `splitLines` is shared with the segment reader and words its one refusal
+  // for a segment ("a segment line exceeds the maximum line size"), against a
+  // per-LINE ceiling. The manifest hands it the whole-file ceiling instead, so
+  // that wording would name a limit this file does not have. Re-word it here,
+  // at the boundary, rather than reaching into a helper the reader also
+  // depends on: every error `splitLines` builds is that single line-size
+  // refusal, so substituting the message cannot mask a different failure. The
+  // context is rebuilt from this module's own ceiling for the same reason —
+  // `maxLineBytes` would name a bound the manifest never stated.
+  const reportOverLongLine: AppendOnlyReadFailure = () =>
+    buildError(OVER_LONG_LINE_MESSAGE, { context: { maxBytes } });
   for await (const chunk of readChunks(handle, manifestChunkSize(maxBytes))) {
     byteLength += chunk.byteLength;
     if (byteLength > maxBytes) {
@@ -224,7 +245,7 @@ async function readTerminatedLines(
         context: { maxBytes, byteLength },
       });
     }
-    const split = splitLines(carry, chunk, maxBytes, buildError);
+    const split = splitLines(carry, chunk, maxBytes, reportOverLongLine);
     carry = split.carry;
     for (const line of split.lines) {
       lines.push(STRICT_UTF8_DECODER.decode(line));
@@ -302,6 +323,16 @@ async function readManifestFile(
  * is a disclosure on its own. `O_NOFOLLOW` refuses a symlink planted at the
  * manifest name, and the post-open `fstat` refuses a hardlinked or
  * non-regular file on the very descriptor about to be written.
+ *
+ * The bytes go out through `appendFile`, exactly as
+ * `./append-only-writer.js` appends a segment line: it loops until every byte
+ * has landed, where a bare `handle.write` resolves on a SHORT write and
+ * leaves a truncated, unterminated record behind. The reader would then read
+ * that fragment as a torn tail and ignore it unconditionally — a seal that
+ * vanished without any failure ever being raised, on the one path whose whole
+ * job is to produce proof. It is handed the HANDLE, not the path, so the
+ * bytes go through the very descriptor the `nlink`/`isFile` refusals were
+ * proven on; re-opening by name would be a check-then-open race.
  */
 async function appendRecord(
   directory: string,
@@ -317,7 +348,7 @@ async function appendRecord(
       SEGMENT_FILE_MODE,
     );
     await assertSegmentIsReadable(handle, buildError);
-    await handle.write(line);
+    await appendFile(handle, line, { encoding: "utf8" });
   } catch (cause) {
     throw cause instanceof M3LError
       ? cause
@@ -464,8 +495,9 @@ export async function loadOrInitializeManifest(
  * Whether a segment SHOULD be sealed is not decided here (the sealer decides
  * that), and neither is whether it is already sealed: a duplicate is
  * reconciled at READ time by `./append-only-manifest-records.js`'s
- * `admitSeal`, the only place both claims are ever in hand at once. Appending unconditionally also keeps this function
- * free of a read-then-write window two writers could interleave in.
+ * `admitSeal`, the only place both claims are ever in hand at once.
+ * Appending unconditionally also keeps this function free of a read-then-write
+ * window two writers could interleave in.
  *
  * @param directory - The stream directory holding the manifest.
  * @param claim - The segment name and the measurement taken over its bytes.
