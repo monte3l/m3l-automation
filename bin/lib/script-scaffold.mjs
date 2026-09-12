@@ -257,9 +257,11 @@ export function commandModuleErrors(commandSrc) {
  * `LIBRARY_DEPENDENCY_NAME`/`LIBRARY_DEPENDENCY_VALUE` pair in
  * `bin/check-script-deps.mjs`.
  *
- * TRANSITIONAL (ADR-0103 P4a / P4a2): agent-operator still declares the
- * pre-rename aliased shape until P4a2 migrates it too (deferred out of P4a
- * for the review-size ceiling — docs/plans/2026-09-12-u13-registry-publish.md).
+ * TRANSITIONAL (ADR-0103 P4a / P4a2): 4 scripts packages (agent-operator,
+ * sqs-dead-letter-triage, cloudwatch-logs-analysis, sqs-etl) still declare
+ * the pre-rename aliased shape until P4a2 migrates them too (deferred out
+ * of P4a for GitHub's 300-file diff-view ceiling and the review-size
+ * ceiling — docs/plans/2026-09-12-u13-registry-publish.md).
  * `packageManifestErrors` below accepts EITHER shape until then; delete
  * `TRANSITIONAL_ALIASED_NAME`/`VALUE` and that branch once P4a2 lands.
  */

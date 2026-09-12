@@ -1,5 +1,5 @@
-import { Core } from "@monte3l/m3l-common";
-import type { AWS } from "@monte3l/m3l-common";
+import { Core } from "@m3l-automation/m3l-common";
+import type { AWS } from "@m3l-automation/m3l-common";
 
 import { buildTriageProcedure } from "./build-procedure.js";
 import { drainQueue } from "./drain-queue.js";
@@ -159,7 +159,7 @@ function toMessageOutcome(
  *
  * @example
  * ```typescript
- * import { AWS, Core } from "@monte3l/m3l-common";
+ * import { AWS, Core } from "@m3l-automation/m3l-common";
  * import { triageQueue } from "./triage-queue.js";
  *
  * declare const deps: Parameters<typeof triageQueue>[0];

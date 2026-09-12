@@ -1,4 +1,4 @@
-import { Core } from "@monte3l/m3l-common";
+import { Core } from "@m3l-automation/m3l-common";
 
 /**
  * How a `runbook`-handled preset's queue is otherwise governed, when it is

@@ -302,10 +302,10 @@ export default tseslint.config(
           //
           // TRANSITIONAL (ADR-0103 P4a/P4a2): both the renamed
           // @monte3l/m3l-common and the pre-rename @m3l-automation/m3l-common
-          // alias are allowed here because agent-operator (the one scripts
-          // package deferred out of P4a for the review-size ceiling) still
-          // imports via the old alias. Drop the second negative lookahead
-          // once P4a2 migrates it.
+          // alias are allowed here because 4 scripts packages (deferred out
+          // of P4a for GitHub's 300-file diff-view ceiling and the
+          // review-size ceiling) still import via the old alias. Drop the
+          // second negative lookahead once P4a2 migrates them.
           selector:
             "ImportExpression[source.type='Literal'][source.value=/^(?!\\.)(?!node:)(?!@monte3l\\/m3l-common($|\\/))(?!@m3l-automation\\/m3l-common($|\\/)).+$/]",
           message:
@@ -399,9 +399,10 @@ export default tseslint.config(
               //
               // TRANSITIONAL (ADR-0103 P4a/P4a2): the pre-rename
               // `@m3l-automation/m3l-common` alias is also excluded here
-              // because agent-operator (deferred out of P4a for the
-              // review-size ceiling) still imports via it. Drop that
-              // lookahead once P4a2 migrates it.
+              // because 4 scripts packages (deferred out of P4a for
+              // GitHub's 300-file diff-view ceiling and the review-size
+              // ceiling) still import via it. Drop that lookahead once
+              // P4a2 migrates them.
               regex:
                 "^(?!\\.)(?!node:)(?!@aws-sdk($|/))(?!@monte3l/m3l-common($|/))(?!@m3l-automation/m3l-common($|/)).+$",
               allowTypeImports: false,

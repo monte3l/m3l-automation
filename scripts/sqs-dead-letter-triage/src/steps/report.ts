@@ -1,4 +1,4 @@
-import { Core } from "@monte3l/m3l-common";
+import { Core } from "@m3l-automation/m3l-common";
 
 import type { TriageVerdict } from "./preset.js";
 import type { MessageOutcome, TriageQueueResult } from "./triage-queue.js";
@@ -247,7 +247,7 @@ export function buildTriageReport(input: BuildTriageReportInput): TriageReport {
  *
  * @example
  * ```typescript
- * import { Core } from "@monte3l/m3l-common";
+ * import { Core } from "@m3l-automation/m3l-common";
  * import { logTriageReport } from "./report.js";
  *
  * declare const report: import("./report.js").TriageReport;

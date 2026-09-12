@@ -44,7 +44,7 @@ vi.mock("../src/steps/explain-runbook.js", () => ({
   explainRunbook: vi.fn(),
 }));
 
-import { Core } from "@monte3l/m3l-common";
+import { Core } from "@m3l-automation/m3l-common";
 
 import { TRIAGE_CODE, triageQueue } from "../src/steps/triage-queue.js";
 import type { TriageQueueDeps } from "../src/steps/triage-queue.js";

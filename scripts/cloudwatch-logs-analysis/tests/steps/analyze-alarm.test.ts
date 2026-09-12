@@ -2,8 +2,8 @@ import { describe, expect, it, vi } from "vitest";
 
 import type * as NodeFsPromises from "node:fs/promises";
 
-import { Core } from "@monte3l/m3l-common";
-import type { AWS } from "@monte3l/m3l-common";
+import { Core } from "@m3l-automation/m3l-common";
+import type { AWS } from "@m3l-automation/m3l-common";
 
 import {
   analyzeAlarm,

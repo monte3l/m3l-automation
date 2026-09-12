@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { Core } from "@monte3l/m3l-common";
+import { Core } from "@m3l-automation/m3l-common";
 
 import type * as HooksModule from "../src/hooks.js";
 import { getCorrelationId, hooks } from "../src/hooks.js";
@@ -63,7 +63,7 @@ describe("getCorrelationId, before onBeforeRun has run", () => {
 
   /**
    * Asserted by message, not `instanceof`: `vi.resetModules()` gives the
-   * fresh module its own copy of `@monte3l/m3l-common` too, so the
+   * fresh module its own copy of `@m3l-automation/m3l-common` too, so the
    * error it throws is an `M3LError` from a *different* class identity than
    * the one this file imported statically. The behaviour under test is that
    * it refuses at all — never that it returns `""` or a stale id.

@@ -7,7 +7,7 @@
  * ceiling; there is no behavioral boundary between the two files.
  */
 
-import { Core } from "@monte3l/m3l-common";
+import { Core } from "@m3l-automation/m3l-common";
 
 import {
   REINSERT_PROHIBITION_KEYWORDS,

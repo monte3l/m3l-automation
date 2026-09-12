@@ -1,7 +1,7 @@
 import * as fsp from "node:fs/promises";
 
-import { Core } from "@monte3l/m3l-common";
-import type { AWS } from "@monte3l/m3l-common";
+import { Core } from "@m3l-automation/m3l-common";
+import type { AWS } from "@m3l-automation/m3l-common";
 
 /**
  * `send-batch` — streams `input` JSONL, maps each record to an
@@ -165,10 +165,10 @@ function toSendRecoveryEntry(
  *
  * @example
  * ```typescript
- * import { Core } from "@monte3l/m3l-common";
+ * import { Core } from "@m3l-automation/m3l-common";
  * import { sendBatch } from "./send-batch.js";
  *
- * declare const sqsOperations: import("@monte3l/m3l-common/aws").M3LSQSOperations;
+ * declare const sqsOperations: import("@m3l-automation/m3l-common/aws").M3LSQSOperations;
  *
  * await sendBatch({
  *   config: await new Core.M3LScript({

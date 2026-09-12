@@ -1,7 +1,7 @@
 import { mkdir } from "node:fs/promises";
 import * as path from "node:path";
 
-import { Core } from "@monte3l/m3l-common";
+import { Core } from "@m3l-automation/m3l-common";
 
 /**
  * Writes one JSON artifact under `M3L_OUTPUT_DIR`, creating the destination
@@ -22,7 +22,7 @@ import { Core } from "@monte3l/m3l-common";
  *
  * @example
  * ```typescript
- * import { Core } from "@monte3l/m3l-common";
+ * import { Core } from "@m3l-automation/m3l-common";
  * import { writeJsonArtifact } from "./write-artifact.js";
  *
  * await writeJsonArtifact(new Core.M3LPaths(), "verdict.json", { ok: true });

@@ -4,7 +4,7 @@
  * into one built, validated `M3LProcedure`.
  */
 
-import { Core } from "@monte3l/m3l-common";
+import { Core } from "@m3l-automation/m3l-common";
 
 import { buildTriageCases, unrecognisedFallback } from "./cases.js";
 import type { TriagePreset, TriageShape } from "./preset.js";

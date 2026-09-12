@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 
 import { describe, expect, it } from "vitest";
 
-import { Core } from "@monte3l/m3l-common";
+import { Core } from "@m3l-automation/m3l-common";
 
 import { buildAnalysisProcedure } from "../src/steps/build-procedure.js";
 import { parseRunbookPreset, PRESET_CODE } from "../src/steps/load-runbook.js";

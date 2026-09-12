@@ -1,4 +1,4 @@
-import type { Core } from "@monte3l/m3l-common";
+import type { Core } from "@m3l-automation/m3l-common";
 
 import { buildTriageProcedure } from "./build-procedure.js";
 import { loadRunbook, PRESET_EXTENSION } from "./load-runbook.js";
@@ -56,7 +56,7 @@ export interface ExplainRunbookDeps {
  *
  * @example
  * ```typescript
- * import { Core } from "@monte3l/m3l-common";
+ * import { Core } from "@m3l-automation/m3l-common";
  * import { explainRunbook } from "./explain-runbook.js";
  *
  * const paths = new Core.M3LPaths();

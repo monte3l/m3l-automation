@@ -10,7 +10,7 @@
  * build it. That is the real seam this module marks — not an arbitrary split
  * to satisfy the file-budget ceiling, though it does that too.
  */
-import { Core } from "@monte3l/m3l-common";
+import { Core } from "@m3l-automation/m3l-common";
 
 import {
   AUTHORABLE_VERDICTS,

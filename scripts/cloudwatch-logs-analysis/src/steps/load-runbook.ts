@@ -1,7 +1,7 @@
 import * as fsp from "node:fs/promises";
 import * as path from "node:path";
 
-import { Core } from "@monte3l/m3l-common";
+import { Core } from "@m3l-automation/m3l-common";
 
 import {
   AUTHORABLE_VERDICTS,
@@ -339,7 +339,7 @@ function requireAnalysableStages(preset: RunbookPreset): void {
  *
  * @example
  * ```typescript
- * import { Core } from "@monte3l/m3l-common";
+ * import { Core } from "@m3l-automation/m3l-common";
  * import { parseRunbookPreset } from "./load-runbook.js";
  *
  * const reader = new Core.M3LInputFileReader({
@@ -398,7 +398,7 @@ export function parseRunbookPreset(
  *
  * @example
  * ```typescript
- * import { Core } from "@monte3l/m3l-common";
+ * import { Core } from "@m3l-automation/m3l-common";
  * import { loadRunbook } from "./load-runbook.js";
  *
  * const reader = new Core.M3LInputFileReader({
@@ -428,7 +428,7 @@ export async function loadRunbook(
  *
  * @example
  * ```typescript
- * import { Core } from "@monte3l/m3l-common";
+ * import { Core } from "@m3l-automation/m3l-common";
  * import { listRunbooks } from "./load-runbook.js";
  *
  * const names = await listRunbooks(new Core.M3LPaths(), "runbooks");

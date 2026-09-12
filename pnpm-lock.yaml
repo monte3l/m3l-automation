@@ -507,8 +507,8 @@ importers:
 
   scripts/cloudwatch-logs-analysis:
     dependencies:
-      '@monte3l/m3l-common':
-        specifier: workspace:*
+      '@m3l-automation/m3l-common':
+        specifier: workspace:@monte3l/m3l-common@*
         version: link:../../packages/m3l-common
 
   scripts/cloudwatch-logs-insights:
@@ -573,14 +573,14 @@ importers:
 
   scripts/sqs-dead-letter-triage:
     dependencies:
-      '@monte3l/m3l-common':
-        specifier: workspace:*
+      '@m3l-automation/m3l-common':
+        specifier: workspace:@monte3l/m3l-common@*
         version: link:../../packages/m3l-common
 
   scripts/sqs-etl:
     dependencies:
-      '@monte3l/m3l-common':
-        specifier: workspace:*
+      '@m3l-automation/m3l-common':
+        specifier: workspace:@monte3l/m3l-common@*
         version: link:../../packages/m3l-common
 
 packages:

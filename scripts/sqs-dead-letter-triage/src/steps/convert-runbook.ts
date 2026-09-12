@@ -1,7 +1,7 @@
 import { mkdir } from "node:fs/promises";
 import * as path from "node:path";
 
-import { Core } from "@monte3l/m3l-common";
+import { Core } from "@m3l-automation/m3l-common";
 
 import {
   AUTHORABLE_VERDICTS,
@@ -443,7 +443,7 @@ async function writeSkeleton(
  *
  * @example
  * ```typescript
- * import { Core } from "@monte3l/m3l-common";
+ * import { Core } from "@m3l-automation/m3l-common";
  * import { convertRunbook } from "./convert-runbook.js";
  *
  * const paths = new Core.M3LPaths();

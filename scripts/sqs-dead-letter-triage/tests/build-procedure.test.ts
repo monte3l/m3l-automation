@@ -1,6 +1,6 @@
 import { describe, expect, it, test } from "vitest";
 
-import { Core } from "@monte3l/m3l-common";
+import { Core } from "@m3l-automation/m3l-common";
 
 import { buildTriageProcedure } from "../src/steps/build-procedure.js";
 import { createTriageRunState, readPath } from "../src/steps/preset.js";

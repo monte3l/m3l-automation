@@ -17,7 +17,7 @@
  * what keeps it out of build-time cycle detection.
  */
 
-import { Core } from "@monte3l/m3l-common";
+import { Core } from "@m3l-automation/m3l-common";
 
 import { normaliseProgression, readPath, SAFE_KEY_VALUE } from "./preset.js";
 import type {

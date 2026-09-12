@@ -1,7 +1,7 @@
 import * as fsp from "node:fs/promises";
 import * as path from "node:path";
 
-import { Core } from "@monte3l/m3l-common";
+import { Core } from "@m3l-automation/m3l-common";
 
 import {
   REINSERT_PROHIBITION_KEYWORDS,
@@ -493,7 +493,7 @@ function requireUniqueCases(arms: readonly TriageArm[]): void {
  *
  * @example
  * ```typescript
- * import { Core } from "@monte3l/m3l-common";
+ * import { Core } from "@m3l-automation/m3l-common";
  * import { parseTriagePreset } from "./load-runbook.js";
  *
  * const reader = new Core.M3LInputFileReader({
@@ -559,7 +559,7 @@ export function parseTriagePreset(
  *
  * @example
  * ```typescript
- * import { Core } from "@monte3l/m3l-common";
+ * import { Core } from "@m3l-automation/m3l-common";
  * import { loadRunbook } from "./load-runbook.js";
  *
  * const reader = new Core.M3LInputFileReader({
@@ -589,7 +589,7 @@ export async function loadRunbook(
  *
  * @example
  * ```typescript
- * import { Core } from "@monte3l/m3l-common";
+ * import { Core } from "@m3l-automation/m3l-common";
  * import { listRunbooks } from "./load-runbook.js";
  *
  * const names = await listRunbooks(new Core.M3LPaths(), "runbooks");

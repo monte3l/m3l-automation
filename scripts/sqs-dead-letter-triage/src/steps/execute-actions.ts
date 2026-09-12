@@ -18,8 +18,8 @@
  * @packageDocumentation
  */
 
-import { Core } from "@monte3l/m3l-common";
-import type { AWS } from "@monte3l/m3l-common";
+import { Core } from "@m3l-automation/m3l-common";
+import type { AWS } from "@m3l-automation/m3l-common";
 
 import { readPath } from "./preset.js";
 import type { TriagePreset } from "./preset.js";
@@ -576,7 +576,7 @@ function buildDeleteTargets(
  *
  * @example
  * ```typescript
- * import { Core } from "@monte3l/m3l-common";
+ * import { Core } from "@m3l-automation/m3l-common";
  * import { applyActions } from "./execute-actions.js";
  * import { buildExecutePlan } from "./execute-plan.js";
  *

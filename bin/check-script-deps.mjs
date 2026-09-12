@@ -8,14 +8,16 @@
 // already enforced by eslint.config.js's scripts/*/src/**/*.ts override.
 //
 // TRANSITIONAL (ADR-0103 P4a / P4a2): P4a dropped the pre-rename
-// @m3l-automation/m3l-common alias for 16 of the 17 scripts packages in one
-// PR; the 17th (agent-operator, by far the largest) was deferred to a
-// follow-up PR (P4a2) to stay under the review-size ceiling
+// @m3l-automation/m3l-common alias for 13 of the 17 scripts packages in one
+// PR; the remaining 4 (agent-operator, sqs-dead-letter-triage,
+// cloudwatch-logs-analysis, sqs-etl — the largest by diff size) were
+// deferred to a follow-up PR (P4a2) to stay under GitHub's 300-file
+// diff-view ceiling and the review-size ceiling
 // (docs/plans/2026-09-12-u13-registry-publish.md). This checker accepts
-// EITHER shape until P4a2 lands and migrates agent-operator too, at which
-// point TRANSITIONAL_ALIASED_NAME/VALUE and the branch that accepts them
-// should be deleted — main must never be broken by a package that hasn't
-// migrated yet.
+// EITHER shape until P4a2 lands and migrates all 4, at which point
+// TRANSITIONAL_ALIASED_NAME/VALUE and the branch that accepts them should
+// be deleted — main must never be broken by a package that hasn't migrated
+// yet.
 //
 // Separate from check-deps.mjs, which is scoped to the published library
 // package's ADR-0017 exact-pin/optional-peer rules — a different package
@@ -38,8 +40,8 @@ const LIBRARY_DEPENDENCY_NAME = "@monte3l/m3l-common";
 const LIBRARY_DEPENDENCY_VALUE = "workspace:*";
 
 /** TRANSITIONAL (see the header comment) — the pre-rename aliased shape,
- * still declared by agent-operator until P4a2 migrates it too. Delete this
- * pair and the branch below that checks it once that lands. */
+ * still declared by the 4 packages deferred to P4a2. Delete this pair and
+ * the branch below that checks it once that lands. */
 const TRANSITIONAL_ALIASED_NAME = "@m3l-automation/m3l-common";
 const TRANSITIONAL_ALIASED_VALUE = "workspace:@monte3l/m3l-common@*";
 

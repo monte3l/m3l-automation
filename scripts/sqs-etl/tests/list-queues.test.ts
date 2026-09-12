@@ -9,7 +9,7 @@ vi.mock("node:fs/promises", async () => {
   return { ...actual };
 });
 
-import { AWS, Core } from "@monte3l/m3l-common";
+import { AWS, Core } from "@m3l-automation/m3l-common";
 
 import { listQueues } from "../src/steps/list-queues.js";
 import { buildConfig, createFakeSqsOperations } from "./support/sqsFakes.js";

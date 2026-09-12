@@ -1,5 +1,5 @@
-import { Core } from "@monte3l/m3l-common";
-import type { AWS } from "@monte3l/m3l-common";
+import { Core } from "@m3l-automation/m3l-common";
+import type { AWS } from "@m3l-automation/m3l-common";
 
 import { writeJsonArtifact } from "./write-artifact.js";
 
@@ -174,7 +174,7 @@ function accumulatePage(
  *
  * @example
  * ```typescript
- * import { AWS, Core } from "@monte3l/m3l-common";
+ * import { AWS, Core } from "@m3l-automation/m3l-common";
  * import { drainQueue } from "./drain-queue.js";
  *
  * declare const sqs: AWS.M3LSQSOperations;
