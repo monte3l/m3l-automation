@@ -28,6 +28,17 @@
  * the writer's sealer uses on a segment it has rotated away from — the latter
  * being nothing but a guarded, bounded read loop around the former.
  *
+ * A one-shot measurement also re-`fstat`s the segment once the read loop
+ * completes and refuses if it has grown past the bytes just digested — a
+ * still-active segment can otherwise be measured mid-append and sealed as a
+ * prefix, which reads forever after as tampered. That check narrows the
+ * race; it does not close it, since a write landing after the re-`fstat`
+ * still slips through. Closing it fully needs the writer to tell the sealer
+ * a segment is its own still-active one, which is a later slice's job. See
+ * {@link digestOpenSegment}'s header for the check itself and why it is a
+ * POST-check rather than the `fstat` PRE-check this module already refuses
+ * to use for the ceiling below.
+ *
  * A segment is opened here under exactly the refusals a segment READ gets
  * ({@link "./append-only-fs.js".SEGMENT_READ_FLAGS} and
  * {@link "./append-only-fs.js".assertSegmentIsReadable}), never a plain
@@ -81,6 +92,13 @@ const INVALID_CEILING_MESSAGE =
 /** Reported when a segment's raw bytes exceed the caller's ceiling. */
 const OVER_CEILING_MESSAGE =
   "append-only stream: a segment exceeds the maximum digestible size";
+
+/**
+ * Reported when a segment is LARGER after the read loop finishes than the
+ * bytes just digested — see {@link digestOpenSegment}'s post-read `fstat`.
+ */
+const GREW_DURING_READ_MESSAGE =
+  "append-only stream: a segment grew while it was being digested";
 
 /** Reported when a segment's handle cannot be released after measuring it. */
 const CLOSE_FAILURE_MESSAGE =
@@ -253,6 +271,26 @@ function digestChunkSize(maxBytes: number): number {
  * readable length at all, it bounds nothing whatsoever. Counting as the bytes
  * arrive refuses on the chunk that crosses the line, before those bytes are
  * fed to the digest and before another chunk is requested.
+ *
+ * **After** the read loop reaches end-of-file, one more `fstat` re-checks the
+ * segment's size against the bytes just digested and refuses if the file has
+ * grown (`stats.size > byteLength`). This is a POST-check, not a return of
+ * the pre-check rejected above: it never gates what gets read or how much of
+ * `maxBytes` is consumed, it only refuses to HAND BACK a measurement once the
+ * read is already known to be a prefix of a file that kept changing —
+ * exactly the false-positive tamper report a still-active segment produces
+ * when a clock step makes it look like yesterday's. The comparison is
+ * deliberately "strictly greater than", never "not equal to": a file whose
+ * `fstat` disagrees with the bytes read for a reason other than growth (a
+ * special file like `/proc/self/status`, whose `stat().size` reports `0`
+ * while a read yields over a kilobyte) must not be refused here — the
+ * `maxBytes` ceiling above is what polices those, and this check only fires
+ * when the segment is now LARGER than what was just read.
+ *
+ * This narrows the race, it does not close it: a write landing after this
+ * `fstat` still produces a seal of a prefix. Closing that window fully needs
+ * the writer itself to tell the sealer a segment is still its own active one
+ * — a later slice's job, not this function's.
  */
 async function digestOpenSegment(
   handle: FileHandle,
@@ -272,6 +310,15 @@ async function digestOpenSegment(
       });
     }
     digest.update(chunk);
+  }
+  const postReadStat = await handle.stat();
+  if (postReadStat.size > byteLength) {
+    throw buildError(GREW_DURING_READ_MESSAGE, {
+      // Library-computed facts only: the bytes this module actually
+      // digested and the size the same descriptor reports moments later.
+      // Never the path, and never any byte of the segment's own contents.
+      context: { byteLength, size: postReadStat.size },
+    });
   }
   return digest.finish();
 }
@@ -316,6 +363,13 @@ async function releaseAfterFailure(
  * This is {@link SegmentDigest} plus that lifecycle — deliberately not a
  * second counting implementation, so the sealer's numbers and the reader's
  * inline verification of them can never drift apart.
+ *
+ * A successful measurement is not handed back unconditionally: after the
+ * read loop reaches end-of-file, {@link digestOpenSegment} re-`fstat`s the
+ * same descriptor and refuses if the segment has grown past the bytes just
+ * digested — see that function's header for why this is a POST-check, not a
+ * repeat of the mid-read ceiling, and why it narrows rather than closes the
+ * race where an active segment is measured while still being appended to.
  *
  * The whole fallible lifecycle sits under one guard — `open`, the `fstat`
  * tampering check, every `read`, and `close` alike. A failure that is already

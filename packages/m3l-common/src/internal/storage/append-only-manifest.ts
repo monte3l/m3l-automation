@@ -81,7 +81,7 @@ import {
   collectRecords,
   MANIFEST_FORMAT_VERSION,
 } from "./append-only-manifest-records.js";
-import { listSegmentFiles } from "./append-only-segments.js";
+import { currentDatePrefix, listSegmentFiles } from "./append-only-segments.js";
 
 /**
  * The manifest's public-surface vocabulary, re-exported so a caller that reads
@@ -357,7 +357,8 @@ async function appendRecord(
 }
 
 /**
- * The highest segment name in `directory`, or `null` when it holds none.
+ * The highest segment name in `directory` dated no later than today, or
+ * `null` when it holds none.
  *
  * Reuses `./append-only-segments.js`'s inventory rather than walking the
  * directory a second time, so "a segment" means exactly what it means
@@ -365,6 +366,18 @@ async function appendRecord(
  * produced. A foreign file — `notes.txt`, or an over-padded `-00005.jsonl` no
  * writer here renders — is not a boundary this trail can state anything
  * about.
+ *
+ * A segment dated AFTER {@link currentDatePrefix}'s today is excluded before
+ * the highest is taken, even though it is otherwise a well-formed name. This
+ * trail cannot have written it yet, so it is not evidence of how far back an
+ * already-written trail is unproven — a future-dated name planted ahead of
+ * the first sealer run would otherwise become the baseline forever, writing
+ * off every real segment, past and future, as `legacy`. The same exclusion
+ * is also the right call for an honestly clock-skewed peer: excluding its
+ * segment costs it nothing but a delay, since it is swept and sealed once its
+ * date arrives rather than being written off as unproven now. `segments` is
+ * already sorted oldest-first, so filtering preserves order and the highest
+ * eligible entry is still the last one.
  */
 async function highestSegmentName(
   directory: string,
@@ -376,7 +389,11 @@ async function highestSegmentName(
   } catch (cause) {
     throw buildError(LISTING_FAILURE_MESSAGE, { cause });
   }
-  return listing.segments.at(-1)?.name ?? null;
+  const today = currentDatePrefix();
+  const eligible = listing.segments.filter(
+    (segment) => segment.datePrefix <= today,
+  );
+  return eligible.at(-1)?.name ?? null;
 }
 
 /**

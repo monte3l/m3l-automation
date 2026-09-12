@@ -73,6 +73,10 @@ import type {
   M3LAppendOnlySegment,
   M3LAppendOnlySegmentListing,
 } from "../src/core/storage/index.js";
+import {
+  currentDatePrefix,
+  parseSegmentName,
+} from "../src/internal/storage/append-only-segments.js";
 
 // ---------------------------------------------------------------------------
 // Fixture helpers
@@ -747,5 +751,86 @@ describe("fresh array per call", () => {
     expect(second.segments.map((segment) => segment.name)).toEqual([
       "2026-01-01-0001.jsonl",
     ]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// [security] parseSegmentName refuses a shape-valid but non-real date
+// ---------------------------------------------------------------------------
+//
+// `SEGMENT_NAME_PATTERN` only checks `\d{4}-\d{2}-\d{2}`'s SHAPE, never
+// whether it names a real Gregorian calendar date. Left unchecked,
+// `9999-99-99-9999.jsonl` and sixty-four `0000-00-00-NNNN.jsonl` decoys both
+// parsed as legitimate segments — a planted `9999-99-99` baseline
+// permanently killed the cold-start sweep, and a wall of `0000-00-00`
+// decoys consumed an entire sweep budget while a real backlog went sealed
+// zero times. `parseSegmentName` is the one parser every consumer of this
+// module shares (`discoverActiveSegment`, `nextSegment`, `listSegmentFiles`),
+// so this suite exercises it directly rather than only through
+// `M3LAppendOnlyStream`.
+
+describe("[security] parseSegmentName refuses a non-real calendar date", () => {
+  test.each([
+    {
+      label: "a shape-valid sentinel that is not a real date",
+      datePrefix: "9999-99-99",
+    },
+    {
+      label: "a shape-valid decoy that is not a real date",
+      datePrefix: "0000-00-00",
+    },
+    { label: "a month past December", datePrefix: "2026-13-01" },
+    { label: "a day February never reaches", datePrefix: "2026-02-30" },
+    { label: "Feb 29 in an ordinary, non-leap year", datePrefix: "2025-02-29" },
+    {
+      label:
+        "Feb 29 in a century year divisible by 100 but not 400 (the rule a naive year % 4 check gets wrong)",
+      datePrefix: "1900-02-29",
+    },
+  ])("refuses $label ($datePrefix)", ({ datePrefix }) => {
+    const name = `${datePrefix}-0001.jsonl`;
+
+    expect(parseSegmentName(name)).toBeUndefined();
+  });
+
+  test.each([
+    { label: "an ordinary date (today, UTC)", datePrefix: currentDatePrefix() },
+    { label: "a real leap day (2024-02-29)", datePrefix: "2024-02-29" },
+    {
+      label: "a real leap day in a century leap year (2000-02-29)",
+      datePrefix: "2000-02-29",
+    },
+  ])("accepts $label", ({ datePrefix }) => {
+    const name = `${datePrefix}-0001.jsonl`;
+
+    expect(parseSegmentName(name)).toEqual({ datePrefix, sequence: 1 });
+  });
+
+  // The round-trip guarantee: every name this writer's OWN renderer produces
+  // must still parse. The names below are never hand-written literals — they
+  // are read back from the real filesystem after driving the real writer, so
+  // this assertion cannot drift from what `segmentFileName`/`currentDatePrefix`
+  // (the module's private renderer, exercised here through its only public
+  // surface — actually writing segments) actually render.
+  test("every name the real writer produces round-trips through parseSegmentName", async () => {
+    const dir = path.join(workDir, "audit");
+    const maxSegmentBytes = 40;
+    const stream = new M3LAppendOnlyStream({ directory: dir, maxSegmentBytes });
+
+    for (let index = 0; index < 5; index += 1) {
+      await stream.append({ index, pad: "p".repeat(20) });
+    }
+
+    const onDisk = (await readdir(dir)).filter((name) =>
+      name.endsWith(".jsonl"),
+    );
+    // The fixture must actually force more than one segment, or this is only
+    // proving the round trip for a single, first-ever name.
+    expect(onDisk.length).toBeGreaterThan(1);
+
+    for (const name of onDisk) {
+      const { datePrefix, sequence } = splitSegmentName(name);
+      expect(parseSegmentName(name)).toEqual({ datePrefix, sequence });
+    }
   });
 });

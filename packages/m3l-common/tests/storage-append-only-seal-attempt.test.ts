@@ -51,8 +51,10 @@ import {
   readManifest,
 } from "../src/internal/storage/append-only-manifest.js";
 import type { SegmentSealClaim } from "../src/internal/storage/append-only-manifest.js";
+import type { ManifestSealRecord } from "../src/internal/storage/append-only-manifest-records.js";
 import {
   appendClaim,
+  corroborateClaim,
   measureSegment,
 } from "../src/internal/storage/append-only-seal-attempt.js";
 import type { SealAttemptOutcome } from "../src/internal/storage/append-only-seal-attempt.js";
@@ -453,6 +455,138 @@ describe("appendClaim", () => {
 
     expect(outcome).toEqual({ ok: false, failure: portError });
     expect(opensOf(M3L_APPEND_ONLY_MANIFEST_NAME)).toBe(2);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// corroborateClaim
+// ---------------------------------------------------------------------------
+
+describe("corroborateClaim", () => {
+  const CONTENT = '{"a":1}\n{"b":2}\n{"c":3}\n';
+
+  /** A `ManifestSealRecord` that agrees with a fresh measurement of `name`. */
+  function agreeingRecord(name: string): ManifestSealRecord {
+    return {
+      kind: "seal",
+      formatVersion: 1,
+      at: new Date().toISOString(),
+      segment: name,
+      entryCount: 3,
+      byteLength: Buffer.byteLength(CONTENT, "utf8"),
+      sha256: referenceSha256(CONTENT),
+    };
+  }
+
+  test("agreement returns success and asks the failure port for nothing", async () => {
+    const name = await writeFixture("corroborate-agree.jsonl", CONTENT);
+    const port = createFailurePort();
+
+    const outcome = await corroborateClaim({
+      directory: sandbox,
+      segment: name,
+      existing: agreeingRecord(name),
+      maxDigestBytes: 1024,
+      maxSealAttempts: 3,
+      buildError: port.build,
+    });
+
+    expect(outcome).toEqual({ ok: true, value: undefined });
+    expect(port.calls).toEqual([]);
+  });
+
+  // The negative half of the comparison: `at` is a timestamp the writer
+  // stamps fresh on every seal and differs by construction between any two
+  // measurements. Folding it into the comparison (or comparing whole
+  // records) would make every corroboration report a disagreement — an
+  // automatic false positive. Two records describing the SAME bytes, with
+  // only `at` differing, must still agree.
+  test("agreement holds even when `at` differs between the existing seal and now", async () => {
+    const name = await writeFixture("corroborate-agree-at.jsonl", CONTENT);
+    const existing: ManifestSealRecord = {
+      ...agreeingRecord(name),
+      at: new Date(0).toISOString(),
+    };
+
+    const outcome = await corroborateClaim({
+      directory: sandbox,
+      segment: name,
+      existing,
+      maxDigestBytes: 1024,
+      maxSealAttempts: 3,
+      buildError: createFailurePort().build,
+    });
+
+    expect(outcome).toEqual({ ok: true, value: undefined });
+  });
+
+  test.each([
+    ["entryCount", { entryCount: 999 }],
+    ["byteLength", { byteLength: 999 }],
+    ["sha256", { sha256: "9".repeat(64) }],
+  ] as const)(
+    "disagreement on %s alone is reported as a failure",
+    async (field, override) => {
+      const name = await writeFixture(
+        `corroborate-disagree-${field}.jsonl`,
+        CONTENT,
+      );
+      const existing: ManifestSealRecord = {
+        ...agreeingRecord(name),
+        ...override,
+      };
+      const port = createFailurePort();
+
+      const outcome = await corroborateClaim({
+        directory: sandbox,
+        segment: name,
+        existing,
+        maxDigestBytes: 1024,
+        maxSealAttempts: 3,
+        buildError: port.build,
+      });
+
+      expect(outcome.ok).toBe(false);
+      if (!outcome.ok) {
+        expect(outcome.failure).toBeInstanceOf(M3LError);
+        expect(port.calls).toHaveLength(1);
+        // No `cause` on the disagreement failure -- built fresh by
+        // `corroborateClaim` itself, never chained from a raw fs error. The
+        // next test below is what a real measurement FAILURE looks like
+        // instead, and the two must be told apart.
+        expect(port.calls[0]?.cause).toBeUndefined();
+      }
+    },
+  );
+
+  test("a measurement that fails outright surfaces that failure rather than a disagreement", async () => {
+    const name = await writeFixture("corroborate-measure-fails.jsonl", CONTENT);
+    faults.openFault = (file) =>
+      path.basename(file) === name
+        ? new Error("simulated permanent EIO")
+        : undefined;
+    const port = createFailurePort();
+
+    const outcome = await corroborateClaim({
+      directory: sandbox,
+      segment: name,
+      existing: agreeingRecord(name),
+      maxDigestBytes: 1024,
+      maxSealAttempts: 2,
+      buildError: port.build,
+    });
+
+    expect(outcome.ok).toBe(false);
+    if (!outcome.ok) {
+      expect(outcome.failure).toBeInstanceOf(M3LError);
+      // The measurement's OWN failure, chained to the raw fs error -- unlike
+      // the disagreement failure above, which is built with no `cause` at
+      // all.
+      expect((outcome.failure as M3LError).cause).toBeInstanceOf(Error);
+      expect(((outcome.failure as M3LError).cause as Error).message).toBe(
+        "simulated permanent EIO",
+      );
+    }
   });
 });
 

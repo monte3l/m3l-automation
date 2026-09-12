@@ -77,6 +77,7 @@ import type {
   ManifestContents,
   ManifestSealRecord,
 } from "../src/internal/storage/append-only-manifest-records.js";
+import { currentDatePrefix } from "../src/internal/storage/append-only-segments.js";
 
 // ---------------------------------------------------------------------------
 // Sandbox
@@ -146,6 +147,15 @@ const SHA_B = "b".repeat(64);
 const SEGMENT_OLD = "2026-09-09-0004.jsonl";
 const SEGMENT_MID = "2026-09-10-0002.jsonl";
 const SEGMENT_NEW = "2026-09-11-0001.jsonl";
+
+/**
+ * A real, calendar-valid segment name dated well after any date this suite
+ * runs on — the forged boundary `ownBaselineUpTo` must refuse even though
+ * {@link "../src/internal/storage/append-only-segments.js".parseSegmentName}
+ * itself accepts the name; only the date comparison against
+ * {@link currentDatePrefix} tells this apart from a genuine one.
+ */
+const SEGMENT_FUTURE = "2099-01-01-0001.jsonl";
 
 /** Returns `value`, or throws — used in place of a forbidden `!` assertion. */
 function definedOrThrow<T>(value: T | undefined, label: string): T {
@@ -577,6 +587,46 @@ describe("manifest integrity", () => {
         upTo: false,
       },
     ],
+    [
+      "a forged `upTo` that is not a segment name at all",
+      {
+        kind: "baseline",
+        formatVersion: MANIFEST_FORMAT_VERSION,
+        at: "2026-09-11T00:00:00.000Z",
+        upTo: "archive-2026-09.tar",
+      },
+    ],
+    [
+      "a shape-valid but calendar-invalid `upTo`",
+      // `9999-99-99` matches the segment pattern's digit shape but names no
+      // real Gregorian date. `parseSegmentName` was tightened in this same
+      // slice to refuse it, so this row is the join between that fix and
+      // this one: `upTo` must name a segment `parseSegmentName` itself would
+      // accept, not merely a string of the right length and punctuation.
+      {
+        kind: "baseline",
+        formatVersion: MANIFEST_FORMAT_VERSION,
+        at: "2026-09-11T00:00:00.000Z",
+        upTo: "9999-99-99-9999.jsonl",
+      },
+    ],
+    [
+      "a future-dated `upTo` — a real, calendar-valid segment name later than today",
+      // `parseSegmentName` itself accepts this name; only the comparison
+      // against `currentDatePrefix()` inside `ownBaselineUpTo` refuses it.
+      // This is the read-side half of the guard the sibling
+      // `highestSegmentName` initialization path already enforced — a
+      // baseline already sitting in a manifest must be refused the same way
+      // a derived one is, or a forged `upTo` dated arbitrarily far ahead
+      // silently reclassifies every real segment as `legacy` and disables
+      // the cold-start sweep.
+      {
+        kind: "baseline",
+        formatVersion: MANIFEST_FORMAT_VERSION,
+        at: "2026-09-11T00:00:00.000Z",
+        upTo: SEGMENT_FUTURE,
+      },
+    ],
   ])(
     "is fatal on a baseline with %s",
     async (_shape, record: Readonly<Record<string, unknown>>) => {
@@ -611,6 +661,37 @@ describe("manifest integrity", () => {
     const contents = await readManifest(sandbox, AMPLE_MAX_BYTES, port.build);
 
     expect(definedOrThrow(contents.baseline, "the baseline").upTo).toBeNull();
+    expect(port.calls).toHaveLength(0);
+  });
+
+  test("accepts a baseline whose upTo names a genuine segment, the positive control for the forged-string and calendar-invalid rows above", async () => {
+    await writeManifestBytes(baselineLine(SEGMENT_OLD));
+    const port = createFailurePort();
+
+    const contents = await readManifest(sandbox, AMPLE_MAX_BYTES, port.build);
+
+    expect(definedOrThrow(contents.baseline, "the baseline").upTo).toBe(
+      SEGMENT_OLD,
+    );
+    expect(port.calls).toHaveLength(0);
+  });
+
+  test("accepts a baseline whose upTo names a segment dated TODAY, the boundary the future-dated row above discriminates", async () => {
+    // Derived from the same `currentDatePrefix` the source compares against,
+    // never a hard-coded date: a literal would pass today and fail on any
+    // later run of this suite. Today must still parse — the refusal is
+    // `datePrefix <= currentDatePrefix()`, not `<`, and this is the one case
+    // that tells the two apart. Without it, the guard could tighten by one
+    // day (refuse today too) and nothing here would notice.
+    const todaySegment = `${currentDatePrefix()}-0001.jsonl`;
+    await writeManifestBytes(baselineLine(todaySegment));
+    const port = createFailurePort();
+
+    const contents = await readManifest(sandbox, AMPLE_MAX_BYTES, port.build);
+
+    expect(definedOrThrow(contents.baseline, "the baseline").upTo).toBe(
+      todaySegment,
+    );
     expect(port.calls).toHaveLength(0);
   });
 });

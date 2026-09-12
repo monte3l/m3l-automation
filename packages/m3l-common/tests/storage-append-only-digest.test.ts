@@ -116,6 +116,31 @@ const faults = vi.hoisted(() => ({
    * release at all.
    */
   closeAttempts: 0,
+  /**
+   * When set, the SECOND `stat()` call on a freshly opened handle first
+   * appends this many bytes to the SAME file through a second, independent
+   * descriptor, then lets the real handle's own `stat()` report the grown
+   * size. `undefined` (the state every test starts and ends in) makes the
+   * wrapper a pure pass-through, exactly like `closeError` above.
+   *
+   * This is the narrow injection this suite uses in place of real
+   * concurrency. `digestSegmentFile` calls `handle.stat()` TWICE on the same
+   * handle: once from `assertSegmentIsReadable`'s pre-read `fstat` refusal,
+   * and once from `digestOpenSegment`'s POST-read growth check. Growing on
+   * the FIRST call would inflate the bytes the read loop itself digests
+   * (proven the hard way: the first version of this fixture did exactly
+   * that, and `byteLength` came back already including the grown bytes).
+   * Growing on the second call reproduces "a concurrent append landed
+   * between the read loop reaching end-of-file and the post-read `fstat`"
+   * deterministically, without a real second process racing this one.
+   */
+  growBytesOnStat: undefined as number | undefined,
+  /**
+   * How many times an armed handle's `stat()` was actually called. The only
+   * observable trace that the growth fired at the seam this suite claims,
+   * rather than the refusal (or its absence) coming from somewhere else.
+   */
+  statAttempts: 0,
 }));
 
 /**
@@ -130,22 +155,40 @@ vi.mock("node:fs/promises", async (importOriginal) => {
   const actual = await importOriginal<typeof FsPromises>();
   const open: typeof actual.open = async (filePath, flags, mode) => {
     const handle = await actual.open(filePath, flags, mode);
-    const { closeError } = faults;
-    if (closeError === undefined) {
+    const { closeError, growBytesOnStat } = faults;
+    if (closeError === undefined && growBytesOnStat === undefined) {
       return handle;
     }
-    faults.unreleased.push(handle);
-    // Prototype delegation, not a hand-written fake: `stat()` and `read()`
-    // remain the real handle's own methods over the real descriptor, so the
-    // bytes and the `fstat` refusals under test are untouched and ONLY the
-    // release fails.
+    // Prototype delegation, not a hand-written fake: `read()` and (unless
+    // armed below) `stat()`/`close()` remain the real handle's own methods
+    // over the real descriptor, so the bytes and the `fstat` refusals under
+    // test are untouched and ONLY the armed method's behavior changes.
     const derived: FsPromises.FileHandle = Object.create(
       handle,
     ) as FsPromises.FileHandle;
-    derived.close = (): Promise<void> => {
-      faults.closeAttempts += 1;
-      return Promise.reject(closeError);
-    };
+    if (closeError !== undefined) {
+      faults.unreleased.push(handle);
+      derived.close = (): Promise<void> => {
+        faults.closeAttempts += 1;
+        return Promise.reject(closeError);
+      };
+    }
+    if (growBytesOnStat !== undefined) {
+      const growBytes = growBytesOnStat;
+      derived.stat = (async () => {
+        faults.statAttempts += 1;
+        // Only the SECOND `stat()` call grows the file — see
+        // `faults.growBytesOnStat`'s own doc above for why the first call
+        // (the pre-read `fstat` refusal) must stay untouched. Append through
+        // a SECOND, independent descriptor on the same path — `fstat` on the
+        // real handle below reflects the file's current size regardless of
+        // which descriptor wrote it.
+        if (faults.statAttempts === 2) {
+          await actual.appendFile(filePath, "g".repeat(growBytes));
+        }
+        return handle.stat();
+      }) as FsPromises.FileHandle["stat"];
+    }
     return derived;
   };
   return { ...actual, open };
@@ -165,6 +208,8 @@ function armCloseFailure(): Error {
 afterEach(async () => {
   faults.closeError = undefined;
   faults.closeAttempts = 0;
+  faults.growBytesOnStat = undefined;
+  faults.statAttempts = 0;
   const unreleased = faults.unreleased.splice(0);
   await Promise.all(
     unreleased.map(async (handle) => {
@@ -738,6 +783,11 @@ describe("digestSegmentFile", () => {
         expect(stats.nlink).toBe(1);
         expect(stats.size).toBe(0);
         expect(readable.byteLength).toBeGreaterThan(1);
+        // Explicit, not merely implied by the two assertions above: `stat`
+        // UNDER-reports here (`size < byteLength`) — the opposite direction
+        // from a segment that grew during the read (`size > byteLength`,
+        // see "a segment that grows..." below).
+        expect(stats.size).toBeLessThan(readable.byteLength);
         const port = createFailurePort();
 
         const thrown = await catchRejected(() =>
@@ -745,6 +795,40 @@ describe("digestSegmentFile", () => {
         );
 
         expectPortBuiltFailure(thrown, port, [PROC_STATUS_PATH, "/proc"]);
+      },
+    );
+
+    // The test above never reaches the POST-read growth check at all: with
+    // `maxBytes: 1`, the mid-read ceiling (`byteLength > maxBytes`) refuses
+    // on the very first chunk, before `digestOpenSegment` ever calls
+    // `handle.stat()` a second time. This is the fixture that DOES reach it:
+    // a `maxBytes` large enough to read the whole file resolves successfully,
+    // even though the post-read `stat()` still reports `size: 0` against a
+    // `byteLength` of well over a kilobyte — proving the post-read growth
+    // check's `postReadStat.size > byteLength` comparison is deliberately
+    // NOT `!==`, exactly like `EXACT_CONTENT`'s equal-size case is deliberately
+    // not `>=`. A `!==` here would refuse this same, perfectly healthy file.
+    test.skipIf(process.platform !== "linux")(
+      "resolves when maxBytes is large enough to read /proc/self/status in full, even though its post-read stat still under-reports size",
+      async () => {
+        // Deliberately does NOT compare against a separately-read snapshot:
+        // `/proc/self/status` is a LIVE kernel-generated file whose content
+        // (e.g. `VmRSS`) can shift by a byte between two independent reads of
+        // this same process's own status, which would make a byte-for-byte
+        // comparison across two reads flaky for a reason that has nothing to
+        // do with this module. The property under test only needs ONE read
+        // through `digestSegmentFile` itself: that it resolves at all, over
+        // a plausible, non-trivial byte count.
+        const port = createFailurePort();
+
+        const result = await digestSegmentFile(
+          PROC_STATUS_PATH,
+          1_048_576,
+          port.build,
+        );
+
+        expect(result.byteLength).toBeGreaterThan(1000);
+        expect(port.calls).toEqual([]);
       },
     );
 
@@ -806,6 +890,64 @@ describe("digestSegmentFile", () => {
       // No chained filesystem cause, because no filesystem call happened.
       expect(call.cause).toBeUndefined();
       expect(errnoCodeOf(call.cause)).toBeUndefined();
+    });
+  });
+
+  // [security] Fix B: a forward clock step — NTP, a VM snapshot restore, a
+  // bad container clock, NO attacker required — can make today's still-active
+  // segment look old enough for the sealer to sweep it. Measuring it mid-
+  // append seals a PREFIX of a live file, and that healthy segment reads as
+  // tampered forever after. `digestOpenSegment` re-`stat`s the handle once
+  // the read loop reaches end-of-file and refuses when the segment has grown
+  // past the bytes just digested (`postReadStat.size > byteLength`).
+  describe("[security] a segment that grows between the read loop and the post-read stat", () => {
+    test("refuses a measurement when the segment grew after the read loop reached end-of-file", async () => {
+      const content = '{"a":1}\n{"b":2}\n';
+      const filePath = await writeFixture("grows-after-read.jsonl", content);
+      // See `faults.growBytesOnStat`'s own doc above for the exact seam
+      // this arms and why it stands in for real concurrency.
+      faults.growBytesOnStat = 30;
+      const port = createFailurePort();
+
+      const thrown = await catchRejected(() =>
+        digestSegmentFile(filePath, 1024, port.build),
+      );
+
+      const call = expectPortBuiltFailure(thrown, port, pathSecrets(filePath));
+      // Library-computed facts only, per this suite's usual hygiene check
+      // above: the bytes actually digested, and the larger size the same
+      // descriptor reported moments later — proof this is the growth
+      // refusal specifically, not some other failure.
+      const expectedByteLength = Buffer.byteLength(content, "utf8");
+      expect(call.context).toMatchObject({ byteLength: expectedByteLength });
+      const reportedSize = call.context["size"];
+      expect(typeof reportedSize).toBe("number");
+      if (typeof reportedSize === "number") {
+        expect(reportedSize).toBeGreaterThan(expectedByteLength);
+      }
+      // Confirms the refusal came from the seam this test claims to have
+      // injected at, not from some other cause coincidentally rejecting —
+      // two `stat()` calls total (the pre-read `fstat` refusal, then the
+      // post-read growth check that actually fires the growth).
+      expect(faults.statAttempts).toBe(2);
+    });
+
+    test("still resolves when the segment does not grow after the read loop (control)", async () => {
+      // Proves the armed `stat()` wrapper itself is not what causes the
+      // refusal above: with no growth armed, an otherwise-identical
+      // measurement over the same mocked `node:fs/promises` still resolves.
+      const content = '{"a":1}\n{"b":2}\n';
+      const filePath = await writeFixture("does-not-grow.jsonl", content);
+      const port = createFailurePort();
+
+      await expect(
+        digestSegmentFile(filePath, 1024, port.build),
+      ).resolves.toEqual({
+        entryCount: 2,
+        byteLength: Buffer.byteLength(content, "utf8"),
+        sha256: referenceSha256(Buffer.from(content, "utf8")),
+      });
+      expect(port.calls).toEqual([]);
     });
   });
 

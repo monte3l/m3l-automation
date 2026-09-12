@@ -536,6 +536,63 @@ describe("loadOrInitializeManifest", () => {
     expect(await manifestLines()).toHaveLength(1);
   });
 
+  test("initializes upTo from the highest NON-future segment when a future-dated one is planted", async () => {
+    // Fix 2: a future-dated segment must never become the baseline boundary
+    // — that would write off every real segment, past and future, as
+    // `legacy` forever. `2099-01-01-0001.jsonl` is a genuine (if future)
+    // calendar date, so it reaches `highestSegmentName`'s future-date filter
+    // rather than being refused earlier by the tightened `parseSegmentName`
+    // (unlike a `9999-99-99` name, refused before this filter ever runs —
+    // see `storage-append-only-manifest-records.test.ts`'s baseline rows).
+    const futureSegment = "2099-01-01-0001.jsonl";
+    await touchSegment(SEGMENT_OLD, '{"a":1}\n');
+    await touchSegment(futureSegment, '{"b":2}\n');
+    const port = createFailurePort();
+
+    const contents = await loadOrInitializeManifest(
+      sandbox,
+      AMPLE_MAX_BYTES,
+      port.build,
+    );
+
+    expect(definedOrThrow(contents.baseline, "the baseline").upTo).toBe(
+      SEGMENT_OLD,
+    );
+  });
+
+  test("initializes upTo: null when every segment on disk is future-dated", async () => {
+    const futureSegment = "2099-01-01-0001.jsonl";
+    await touchSegment(futureSegment, '{"a":1}\n');
+    const port = createFailurePort();
+
+    const contents = await loadOrInitializeManifest(
+      sandbox,
+      AMPLE_MAX_BYTES,
+      port.build,
+    );
+
+    expect(definedOrThrow(contents.baseline, "the baseline").upTo).toBeNull();
+  });
+
+  test("still adopts a segment dated exactly TODAY, since the boundary is at-or-before today, not before", async () => {
+    // Discriminates `<=` from `<`: an implementation that excluded today
+    // along with the future would also pass the two tests above.
+    const todaySegment = `${new Date().toISOString().slice(0, 10)}-0001.jsonl`;
+    await touchSegment(SEGMENT_OLD, '{"a":1}\n');
+    await touchSegment(todaySegment, '{"b":2}\n');
+    const port = createFailurePort();
+
+    const contents = await loadOrInitializeManifest(
+      sandbox,
+      AMPLE_MAX_BYTES,
+      port.build,
+    );
+
+    expect(definedOrThrow(contents.baseline, "the baseline").upTo).toBe(
+      todaySegment,
+    );
+  });
+
   test("ignores foreign file names when choosing upTo", async () => {
     await touchSegment("notes.txt", "hello\n");
     await touchSegment("2026-09-11-00005.jsonl", "{}\n"); // over-padded: not ours
