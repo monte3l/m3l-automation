@@ -195,15 +195,6 @@ vi.mock("node:fs/promises", async (importOriginal) => {
 });
 
 /**
- * Arms a "grew during read" fault for the remainder of the current test —
- * see `faults.growBytesOnStat` above for the exact seam and why it stands in
- * for real concurrency.
- */
-function armGrowDuringRead(growBytes: number): void {
-  faults.growBytesOnStat = growBytes;
-}
-
-/**
  * Arms the close failure for the remainder of the current test and returns
  * the error a failing `close()` rejects with, so the test can assert on its
  * identity rather than on a message.
@@ -913,7 +904,9 @@ describe("digestSegmentFile", () => {
     test("refuses a measurement when the segment grew after the read loop reached end-of-file", async () => {
       const content = '{"a":1}\n{"b":2}\n';
       const filePath = await writeFixture("grows-after-read.jsonl", content);
-      armGrowDuringRead(30);
+      // See `faults.growBytesOnStat`'s own doc above for the exact seam
+      // this arms and why it stands in for real concurrency.
+      faults.growBytesOnStat = 30;
       const port = createFailurePort();
 
       const thrown = await catchRejected(() =>
@@ -929,7 +922,9 @@ describe("digestSegmentFile", () => {
       expect(call.context).toMatchObject({ byteLength: expectedByteLength });
       const reportedSize = call.context["size"];
       expect(typeof reportedSize).toBe("number");
-      expect(reportedSize as number).toBeGreaterThan(expectedByteLength);
+      if (typeof reportedSize === "number") {
+        expect(reportedSize).toBeGreaterThan(expectedByteLength);
+      }
       // Confirms the refusal came from the seam this test claims to have
       // injected at, not from some other cause coincidentally rejecting —
       // two `stat()` calls total (the pre-read `fstat` refusal, then the

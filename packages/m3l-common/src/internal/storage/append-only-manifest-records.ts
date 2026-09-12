@@ -41,7 +41,7 @@
 
 import type { SegmentDigestResult } from "./append-only-digest.js";
 import type { AppendOnlyReadFailure } from "./append-only-lines.js";
-import { parseSegmentName } from "./append-only-segments.js";
+import { currentDatePrefix, parseSegmentName } from "./append-only-segments.js";
 
 /**
  * The manifest format this reader understands, and the one it stamps on every
@@ -327,8 +327,9 @@ function parseSealRecord(
 
 /**
  * The own `upTo` of `record` when it is `null` or a name
- * {@link "./append-only-segments.js".parseSegmentName} accepts, else
- * `undefined`.
+ * {@link "./append-only-segments.js".parseSegmentName} accepts AND whose date
+ * prefix is no later than {@link "./append-only-segments.js".currentDatePrefix}
+ * reports for right now, else `undefined`.
  *
  * `null` is admitted unchanged — the positive assertion "sealed since the
  * first segment". A string is admitted only when it is a name this writer's
@@ -336,18 +337,50 @@ function parseSealRecord(
  * `sha256` of the wrong shape ({@link ownDigest}) and a count outside its
  * possible range ({@link ownMeasurement}) on exactly this reasoning, and
  * `upTo` is no different: a string of some other shape is not a segment name,
- * so a forged boundary such as `"archive-2026-09.tar"` — or a name dated after
- * this trail could have written it — is refused here rather than accepted and
- * left to reshape which segments classify `legacy` downstream. Checked on the
- * local {@link ownProperty} already read, never by reading the property
- * again.
+ * so a forged boundary such as `"archive-2026-09.tar"` is refused here rather
+ * than accepted and left to reshape which segments classify `legacy`
+ * downstream.
+ *
+ * A name whose date prefix is LATER than today is refused on the same
+ * grounds, not a separate one: this trail cannot have written it yet, so it
+ * is not evidence of anything this reader can act on. The sibling guard in
+ * `./append-only-manifest.js`'s `highestSegmentName` applies this exact
+ * exclusion when a baseline is *derived*, at initialization; this is the
+ * other half — the same exclusion applied when a baseline already sitting in
+ * a manifest is *read* back. Without it, a planted `upTo` dated arbitrarily
+ * far in the future would be accepted as the trail's stated boundary,
+ * reclassifying every segment up to that date as `legacy` and silently
+ * disabling the cold-start sweep this reader exists to enable — the doc'd
+ * guarantee this function's callers rely on.
+ *
+ * Refusing is a real cost, and worth stating rather than leaving for a future
+ * reader to discover from a stack trace: a peer writer whose own clock runs
+ * ahead of ours can legitimately stamp a baseline naming a segment that is
+ * "today" for it and "future" for us, and every read of that manifest is a
+ * fatal error until our clock catches up to that date. The window is bounded
+ * and self-healing — it closes the moment our clock passes the stated date —
+ * and every other option is worse: treating "the boundary is in the future"
+ * as *no* boundary would make the sweep retro-digest genuinely legacy
+ * segments and hand out proofs nobody can honour, and clamping it to today
+ * would mark everything up to today `legacy`, which is the exact
+ * sweep-killing outcome this check exists to prevent. Refusing the record is
+ * the only fold that neither manufactures a false proof nor silently disables
+ * the guard.
+ *
+ * Checked on the local {@link ownProperty} already read, and on
+ * {@link parseSegmentName}'s own returned `datePrefix` — never by reading the
+ * `upTo` property, or re-parsing it, a second time.
  */
 function ownBaselineUpTo(record: object): string | null | undefined {
   const value = ownProperty(record, "upTo");
   if (value === null) {
     return null;
   }
-  return typeof value === "string" && parseSegmentName(value) !== undefined
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  const parsed = parseSegmentName(value);
+  return parsed !== undefined && parsed.datePrefix <= currentDatePrefix()
     ? value
     : undefined;
 }
