@@ -294,6 +294,16 @@ misconfigured again doesn't leave `main` unprotected. Manage both when
 changing policy: a rule added to only one layer is not authoritative on its
 own.
 
+**Don't confuse this with `guard-branch-isolation.mjs`.** That hook only
+blocks writes to `packages/*/src/**`, `scripts/*/src/**`, and `**/tests/**`
+while `HEAD` is `main` — a fast local convenience check with a narrow path
+scope. It has no bearing on this ruleset's `pull_request` rule, which
+requires a PR for _every_ change to `main`, docs included. A change the
+guard doesn't block (a one-line docs edit, say) can still be rejected outright
+by `git push origin main` with `GH013: ... Changes must be made through a
+pull request`. Never push directly to `main`; branch and open a PR even for
+a trivial docs fix.
+
 ## CodeQL scan timing and alert readiness
 
 Merge-gating and alert-readiness are two different signals, and the required
