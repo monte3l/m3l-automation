@@ -19,14 +19,14 @@ vi.mock("node:fs", async () => {
   return { ...actual };
 });
 
-import type * as M3LCommon from "@m3l-automation/m3l-common";
+import type * as M3LCommon from "@monte3l/m3l-common";
 
-vi.mock("@m3l-automation/m3l-common", async (importOriginal) => {
+vi.mock("@monte3l/m3l-common", async (importOriginal) => {
   const actual = await importOriginal<typeof M3LCommon>();
   return { ...actual, AWS: { ...actual.AWS, deleteObjects: vi.fn() } };
 });
 
-import { AWS, Core } from "@m3l-automation/m3l-common";
+import { AWS, Core } from "@monte3l/m3l-common";
 
 import type { RunDeleteBatchResult } from "../../src/steps/delete-batch.js";
 import { runDeleteBatch } from "../../src/steps/delete-batch.js";

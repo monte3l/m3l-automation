@@ -1,5 +1,5 @@
-import { Core } from "@m3l-automation/m3l-common";
-import type { AWS } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
+import type { AWS } from "@monte3l/m3l-common";
 
 /**
  * `resolve-auth-headers` — maps the resolved `auth` config value to the
@@ -31,7 +31,7 @@ import type { AWS } from "@m3l-automation/m3l-common";
  *
  * @example
  * ```typescript
- * import { Core } from "@m3l-automation/m3l-common";
+ * import { Core } from "@monte3l/m3l-common";
  * import { resolveAuthHeaders } from "./resolve-auth-headers.js";
  *
  * const headers = await resolveAuthHeaders({

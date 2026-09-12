@@ -1,5 +1,5 @@
-import { Core } from "@m3l-automation/m3l-common";
-import type { AWS } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
+import type { AWS } from "@monte3l/m3l-common";
 
 /**
  * `run-api-gateway-client` — the thin composition step: reads the already
@@ -37,7 +37,7 @@ interface RunApiGatewayClientDeps {
  *
  * @example
  * ```typescript
- * import { Core } from "@m3l-automation/m3l-common";
+ * import { Core } from "@monte3l/m3l-common";
  * import { runApiGatewayClient } from "./run-api-gateway-client.js";
  *
  * await runApiGatewayClient({

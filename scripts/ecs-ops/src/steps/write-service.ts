@@ -1,5 +1,5 @@
-import { Core } from "@m3l-automation/m3l-common";
-import type { AWS } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
+import type { AWS } from "@monte3l/m3l-common";
 
 /** The three mutating operations `writeService` dispatches. */
 type WriteOperation = "create-service" | "update-service" | "delete-service";
@@ -146,8 +146,8 @@ function buildUpdateInput(
  *
  * @example
  * ```typescript
- * import type { AWS } from "@m3l-automation/m3l-common";
- * import { Core } from "@m3l-automation/m3l-common";
+ * import type { AWS } from "@monte3l/m3l-common";
+ * import { Core } from "@monte3l/m3l-common";
  * import { writeService } from "./write-service.js";
  *
  * // `operations`/`reader` are injected by the caller, e.g.

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import type * as M3LCommon from "@m3l-automation/m3l-common";
+import type * as M3LCommon from "@monte3l/m3l-common";
 
 /**
  * Contract: docs/reference/scripts/cloudwatch-logs-insights.md,
@@ -16,7 +16,7 @@ import type * as M3LCommon from "@m3l-automation/m3l-common";
  * order, inFlightQueryId checkpointing before the poll, row accumulation,
  * and abort-on-terminal-failure. `Core.M3LCheckpointStore` is a stable
  * library class constructed directly by the source, so it is intercepted
- * via a package-level `vi.mock("@m3l-automation/m3l-common", ...)` factory
+ * via a package-level `vi.mock("@monte3l/m3l-common", ...)` factory
  * that spreads the real module and overrides only `Core.M3LCheckpointStore`
  * with a mocked constructor (same pattern as
  * `scripts/athena-query/tests/steps/run-athena-query.test.ts`).
@@ -25,7 +25,7 @@ import type * as M3LCommon from "@m3l-automation/m3l-common";
  * re-implement them here.
  */
 
-// vi.hoisted() is required here: @m3l-automation/m3l-common is imported
+// vi.hoisted() is required here: @monte3l/m3l-common is imported
 // statically below, so its vi.mock factory runs eagerly at module-eval time
 // when that import is resolved — before a plain top-level `const` would have
 // initialized.
@@ -60,7 +60,7 @@ const jsonExporterMocks = vi.hoisted(() => ({
   close: vi.fn().mockResolvedValue(undefined),
 }));
 
-vi.mock("@m3l-automation/m3l-common", async (importOriginal) => {
+vi.mock("@monte3l/m3l-common", async (importOriginal) => {
   const actual = await importOriginal<typeof M3LCommon>();
   return {
     ...actual,
@@ -117,7 +117,7 @@ vi.mock("../../src/steps/export-results.js", () => ({
   exportResults: exportResultsMock,
 }));
 
-import { AWS, Core } from "@m3l-automation/m3l-common";
+import { AWS, Core } from "@monte3l/m3l-common";
 
 import { runCloudwatchLogsInsights } from "../../src/steps/run-cloudwatch-logs-insights.js";
 import {

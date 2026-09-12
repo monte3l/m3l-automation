@@ -51,7 +51,7 @@ vi.mock("../src/steps/wait-stack.js", () => ({
   waitStack: waitStackMock,
 }));
 
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 import { runCloudformationStacks } from "../src/steps/run-cloudformation-stacks.js";
 import {

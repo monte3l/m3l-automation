@@ -14,7 +14,7 @@
  * generated SQL — never bound as a `:name` parameter.
  */
 
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 /**
  * The identifier pattern applied to `schema`/`table`/each entry of
@@ -45,7 +45,7 @@ const DEFAULT_IDENTIFIER_CODE = "ERR_RDS_DATA_SQL_INVALID_IDENTIFIER";
  *
  * @example
  * ```ts
- * import { Core } from "@m3l-automation/m3l-common";
+ * import { Core } from "@monte3l/m3l-common";
  * import { validateIdentifier } from "./lib/identifiers.js";
  *
  * try {

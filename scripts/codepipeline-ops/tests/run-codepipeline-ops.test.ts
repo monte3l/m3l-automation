@@ -96,7 +96,7 @@ vi.mock("../src/steps/watch-execution.js", async () => {
   return { ...actual, watchExecution: watchExecutionMock };
 });
 
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 import { runCodepipelineOps } from "../src/steps/run-codepipeline-ops.js";
 import {

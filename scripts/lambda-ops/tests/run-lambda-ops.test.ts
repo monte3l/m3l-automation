@@ -44,7 +44,7 @@ vi.mock("../src/steps/invoke-function.js", () => ({
   invokeFunction: invokeFunctionMock,
 }));
 
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 import { runLambdaOps } from "../src/steps/run-lambda-ops.js";
 import {

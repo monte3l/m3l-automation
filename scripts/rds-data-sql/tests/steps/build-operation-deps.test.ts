@@ -5,8 +5,8 @@ import * as fsp from "node:fs/promises";
 
 import { afterEach, describe, expect, test, vi } from "vitest";
 
-import type { AWS } from "@m3l-automation/m3l-common";
-import { Core } from "@m3l-automation/m3l-common";
+import type { AWS } from "@monte3l/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 /**
  * Contract: `scripts/rds-data-sql/src/steps/build-operation-deps.ts` itself

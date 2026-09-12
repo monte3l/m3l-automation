@@ -1,6 +1,6 @@
 # Getting Started
 
-`@m3l-automation/m3l-common` is the shared infrastructure library behind every
+`@monte3l/m3l-common` is the shared infrastructure library behind every
 automation script, CLI tool, and AWS Lambda handler in the `m3l-automation`
 project. It bundles the cross-cutting concerns those scripts keep
 re-implementing — configuration loading, structured logging, interactive
@@ -23,20 +23,19 @@ ready to build something real, continue with the
 
 ## 2. Installation
 
-`@m3l-automation/m3l-common` is not published to npm yet. Consumers live
-inside this monorepo and depend on it via a pnpm workspace alias
+`@monte3l/m3l-common` is not published to npm yet. Consumers inside this
+monorepo depend on it via a plain pnpm workspace specifier
 ([ADR-0029](adr/0029-script-dependency-boundary.md)):
 
 ```jsonc
 {
   "dependencies": {
-    "@m3l-automation/m3l-common": "workspace:@monte3l/m3l-common@*",
+    "@monte3l/m3l-common": "workspace:*",
   },
 }
 ```
 
-The dependency key stays this pre-rename specifier so no import site changes;
-the real package underneath it is `@monte3l/m3l-common`
+`@monte3l/m3l-common` is the package's real, published-under name
 ([ADR-0103](adr/0103-publish-scope-rename-and-staged-first-release.md)) — the
 name GitHub Packages requires it to publish under. That single dependency
 brings in the whole framework — there is nothing else to configure to start,
@@ -90,13 +89,13 @@ that best fits your code:
 
 ```typescript
 // 1. Both namespaces from the package root
-import { Core, AWS } from "@m3l-automation/m3l-common";
+import { Core, AWS } from "@monte3l/m3l-common";
 
 // 2. The Core sub-module directly (named exports, no namespace prefix)
-import { M3LScript, M3LConfigParameter } from "@m3l-automation/m3l-common/core";
+import { M3LScript, M3LConfigParameter } from "@monte3l/m3l-common/core";
 
 // 3. The AWS sub-module directly
-import { M3LAWSCredentialsManager } from "@m3l-automation/m3l-common/aws";
+import { M3LAWSCredentialsManager } from "@monte3l/m3l-common/aws";
 ```
 
 The root path (`.`) re-exports the `Core` and `AWS` namespace objects. The
@@ -116,7 +115,7 @@ all without boilerplate in your code.
 Create `hello.ts`:
 
 ```typescript
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 const script = new Core.M3LScript({
   metadata: { name: "hello", version: "1.0.0" },

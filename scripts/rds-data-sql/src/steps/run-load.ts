@@ -16,7 +16,7 @@
  * `run-rds-data-sql`'s job.
  */
 
-import { Core, type AWS } from "@m3l-automation/m3l-common";
+import { Core, type AWS } from "@monte3l/m3l-common";
 
 import { quoteIdentifier, validateIdentifier } from "../lib/identifiers.js";
 
@@ -566,7 +566,7 @@ async function closeFailedWriterBestEffort(
  *
  * @example
  * ```ts
- * import type { Core } from "@m3l-automation/m3l-common";
+ * import type { Core } from "@monte3l/m3l-common";
  * import { runLoad } from "./run-load.js";
  *
  * async function run(deps: Parameters<typeof runLoad>[0]): Promise<void> {

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import type * as M3LCommonModule from "@m3l-automation/m3l-common";
+import type * as M3LCommonModule from "@monte3l/m3l-common";
 
 /**
  * Contract: docs/reference/scripts/cloudwatch-logs-insights.md, `export-results` row.
@@ -19,9 +19,9 @@ const mocks = vi.hoisted(() => ({
   csvConstructor: vi.fn(),
 }));
 
-vi.mock("@m3l-automation/m3l-common", async () => {
+vi.mock("@monte3l/m3l-common", async () => {
   const actual = await vi.importActual<typeof M3LCommonModule>(
-    "@m3l-automation/m3l-common",
+    "@monte3l/m3l-common",
   );
 
   class FakeJSONListExporter {
@@ -52,7 +52,7 @@ vi.mock("@m3l-automation/m3l-common", async () => {
   };
 });
 
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 import { exportResults } from "../../src/steps/export-results.js";
 

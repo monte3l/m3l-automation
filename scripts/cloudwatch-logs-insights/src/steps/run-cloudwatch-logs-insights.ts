@@ -1,4 +1,4 @@
-import { Core, type AWS } from "@m3l-automation/m3l-common";
+import { Core, type AWS } from "@monte3l/m3l-common";
 
 import { buildCheckpointStore, EMPTY_CHECKPOINT } from "./checkpoint.js";
 import type { LogsInsightsCheckpoint, LogsInsightsRow } from "./checkpoint.js";
@@ -573,7 +573,7 @@ function buildCheckpointDefinition(settings: LogsInsightsRunSettings): unknown {
  *
  * @example
  * ```ts
- * import type { AWS, Core } from "@m3l-automation/m3l-common";
+ * import type { AWS, Core } from "@monte3l/m3l-common";
  * import { runCloudwatchLogsInsights } from "./run-cloudwatch-logs-insights.js";
  *
  * async function run(

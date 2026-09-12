@@ -1,4 +1,4 @@
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 /**
  * `steps/checkpoint` — the `cloudwatch-logs-insights` checkpoint payload
@@ -169,7 +169,7 @@ export function isLogsInsightsCheckpoint(
  *
  * @example
  * ```ts
- * import { Core } from "@m3l-automation/m3l-common";
+ * import { Core } from "@monte3l/m3l-common";
  * import {
  *   buildCheckpointStore,
  *   EMPTY_CHECKPOINT,

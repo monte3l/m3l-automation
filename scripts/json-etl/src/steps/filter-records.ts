@@ -1,4 +1,4 @@
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 /** The finite set of comparison operators a filter rule may use. */
 type FilterOp = "eq" | "ne" | "contains" | "regex" | "gt" | "lt" | "exists";

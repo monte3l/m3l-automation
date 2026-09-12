@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, expectTypeOf, test, vi } from "vitest";
 
-import type * as M3LCommon from "@m3l-automation/m3l-common";
+import type * as M3LCommon from "@monte3l/m3l-common";
 
-vi.mock("@m3l-automation/m3l-common", async (importOriginal) => {
+vi.mock("@monte3l/m3l-common", async (importOriginal) => {
   const actual = await importOriginal<typeof M3LCommon>();
   return {
     ...actual,
@@ -14,7 +14,7 @@ vi.mock("@m3l-automation/m3l-common", async (importOriginal) => {
   };
 });
 
-import { AWS, Core } from "@m3l-automation/m3l-common";
+import { AWS, Core } from "@monte3l/m3l-common";
 
 import type { BatchWriteTableResult } from "../src/steps/batch-write-table.js";
 import { batchWriteTable } from "../src/steps/batch-write-table.js";

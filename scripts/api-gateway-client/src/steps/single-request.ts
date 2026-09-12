@@ -1,5 +1,5 @@
-import { Core } from "@m3l-automation/m3l-common";
-import type { AWS } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
+import type { AWS } from "@monte3l/m3l-common";
 
 import { resolveAuthHeaders } from "./resolve-auth-headers.js";
 
@@ -79,7 +79,7 @@ async function writeResponseIfConfigured(
  *
  * @example
  * ```typescript
- * import { Core } from "@m3l-automation/m3l-common";
+ * import { Core } from "@monte3l/m3l-common";
  * import { singleRequest } from "./single-request.js";
  *
  * await singleRequest({

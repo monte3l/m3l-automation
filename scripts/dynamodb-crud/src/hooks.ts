@@ -1,4 +1,4 @@
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 /**
  * The correlation id captured by `onBeforeRun`, module-local to this file.

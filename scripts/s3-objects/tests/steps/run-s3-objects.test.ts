@@ -16,14 +16,14 @@ vi.mock("node:fs", async () => {
   return { ...actual };
 });
 
-import type * as M3LCommon from "@m3l-automation/m3l-common";
+import type * as M3LCommon from "@monte3l/m3l-common";
 
 // Only the true I/O boundary is mocked — the `AWS.*` S3 functions and
 // `node:fs`/`node:fs/promises` — the four sibling step modules
 // (list-objects/single-object-ops/delete-batch/destructive-gate) run for
 // real, proving the orchestrator's dispatch wiring end to end (mirrors
 // scripts/dynamodb-crud/tests/run-dynamodb-crud.test.ts).
-vi.mock("@m3l-automation/m3l-common", async (importOriginal) => {
+vi.mock("@monte3l/m3l-common", async (importOriginal) => {
   const actual = await importOriginal<typeof M3LCommon>();
   return {
     ...actual,
@@ -40,7 +40,7 @@ vi.mock("@m3l-automation/m3l-common", async (importOriginal) => {
   };
 });
 
-import { AWS, Core } from "@m3l-automation/m3l-common";
+import { AWS, Core } from "@monte3l/m3l-common";
 
 import type { RunS3ObjectsSummary } from "../../src/steps/run-s3-objects.js";
 import { runS3Objects } from "../../src/steps/run-s3-objects.js";

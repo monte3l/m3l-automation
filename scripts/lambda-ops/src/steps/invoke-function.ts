@@ -1,4 +1,4 @@
-import type { AWS } from "@m3l-automation/m3l-common";
+import type { AWS } from "@monte3l/m3l-common";
 
 /**
  * The dependencies `invokeFunction` needs, already resolved by
@@ -30,7 +30,7 @@ interface InvokeFunctionDeps {
  *
  * @example
  * ```typescript
- * import type { AWS } from "@m3l-automation/m3l-common";
+ * import type { AWS } from "@monte3l/m3l-common";
  * import { invokeFunction } from "./invoke-function.js";
  *
  * // `operations` is injected by the caller, e.g.

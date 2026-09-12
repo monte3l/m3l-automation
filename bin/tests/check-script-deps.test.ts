@@ -14,6 +14,15 @@ describe("scriptDependencyErrors", () => {
   test("returns no problems for a conformant manifest", () => {
     const pkg = {
       dependencies: {
+        "@monte3l/m3l-common": "workspace:*",
+      },
+    };
+    expect(scriptDependencyErrors(pkg)).toEqual([]);
+  });
+
+  test("accepts the transitional pre-rename aliased shape (agent-operator, until P4a2)", () => {
+    const pkg = {
+      dependencies: {
         "@m3l-automation/m3l-common": "workspace:@monte3l/m3l-common@*",
       },
     };
@@ -23,17 +32,28 @@ describe("scriptDependencyErrors", () => {
   test("flags an extra dependency alongside the library", () => {
     const pkg = {
       dependencies: {
-        "@m3l-automation/m3l-common": "workspace:@monte3l/m3l-common@*",
+        "@monte3l/m3l-common": "workspace:*",
         lodash: "4.17.21",
       },
     };
     const errors = scriptDependencyErrors(pkg);
     expect(errors).toHaveLength(1);
     expect(errors[0]).toContain("ADR-0029");
-    expect(errors[0]).toContain("workspace:@monte3l/m3l-common@*");
+    expect(errors[0]).toContain("@monte3l/m3l-common");
   });
 
-  test("flags a pre-rename workspace:* specifier as non-conformant", () => {
+  test("flags a stale aliased workspace specifier as non-conformant", () => {
+    const pkg = {
+      dependencies: {
+        "@monte3l/m3l-common": "workspace:@monte3l/m3l-common@*",
+      },
+    };
+    const errors = scriptDependencyErrors(pkg);
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain("ADR-0029");
+  });
+
+  test("flags the pre-rename name paired with the new value as non-conformant", () => {
     const pkg = {
       dependencies: { "@m3l-automation/m3l-common": "workspace:*" },
     };
@@ -44,7 +64,7 @@ describe("scriptDependencyErrors", () => {
 
   test("flags a wrong version specifier for the library", () => {
     const pkg = {
-      dependencies: { "@m3l-automation/m3l-common": "^1.0.0" },
+      dependencies: { "@monte3l/m3l-common": "^1.0.0" },
     };
     const errors = scriptDependencyErrors(pkg);
     expect(errors).toHaveLength(1);
@@ -77,7 +97,7 @@ describe("scriptDependencyErrors", () => {
   test("flags devDependencies present as an empty object, not just when non-empty", () => {
     const pkg = {
       dependencies: {
-        "@m3l-automation/m3l-common": "workspace:@monte3l/m3l-common@*",
+        "@monte3l/m3l-common": "workspace:*",
       },
       devDependencies: {},
     };
@@ -89,7 +109,7 @@ describe("scriptDependencyErrors", () => {
   test("flags devDependencies present with entries", () => {
     const pkg = {
       dependencies: {
-        "@m3l-automation/m3l-common": "workspace:@monte3l/m3l-common@*",
+        "@monte3l/m3l-common": "workspace:*",
       },
       devDependencies: { vitest: "4.1.10" },
     };

@@ -1,4 +1,4 @@
-import { AWS, Core } from "@m3l-automation/m3l-common";
+import { AWS, Core } from "@monte3l/m3l-common";
 
 /**
  * `list`: paginated `AWS.listObjects`, streaming every `S3ObjectSummary` from
@@ -30,7 +30,7 @@ export interface RunListObjectsSummary {
  *
  * @example
  * ```typescript
- * import { Core } from "@m3l-automation/m3l-common";
+ * import { Core } from "@monte3l/m3l-common";
  * import { runListObjects } from "./list-objects.js";
  *
  * const summary = await runListObjects({

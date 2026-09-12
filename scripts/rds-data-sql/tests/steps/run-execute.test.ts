@@ -1,15 +1,15 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
 
-import type * as M3LCommon from "@m3l-automation/m3l-common";
+import type * as M3LCommon from "@monte3l/m3l-common";
 
-vi.mock("@m3l-automation/m3l-common", async (importOriginal) => {
+vi.mock("@monte3l/m3l-common", async (importOriginal) => {
   const actual = await importOriginal<typeof M3LCommon>();
   return { ...actual, Core: { ...actual.Core, confirmDestructive: vi.fn() } };
 });
 
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
-import type { AWS } from "@m3l-automation/m3l-common";
+import type { AWS } from "@monte3l/m3l-common";
 
 import { runExecute } from "../../src/steps/run-execute.js";
 
@@ -90,9 +90,7 @@ function makePrompt(adapter: PromptAdapter = makeAdapter()): Core.M3LPrompt {
 async function getActualConfirmDestructive(): Promise<
   typeof Core.confirmDestructive
 > {
-  const actual = await vi.importActual<typeof M3LCommon>(
-    "@m3l-automation/m3l-common",
-  );
+  const actual = await vi.importActual<typeof M3LCommon>("@monte3l/m3l-common");
   return actual.Core.confirmDestructive;
 }
 

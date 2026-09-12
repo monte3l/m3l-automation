@@ -1,5 +1,5 @@
-import type { AWS } from "@m3l-automation/m3l-common";
-import { Core } from "@m3l-automation/m3l-common";
+import type { AWS } from "@monte3l/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 import { CONFIG_ERROR_CODE } from "./config-helpers.js";
 
@@ -16,8 +16,8 @@ import { CONFIG_ERROR_CODE } from "./config-helpers.js";
  *
  * @example
  * ```typescript
- * import { Core } from "@m3l-automation/m3l-common";
- * import type { AWS } from "@m3l-automation/m3l-common";
+ * import { Core } from "@monte3l/m3l-common";
+ * import type { AWS } from "@monte3l/m3l-common";
  * import { describeRule } from "./describe-rule.js";
  *
  * declare const eventBridgeOperations: AWS.M3LEventBridgeOperations;

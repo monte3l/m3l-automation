@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, expectTypeOf, test, vi } from "vitest";
 
-import { Core } from "@m3l-automation/m3l-common";
-import type { AWS } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
+import type { AWS } from "@monte3l/m3l-common";
 
 import { readExecutions } from "../src/steps/read-executions.js";
 import { createFakeCodePipelineOperations } from "./support/codePipelineFakes.js";

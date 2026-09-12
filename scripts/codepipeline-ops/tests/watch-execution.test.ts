@@ -8,8 +8,8 @@ import {
   vi,
 } from "vitest";
 
-import { Core } from "@m3l-automation/m3l-common";
-import type { AWS } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
+import type { AWS } from "@monte3l/m3l-common";
 
 import { watchExecution } from "../src/steps/watch-execution.js";
 import { createFakeCodePipelineOperations } from "./support/codePipelineFakes.js";

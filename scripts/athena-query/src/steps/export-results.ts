@@ -8,7 +8,7 @@
  * returned — never the streaming `exportStream()`/`append()` API.
  */
 
-import { Core, type AWS } from "@m3l-automation/m3l-common";
+import { Core, type AWS } from "@monte3l/m3l-common";
 
 /**
  * Writes `rows` to the `output` file under `M3L_OUTPUT_DIR`, in the
@@ -21,7 +21,7 @@ import { Core, type AWS } from "@m3l-automation/m3l-common";
  *
  * @example
  * ```ts
- * import type { Core } from "@m3l-automation/m3l-common";
+ * import type { Core } from "@monte3l/m3l-common";
  * import { exportResults } from "./export-results.js";
  *
  * async function finish(paths: Core.M3LPaths): Promise<void> {

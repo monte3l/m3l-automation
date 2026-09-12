@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 
-import { AWS, Core } from "@m3l-automation/m3l-common";
+import { AWS, Core } from "@monte3l/m3l-common";
 
 /**
  * `delete-batch`: reads keys from `input` (JSONL `{key}` records) via
@@ -258,7 +258,7 @@ async function collectAndDeleteKeys(
  *
  * @example
  * ```typescript
- * import { Core } from "@m3l-automation/m3l-common";
+ * import { Core } from "@monte3l/m3l-common";
  * import { runDeleteBatch } from "./delete-batch.js";
  *
  * const result = await runDeleteBatch({

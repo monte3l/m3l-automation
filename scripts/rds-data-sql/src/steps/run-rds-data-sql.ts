@@ -12,7 +12,7 @@
  * surfaces them, via the run's recovery ledger.
  */
 
-import { Core, type AWS } from "@m3l-automation/m3l-common";
+import { Core, type AWS } from "@monte3l/m3l-common";
 
 import { preflightSecret } from "./preflight-secret.js";
 import { runExecute, type RunExecuteDeps } from "./run-execute.js";
@@ -147,7 +147,7 @@ async function dispatchOperation(deps: RunRdsDataSqlDeps): Promise<void> {
  *
  * @example
  * ```ts
- * import { Core } from "@m3l-automation/m3l-common";
+ * import { Core } from "@monte3l/m3l-common";
  * import { runRdsDataSql } from "./run-rds-data-sql.js";
  *
  * async function run(

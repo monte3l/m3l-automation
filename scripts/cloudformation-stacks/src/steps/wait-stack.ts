@@ -1,5 +1,5 @@
-import { Core } from "@m3l-automation/m3l-common";
-import type { AWS } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
+import type { AWS } from "@monte3l/m3l-common";
 
 /** The three `wait-stack-*-complete` operations `waitStack` dispatches. */
 type WaitOperation =
@@ -39,7 +39,7 @@ interface WaitStackDeps {
  *
  * @example
  * ```typescript
- * import type { AWS } from "@m3l-automation/m3l-common";
+ * import type { AWS } from "@monte3l/m3l-common";
  * import { waitStack } from "./wait-stack.js";
  *
  * // `operations` is injected by the caller, e.g.

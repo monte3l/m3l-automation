@@ -11,7 +11,7 @@
  * behavior" section for the full contract.
  */
 
-import { Core, type AWS } from "@m3l-automation/m3l-common";
+import { Core, type AWS } from "@monte3l/m3l-common";
 
 /** The `Core.M3LError` code {@link runQuery} throws with for a reserved `parameters.file` name. */
 const RESERVED_PARAMETER_CODE = "ERR_RDS_DATA_SQL_RESERVED_PARAMETER";
@@ -447,7 +447,7 @@ async function runFreshQuery(
  *
  * @example
  * ```ts
- * import type { Core } from "@m3l-automation/m3l-common";
+ * import type { Core } from "@monte3l/m3l-common";
  * import { runQuery } from "./run-query.js";
  *
  * async function run(deps: Parameters<typeof runQuery>[0]): Promise<void> {

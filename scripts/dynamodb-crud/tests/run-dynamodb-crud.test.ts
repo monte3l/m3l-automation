@@ -6,7 +6,7 @@ import { EventEmitter } from "node:events";
 
 import { afterEach, describe, expect, expectTypeOf, test, vi } from "vitest";
 
-import type * as M3LCommon from "@m3l-automation/m3l-common";
+import type * as M3LCommon from "@monte3l/m3l-common";
 import type * as ScanTableModule from "../src/steps/scan-table.js";
 
 // Make both fs seams configurable so vi.spyOn can intercept individual
@@ -21,7 +21,7 @@ vi.mock("node:fs", async () => {
   return { ...actual };
 });
 
-vi.mock("@m3l-automation/m3l-common", async (importOriginal) => {
+vi.mock("@monte3l/m3l-common", async (importOriginal) => {
   const actual = await importOriginal<typeof M3LCommon>();
   return {
     ...actual,
@@ -51,7 +51,7 @@ vi.mock("../src/steps/scan-table.js", async (importOriginal) => {
   return { ...actual, scanTable: vi.fn(actual.scanTable) };
 });
 
-import { AWS, Core } from "@m3l-automation/m3l-common";
+import { AWS, Core } from "@monte3l/m3l-common";
 
 import type { RunDynamodbCrudSummary } from "../src/steps/run-dynamodb-crud.js";
 import { runDynamodbCrud } from "../src/steps/run-dynamodb-crud.js";
@@ -1312,7 +1312,7 @@ describe("runDynamodbCrud — cooperative cancellation via deps.signal (ADR-0049
 describe("runDynamodbCrud — scan/query/export checkpoint 'definition' projection (issue #497)", () => {
   /**
    * `Core.M3LCheckpointStore` is the REAL, unmocked class in this file — the
-   * top-of-file `vi.mock("@m3l-automation/m3l-common", ...)` factory only
+   * top-of-file `vi.mock("@monte3l/m3l-common", ...)` factory only
    * overrides `AWS.*`, never `Core` (confirmed by reading the factory above;
    * the task brief that prompted this describe block assumed a constructor
    * spy already existed here, which is not the case). So these tests prove

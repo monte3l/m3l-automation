@@ -21,7 +21,7 @@ import { afterEach, describe, expect, expectTypeOf, test, vi } from "vitest";
  * boundary, also mocked. The destructive gate itself
  * (`Core.confirmDestructive`) runs for real: `Core.M3LOperationPipeline`
  * invokes it via an internal relative import that a package-level
- * `vi.mock("@m3l-automation/m3l-common", ...)` override of
+ * `vi.mock("@monte3l/m3l-common", ...)` override of
  * `Core.confirmDestructive` cannot intercept, so the gate is instead
  * exercised end to end and observed at the one seam it always calls
  * through — a per-test `Core.M3LPrompt` instance's `confirm` method, spied
@@ -55,7 +55,7 @@ vi.mock("../src/steps/read-clusters.js", () => ({
   readClusters: readClustersMock,
 }));
 
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 import { runEcsOps } from "../src/steps/run-ecs-ops.js";
 import { buildConfig, createFakeEcsOperations } from "./support/ecsFakes.js";

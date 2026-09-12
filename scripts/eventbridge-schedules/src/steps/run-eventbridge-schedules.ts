@@ -1,5 +1,5 @@
-import { Core } from "@m3l-automation/m3l-common";
-import type { AWS } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
+import type { AWS } from "@monte3l/m3l-common";
 
 import { CONFIG_ERROR_CODE } from "./config-helpers.js";
 
@@ -68,8 +68,8 @@ function readRuleNameForDisplay(config: Core.M3LConfig): string {
  *
  * @example
  * ```typescript
- * import { Core } from "@m3l-automation/m3l-common";
- * import type { AWS } from "@m3l-automation/m3l-common";
+ * import { Core } from "@monte3l/m3l-common";
+ * import type { AWS } from "@monte3l/m3l-common";
  * import { runEventbridgeSchedules } from "./run-eventbridge-schedules.js";
  *
  * declare const eventBridgeOperations: AWS.M3LEventBridgeOperations;

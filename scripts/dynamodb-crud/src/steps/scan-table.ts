@@ -1,4 +1,4 @@
-import { AWS, Core } from "@m3l-automation/m3l-common";
+import { AWS, Core } from "@monte3l/m3l-common";
 
 /**
  * Persisted resume state for a `scan-table` run: one cursor entry per
@@ -312,7 +312,7 @@ async function* mergeAsync(
  *
  * @example
  * ```typescript
- * import { AWS, Core } from "@m3l-automation/m3l-common";
+ * import { AWS, Core } from "@monte3l/m3l-common";
  * import { isScanCheckpoint, scanTable } from "./scan-table.js";
  * import type { ScanCheckpoint } from "./scan-table.js";
  *

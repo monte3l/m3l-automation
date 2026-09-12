@@ -1,5 +1,5 @@
-import { Core } from "@m3l-automation/m3l-common";
-import type { AWS } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
+import type { AWS } from "@monte3l/m3l-common";
 
 import { CONFIG_ERROR_CODE } from "./config-helpers.js";
 
@@ -21,10 +21,10 @@ import { CONFIG_ERROR_CODE } from "./config-helpers.js";
  *
  * @example
  * ```typescript
- * import { Core } from "@m3l-automation/m3l-common";
+ * import { Core } from "@monte3l/m3l-common";
  * import { enableRule } from "./enable-rule.js";
  *
- * declare const eventBridgeOperations: import("@m3l-automation/m3l-common/aws").M3LEventBridgeOperations;
+ * declare const eventBridgeOperations: import("@monte3l/m3l-common/aws").M3LEventBridgeOperations;
  *
  * await enableRule({
  *   config: await new Core.M3LScript({

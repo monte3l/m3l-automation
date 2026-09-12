@@ -1,4 +1,4 @@
-import { AWS, Core } from "@m3l-automation/m3l-common";
+import { AWS, Core } from "@monte3l/m3l-common";
 
 /** DynamoDB's own `BatchWriteItem` cap — the maximum items per request. */
 const BATCH_CHUNK_SIZE = 25;
@@ -206,7 +206,7 @@ async function processAllChunks(
  *
  * @example
  * ```typescript
- * import { Core } from "@m3l-automation/m3l-common";
+ * import { Core } from "@monte3l/m3l-common";
  * import { batchWriteTable } from "./batch-write-table.js";
  *
  * async function* records(): AsyncGenerator<Record<string, unknown>> {

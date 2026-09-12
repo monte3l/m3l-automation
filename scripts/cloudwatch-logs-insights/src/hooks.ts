@@ -1,4 +1,4 @@
-import type { Core } from "@m3l-automation/m3l-common";
+import type { Core } from "@monte3l/m3l-common";
 
 import { buildCheckpointStore, EMPTY_CHECKPOINT } from "./steps/checkpoint.js";
 
@@ -35,7 +35,7 @@ import { buildCheckpointStore, EMPTY_CHECKPOINT } from "./steps/checkpoint.js";
  *
  * @example
  * ```typescript
- * import { Core } from "@m3l-automation/m3l-common";
+ * import { Core } from "@monte3l/m3l-common";
  * import { buildHooks } from "./hooks.js";
  *
  * const paths = new Core.M3LPaths();

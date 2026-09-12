@@ -1,4 +1,4 @@
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 import { fieldName } from "../lib/field-spec.js";
 import { exportResults } from "./export-results.js";
@@ -199,7 +199,7 @@ function buildImportedRecords(
  *
  * @example
  * ```typescript
- * import { Core } from "@m3l-automation/m3l-common";
+ * import { Core } from "@monte3l/m3l-common";
  * import { runJsonEtl } from "./run-json-etl.js";
  *
  * const summary = await runJsonEtl({

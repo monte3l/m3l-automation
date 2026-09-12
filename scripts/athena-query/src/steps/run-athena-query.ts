@@ -19,7 +19,7 @@
  * be a near-empty wrapper around `Core.M3LCheckpointStore`.
  */
 
-import { Core, type AWS } from "@m3l-automation/m3l-common";
+import { Core, type AWS } from "@monte3l/m3l-common";
 
 import { exportResults } from "./export-results.js";
 import { resolveAthenaSettings } from "./resolve-settings.js";
@@ -119,7 +119,7 @@ function buildCheckpointDefinition(
  *
  * @example
  * ```ts
- * import type { AWS, Core } from "@m3l-automation/m3l-common";
+ * import type { AWS, Core } from "@monte3l/m3l-common";
  * import { runAthenaQuery } from "./run-athena-query.js";
  *
  * async function run(

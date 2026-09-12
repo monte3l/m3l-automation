@@ -77,7 +77,7 @@ function conformantManifest(name: string) {
     type: "module",
     engines: { node: ">=24" },
     dependencies: {
-      "@m3l-automation/m3l-common": "workspace:@monte3l/m3l-common@*",
+      "@monte3l/m3l-common": "workspace:*",
     },
     scripts: {
       build: "tsc -b tsconfig.build.json",
@@ -355,7 +355,7 @@ describe("OPTIONAL_EXACT_FILES", () => {
 describe("commandModuleErrors", () => {
   /** A minimal command.ts satisfying every assertion the checker makes. */
   const conformant = [
-    'import { Core } from "@m3l-automation/m3l-common";',
+    'import { Core } from "@monte3l/m3l-common";',
     'import { configParameters } from "./config.js";',
     "export const commandModule: Core.M3LCommandModule = {",
     "  configParameters,",
@@ -610,8 +610,27 @@ describe("packageManifestErrors", () => {
   test("flags a missing workspace dependency on m3l-common", () => {
     const pkg = { ...conformantManifest("data-sync"), dependencies: {} };
     expect(packageManifestErrors(pkg, "data-sync")).toEqual([
-      'dependencies must include "@m3l-automation/m3l-common": "workspace:@monte3l/m3l-common@*"',
+      'dependencies must include "@monte3l/m3l-common": "workspace:*"',
     ]);
+  });
+
+  // TRANSITIONAL (ADR-0103 P4a / P4a2): agent-operator still declares the
+  // pre-rename aliased shape until P4a2 migrates it too — packageManifestErrors
+  // must accept it as satisfying the dependency requirement in the meantime.
+  test("accepts the transitional pre-rename aliased shape (agent-operator, until P4a2)", () => {
+    const pkg = {
+      ...conformantManifest("data-sync"),
+      dependencies: {
+        "@m3l-automation/m3l-common": "workspace:@monte3l/m3l-common@*",
+      },
+    };
+    const errors = packageManifestErrors(pkg, "data-sync");
+    expect(
+      errors.some((error: string) =>
+        error.includes("dependencies must include"),
+      ),
+    ).toBe(false);
+    expect(errors).toEqual([]);
   });
 
   test.each(["build", "typecheck", "start"])(
@@ -633,7 +652,7 @@ describe("packageManifestErrors", () => {
       '"private" must be true (scripts are never published)',
       '"type" must be "module" (ESM only)',
       '"engines.node" must declare ">=24"',
-      'dependencies must include "@m3l-automation/m3l-common": "workspace:@monte3l/m3l-common@*"',
+      'dependencies must include "@monte3l/m3l-common": "workspace:*"',
       '"scripts.build" must be declared',
       '"scripts.typecheck" must be declared',
       '"scripts.start" must be declared',

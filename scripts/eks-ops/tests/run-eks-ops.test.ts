@@ -2,7 +2,7 @@ import * as fsp from "node:fs/promises";
 
 import { afterEach, describe, expect, expectTypeOf, test, vi } from "vitest";
 
-import type * as M3LCommon from "@m3l-automation/m3l-common";
+import type * as M3LCommon from "@monte3l/m3l-common";
 
 /**
  * Contract: `scripts/eks-ops/src/steps/run-eks-ops.ts` — the dispatcher for
@@ -47,7 +47,7 @@ const readNodegroupsMock = vi.hoisted(() => vi.fn());
 const writeNodegroupMock = vi.hoisted(() => vi.fn());
 const waitNodegroupMock = vi.hoisted(() => vi.fn());
 
-vi.mock("@m3l-automation/m3l-common", async (importOriginal) => {
+vi.mock("@monte3l/m3l-common", async (importOriginal) => {
   const actual = await importOriginal<typeof M3LCommon>();
   return { ...actual };
 });
@@ -70,7 +70,7 @@ vi.mock("../src/steps/wait-nodegroup.js", () => ({
   waitNodegroup: waitNodegroupMock,
 }));
 
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 import { runEksOps } from "../src/steps/run-eks-ops.js";
 import { buildConfig, createFakeEKSOperations } from "./support/eksFakes.js";

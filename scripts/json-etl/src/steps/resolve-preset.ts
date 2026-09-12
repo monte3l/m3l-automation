@@ -1,4 +1,4 @@
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 /**
  * Resolves a `--preset` CLI flag into a spreadable `M3LScriptOptions`
@@ -22,7 +22,7 @@ import { Core } from "@m3l-automation/m3l-common";
  *
  * @example
  * ```ts
- * import { Core } from "@m3l-automation/m3l-common";
+ * import { Core } from "@monte3l/m3l-common";
  * import { resolvePresetOption } from "./steps/resolve-preset.js";
  *
  * const script = new Core.M3LScript({
