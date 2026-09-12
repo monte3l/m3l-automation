@@ -1,5 +1,5 @@
-import { Core } from "@m3l-automation/m3l-common";
-import type { AWS } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
+import type { AWS } from "@monte3l/m3l-common";
 
 /** The four mutating operations `writeFunction` dispatches. */
 type WriteOperation =
@@ -118,8 +118,8 @@ function readCreateFields(
  *
  * @example
  * ```typescript
- * import type { AWS } from "@m3l-automation/m3l-common";
- * import { Core } from "@m3l-automation/m3l-common";
+ * import type { AWS } from "@monte3l/m3l-common";
+ * import { Core } from "@monte3l/m3l-common";
  * import { writeFunction } from "./write-function.js";
  *
  * // `operations`/`reader` are injected by the caller, e.g.

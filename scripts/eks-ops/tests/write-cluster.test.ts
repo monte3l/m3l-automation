@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, expectTypeOf, test, vi } from "vitest";
 
-import type { AWS } from "@m3l-automation/m3l-common";
+import type { AWS } from "@monte3l/m3l-common";
 
 import { writeCluster } from "../src/steps/write-cluster.js";
 import { createFakeEKSOperations } from "./support/eksFakes.js";

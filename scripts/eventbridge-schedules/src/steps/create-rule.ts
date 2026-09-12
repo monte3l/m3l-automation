@@ -1,4 +1,4 @@
-import type { AWS, Core } from "@m3l-automation/m3l-common";
+import type { AWS, Core } from "@monte3l/m3l-common";
 
 import { putRuleStep } from "./put-rule.js";
 
@@ -19,8 +19,8 @@ import { putRuleStep } from "./put-rule.js";
  *
  * @example
  * ```typescript
- * import { Core } from "@m3l-automation/m3l-common";
- * import type { AWS } from "@m3l-automation/m3l-common";
+ * import { Core } from "@monte3l/m3l-common";
+ * import type { AWS } from "@monte3l/m3l-common";
  * import { createRule } from "./create-rule.js";
  *
  * declare const eventBridgeOperations: AWS.M3LEventBridgeOperations;

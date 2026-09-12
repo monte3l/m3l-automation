@@ -1,4 +1,4 @@
-import type { Core } from "@m3l-automation/m3l-common";
+import type { Core } from "@monte3l/m3l-common";
 
 /**
  * Lifecycle hooks for `rds-data-sql`. All eight hooks are optional and run

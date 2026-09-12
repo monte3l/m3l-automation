@@ -1,5 +1,5 @@
-import { Core } from "@m3l-automation/m3l-common";
-import type { AWS } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
+import type { AWS } from "@monte3l/m3l-common";
 
 /**
  * `run-sqs-etl` — the thin composition step: reads the already
@@ -38,10 +38,10 @@ interface RunSqsEtlDeps {
  *
  * @example
  * ```typescript
- * import { Core } from "@m3l-automation/m3l-common";
+ * import { Core } from "@monte3l/m3l-common";
  * import { runSqsEtl } from "./run-sqs-etl.js";
  *
- * declare const sqsOperations: import("@m3l-automation/m3l-common/aws").M3LSQSOperations;
+ * declare const sqsOperations: import("@monte3l/m3l-common/aws").M3LSQSOperations;
  *
  * const script = new Core.M3LScript({
  *   metadata: { name: "sqs-etl", version: "0.0.0" },

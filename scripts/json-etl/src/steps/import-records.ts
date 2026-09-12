@@ -1,4 +1,4 @@
-import type { Core } from "@m3l-automation/m3l-common";
+import type { Core } from "@monte3l/m3l-common";
 
 /**
  * Streams records from `opts.importer`, forwarding every `import:error`
@@ -16,7 +16,7 @@ import type { Core } from "@m3l-automation/m3l-common";
  *
  * @example
  * ```typescript
- * import { Core } from "@m3l-automation/m3l-common";
+ * import { Core } from "@monte3l/m3l-common";
  * import { importRecords } from "./import-records.js";
  *
  * const importer = new Core.M3LJSONListImporter<unknown>({

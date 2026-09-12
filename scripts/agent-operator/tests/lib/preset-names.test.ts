@@ -24,7 +24,7 @@ import {
  * Contract: V9 slice 2a `src/lib/preset-names.ts`, mirroring
  * `src/lib/cli-names.ts`. `AGENT_OPERATOR_PRESET_NAME_RE` must copy
  * `PRESET_NAME_PATTERN` from `packages/m3l-cli/src/presets/store.ts` verbatim
- * (ADR-0029: a script depends only on `@m3l-automation/m3l-common`, so the
+ * (ADR-0029: a script depends only on `@monte3l/m3l-common`, so the
  * regex cannot be imported and must be drift-guarded against the source of
  * truth instead). `AGENT_OPERATOR_PRESET_NAME_MAX_LENGTH` (64) is this
  * package's own additional cap, checked BEFORE the regex.

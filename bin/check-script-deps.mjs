@@ -1,13 +1,13 @@
 #!/usr/bin/env node
 // Verifies every scripts/*/package.json declares exactly one runtime
-// dependency — @m3l-automation/m3l-common via a workspace:@monte3l/m3l-common@*
-// alias — and no devDependencies (ADR-0029: scripts depend only on the
-// library; the workspace root owns all tooling). The dependency key stays
-// the pre-rename specifier so no scripts/*/src import changes (ADR-0103);
-// only the aliased target moved to the package's renamed real name. This
-// is the package.json-declaration half of the boundary; the source-level
-// half (no @aws-sdk/* import) is already enforced by eslint.config.js's
-// scripts/*/src/**/*.ts override.
+// dependency — @monte3l/m3l-common via a plain workspace:* specifier — and
+// no devDependencies (ADR-0029: scripts depend only on the library; the
+// workspace root owns all tooling). ADR-0103's P4a slice dropped the
+// pre-rename @m3l-automation/m3l-common alias once every scripts/*/src
+// import specifier moved to the real name, so the key and the workspace
+// target now agree. This is the package.json-declaration half of the
+// boundary; the source-level half (no @aws-sdk/* import) is already
+// enforced by eslint.config.js's scripts/*/src/**/*.ts override.
 //
 // Separate from check-deps.mjs, which is scoped to the published library
 // package's ADR-0017 exact-pin/optional-peer rules — a different package
@@ -24,18 +24,18 @@ import { parseJsonFlag, createReporter, repoRoot } from "./lib/report.mjs";
 
 const root = repoRoot(import.meta.url);
 
-/** The one permitted dependency's key (ADR-0029) and, since ADR-0103's
- * scope rename, its aliased workspace target (the real package is now
- * named `@monte3l/m3l-common`; the key stays the pre-rename specifier so
- * no scripts/*\/src import changes). */
-const LIBRARY_DEPENDENCY_NAME = "@m3l-automation/m3l-common";
-const LIBRARY_DEPENDENCY_VALUE = "workspace:@monte3l/m3l-common@*";
+/** The one permitted dependency's key and workspace target (ADR-0029), both
+ * the renamed `@monte3l/m3l-common` name as of ADR-0103's P4a slice — the
+ * alias key is gone now that every scripts/*\/src import specifier moved to
+ * the real name. */
+const LIBRARY_DEPENDENCY_NAME = "@monte3l/m3l-common";
+const LIBRARY_DEPENDENCY_VALUE = "workspace:*";
 
 /**
  * Validate a script package.json's dependency declarations against ADR-0029:
- * exactly one runtime dependency (@m3l-automation/m3l-common, aliased to
- * the renamed @monte3l/m3l-common via a workspace: specifier) and no
- * devDependencies at all. Pure — operates on a parsed package.json object.
+ * exactly one runtime dependency (@monte3l/m3l-common via a plain workspace:
+ * specifier) and no devDependencies at all. Pure — operates on a parsed
+ * package.json object.
  * Returns human-readable problem strings (empty array = conformant).
  *
  * @param {{ dependencies?: Record<string, string>, devDependencies?: Record<string, string> }} pkg

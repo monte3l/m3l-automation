@@ -1,6 +1,6 @@
 import { describe, expect, test, vi } from "vitest";
 
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 import { resolveAuthHeaders } from "../src/steps/resolve-auth-headers.js";
 import { buildConfig, createFakeRequestSigner } from "./support/httpFakes.js";

@@ -1,5 +1,5 @@
-import { Core } from "@m3l-automation/m3l-common";
-import type { AWS } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
+import type { AWS } from "@monte3l/m3l-common";
 
 /** The three mutating operations `writePipeline` dispatches. */
 type WriteOperation = "create-pipeline" | "update-pipeline" | "delete-pipeline";
@@ -102,8 +102,8 @@ function asDeclaration(
  *
  * @example
  * ```typescript
- * import type { AWS } from "@m3l-automation/m3l-common";
- * import { Core } from "@m3l-automation/m3l-common";
+ * import type { AWS } from "@monte3l/m3l-common";
+ * import { Core } from "@monte3l/m3l-common";
  * import { writePipeline } from "./write-pipeline.js";
  *
  * // `operations`/`reader` are injected by the caller, e.g.

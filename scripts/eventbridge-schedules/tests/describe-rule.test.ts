@@ -9,8 +9,8 @@ vi.mock("node:fs/promises", async () => {
   return { ...actual };
 });
 
-import { Core } from "@m3l-automation/m3l-common";
-import type { AWS } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
+import type { AWS } from "@monte3l/m3l-common";
 
 import { describeRule } from "../src/steps/describe-rule.js";
 

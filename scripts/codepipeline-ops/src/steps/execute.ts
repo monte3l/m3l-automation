@@ -1,5 +1,5 @@
-import { Core } from "@m3l-automation/m3l-common";
-import type { AWS } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
+import type { AWS } from "@monte3l/m3l-common";
 
 /** The two execution-control operations `execute` dispatches. */
 type ExecuteOperation = "start-execution" | "stop-execution";
@@ -45,7 +45,7 @@ interface ExecuteDeps {
  *
  * @example
  * ```typescript
- * import type { AWS } from "@m3l-automation/m3l-common";
+ * import type { AWS } from "@monte3l/m3l-common";
  * import { execute } from "./execute.js";
  *
  * // `operations` is injected by the caller, e.g.

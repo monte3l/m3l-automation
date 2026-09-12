@@ -1,4 +1,4 @@
-import { AWS, Core } from "@m3l-automation/m3l-common";
+import { AWS, Core } from "@monte3l/m3l-common";
 
 /**
  * Shared confirm-gate for `dynamodb-crud`'s destructive operations
@@ -27,7 +27,7 @@ import { AWS, Core } from "@m3l-automation/m3l-common";
  *
  * @example
  * ```typescript
- * import { AWS, Core } from "@m3l-automation/m3l-common";
+ * import { AWS, Core } from "@monte3l/m3l-common";
  * import { runDestructiveGate } from "./destructive-gate.js";
  *
  * await runDestructiveGate({

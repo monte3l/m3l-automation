@@ -1,4 +1,4 @@
-import type { AWS } from "@m3l-automation/m3l-common";
+import type { AWS } from "@monte3l/m3l-common";
 
 /**
  * The dependencies `waitServices` needs, already resolved by `run-ecs-ops` —
@@ -31,7 +31,7 @@ interface WaitServicesDeps {
  *
  * @example
  * ```typescript
- * import type { AWS } from "@m3l-automation/m3l-common";
+ * import type { AWS } from "@monte3l/m3l-common";
  * import { waitServices } from "./wait-services.js";
  *
  * // `operations` is injected by the caller, e.g.

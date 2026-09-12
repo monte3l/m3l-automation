@@ -23,7 +23,7 @@
  * @packageDocumentation
  */
 
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 import type { AgentDecisionRecorder } from "./decision-recorder.js";
 import type { AgentRunLedger } from "./run-ledger.js";
@@ -33,7 +33,7 @@ import type { AgentRunLedger } from "./run-ledger.js";
  *
  * @example
  * ```ts
- * import { Core } from "@m3l-automation/m3l-common";
+ * import { Core } from "@monte3l/m3l-common";
  * import type { AgentDecisionRecorder } from "./decision-recorder.js";
  * import type { AgentPreflightOptions } from "./preflight-log.js";
  * import { AgentRunLedger } from "./run-ledger.js";

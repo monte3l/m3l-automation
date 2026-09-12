@@ -15,7 +15,7 @@
  * @packageDocumentation
  */
 
-import type { AWS } from "@m3l-automation/m3l-common";
+import type { AWS } from "@monte3l/m3l-common";
 
 import { M3LAgentOperatorCliError } from "../lib/errors.js";
 import type { AgentRunLedger } from "./run-ledger.js";
@@ -76,7 +76,7 @@ function sumObservedTokens(
  *
  * @example
  * ```ts
- * import type { AWS } from "@m3l-automation/m3l-common";
+ * import type { AWS } from "@monte3l/m3l-common";
  * import type { CreateMeteredInvokerOptions } from "./metering-invoker.js";
  * import { AgentRunLedger } from "./run-ledger.js";
  *
@@ -142,7 +142,7 @@ export interface MeteredInvoker {
  *
  * @example
  * ```ts
- * import type { AWS } from "@m3l-automation/m3l-common";
+ * import type { AWS } from "@monte3l/m3l-common";
  * import { createMeteredInvoker } from "./metering-invoker.js";
  * import { AgentRunLedger } from "./run-ledger.js";
  *

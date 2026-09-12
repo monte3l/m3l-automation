@@ -8,15 +8,15 @@ import {
   vi,
 } from "vitest";
 
-import type * as M3LCommonModule from "@m3l-automation/m3l-common";
+import type * as M3LCommonModule from "@monte3l/m3l-common";
 
 // Mock AWS.scanSegment/queryItems (async generators) and Core.M3LCheckpointStore
 // (a fresh, independently-mocked instance per `new`), keeping every other
 // Core/AWS export real (Core.M3LLogger, Core.M3LError, and
 // AWS.M3LDynamoDBOperationError are used verbatim below).
-vi.mock("@m3l-automation/m3l-common", async () => {
+vi.mock("@monte3l/m3l-common", async () => {
   const actual = await vi.importActual<typeof M3LCommonModule>(
-    "@m3l-automation/m3l-common",
+    "@monte3l/m3l-common",
   );
   return {
     ...actual,
@@ -42,7 +42,7 @@ vi.mock("@m3l-automation/m3l-common", async () => {
   };
 });
 
-import { AWS, Core } from "@m3l-automation/m3l-common";
+import { AWS, Core } from "@monte3l/m3l-common";
 
 import type {
   ScanCheckpoint,

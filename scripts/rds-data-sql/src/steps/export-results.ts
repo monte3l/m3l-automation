@@ -8,7 +8,7 @@
  * other step keeps passing the typed union around unchanged.
  */
 
-import { Core, type AWS } from "@m3l-automation/m3l-common";
+import { Core, type AWS } from "@monte3l/m3l-common";
 
 /** The `Core.M3LError` code thrown for an unhandled `output.format` value in {@link coerceRdsDataValueForOutput}'s exhaustive switch. */
 const OUTPUT_FORMAT_CODE = "ERR_RDS_DATA_SQL_OUTPUT_FORMAT";
@@ -35,7 +35,7 @@ export type RdsDataSqlOutputFormat = "json" | "jsonl" | "csv";
  *
  * @example
  * ```ts
- * import type { AWS } from "@m3l-automation/m3l-common";
+ * import type { AWS } from "@monte3l/m3l-common";
  * import { coerceRdsDataValueForOutput } from "./export-results.js";
  *
  * const value: AWS.M3LRDSDataValue = { kind: "long", value: 42 };

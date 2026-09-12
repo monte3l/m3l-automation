@@ -1,5 +1,5 @@
-import { Core } from "@m3l-automation/m3l-common";
-import type { AWS } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
+import type { AWS } from "@monte3l/m3l-common";
 
 /**
  * `steps/read-nodegroups` — `list-nodegroups` and `describe-nodegroup`, the
@@ -44,7 +44,7 @@ export interface ReadNodegroupsDeps {
  *
  * @example
  * ```ts
- * import { AWS } from "@m3l-automation/m3l-common";
+ * import { AWS } from "@monte3l/m3l-common";
  * import { readNodegroups } from "./read-nodegroups.js";
  *
  * declare const operations: AWS.M3LEKSOperations;

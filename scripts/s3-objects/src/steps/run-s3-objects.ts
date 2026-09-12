@@ -1,5 +1,5 @@
-import type { AWS } from "@m3l-automation/m3l-common";
-import { Core } from "@m3l-automation/m3l-common";
+import type { AWS } from "@monte3l/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 import { S3_OBJECTS_OPERATIONS } from "../config.js";
 import { runDeleteBatch } from "./delete-batch.js";
@@ -407,7 +407,7 @@ const pipeline = new Core.M3LOperationPipeline<
  *
  * @example
  * ```typescript
- * import { Core } from "@m3l-automation/m3l-common";
+ * import { Core } from "@monte3l/m3l-common";
  * import { runS3Objects } from "./run-s3-objects.js";
  *
  * const summary = await runS3Objects({

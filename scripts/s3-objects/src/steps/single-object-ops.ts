@@ -1,6 +1,6 @@
 import { readFile, writeFile } from "node:fs/promises";
 
-import { AWS, Core } from "@m3l-automation/m3l-common";
+import { AWS, Core } from "@monte3l/m3l-common";
 
 /**
  * `describe`/`get`/`put`/`copy`/`delete`: one call each via
@@ -209,7 +209,7 @@ async function dispatchDelete(deps: SingleObjectOpDeps): Promise<void> {
  *
  * @example
  * ```typescript
- * import { Core } from "@m3l-automation/m3l-common";
+ * import { Core } from "@monte3l/m3l-common";
  * import { runSingleObjectOp } from "./single-object-ops.js";
  *
  * const summary = await runSingleObjectOp({

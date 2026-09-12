@@ -1,4 +1,4 @@
-import type { AWS } from "@m3l-automation/m3l-common";
+import type { AWS } from "@monte3l/m3l-common";
 
 /**
  * The dependencies `readStackEvents` needs, already resolved by
@@ -22,7 +22,7 @@ interface ReadStackEventsDeps {
  *
  * @example
  * ```typescript
- * import type { AWS } from "@m3l-automation/m3l-common";
+ * import type { AWS } from "@monte3l/m3l-common";
  * import { readStackEvents } from "./read-stack-events.js";
  *
  * // `operations` is injected by the caller, e.g.

@@ -1,7 +1,7 @@
 import { writeFile } from "node:fs/promises";
 
-import type { AWS } from "@m3l-automation/m3l-common";
-import { Core } from "@m3l-automation/m3l-common";
+import type { AWS } from "@monte3l/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 import {
   BATCH_RETRY_ERROR_CODE,
@@ -748,7 +748,7 @@ async function dispatch(
  *
  * @example
  * ```typescript
- * import { Core } from "@m3l-automation/m3l-common";
+ * import { Core } from "@monte3l/m3l-common";
  * import { runDynamodbCrud } from "./run-dynamodb-crud.js";
  *
  * const summary = await runDynamodbCrud({

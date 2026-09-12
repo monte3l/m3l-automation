@@ -1,7 +1,7 @@
 import * as fsp from "node:fs/promises";
 
-import { Core } from "@m3l-automation/m3l-common";
-import type { AWS } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
+import type { AWS } from "@monte3l/m3l-common";
 
 import { resolveAuthHeaders } from "./resolve-auth-headers.js";
 
@@ -398,7 +398,7 @@ async function dispatchRecord(
  *
  * @example
  * ```typescript
- * import { Core } from "@m3l-automation/m3l-common";
+ * import { Core } from "@monte3l/m3l-common";
  * import { batchRequest } from "./batch-request.js";
  *
  * await batchRequest({

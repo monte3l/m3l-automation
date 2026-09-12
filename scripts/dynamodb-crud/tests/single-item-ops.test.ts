@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, expectTypeOf, test, vi } from "vitest";
 
-import type * as M3LCommonModule from "@m3l-automation/m3l-common";
+import type * as M3LCommonModule from "@monte3l/m3l-common";
 
 /**
  * Contract: docs/reference/scripts/dynamodb-crud.md, `single-item-ops` row +
@@ -12,7 +12,7 @@ import type * as M3LCommonModule from "@m3l-automation/m3l-common";
  * JSON-parsed plain objects (parsing happens in the orchestrator, not here).
  */
 
-vi.mock("@m3l-automation/m3l-common", async (importOriginal) => {
+vi.mock("@monte3l/m3l-common", async (importOriginal) => {
   const actual = await importOriginal<typeof M3LCommonModule>();
   return {
     ...actual,
@@ -26,7 +26,7 @@ vi.mock("@m3l-automation/m3l-common", async (importOriginal) => {
   };
 });
 
-import { AWS, Core } from "@m3l-automation/m3l-common";
+import { AWS, Core } from "@monte3l/m3l-common";
 
 import {
   runSingleItemOp,

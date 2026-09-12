@@ -24,7 +24,7 @@
 //                            every shipped module rather than an allowlist of
 //                            modules known to be clean.
 //   5. script cross-import — one zone per scripts/ directory entry; a script may
-//                            import only itself and @m3l-automation/m3l-common,
+//                            import only itself and @monte3l/m3l-common,
 //                            never a sibling script's src (ADR-0029 backstop).
 //   6. prod-not-to-test    — packages/m3l-common/src and scripts/*/src may not
 //                            import from a tests/ tree.
@@ -356,7 +356,7 @@ const scriptNames = readdirSync(new URL("../scripts/", import.meta.url), {
 
 for (const name of scriptNames) {
   requireZone(
-    `script cross-import guard for scripts/${name} (may import only itself + @m3l-automation/m3l-common)`,
+    `script cross-import guard for scripts/${name} (may import only itself + @monte3l/m3l-common)`,
     (zone) =>
       norm(zone.target).endsWith(`/scripts/${name}`) &&
       norm(zone.from).endsWith("/scripts") &&

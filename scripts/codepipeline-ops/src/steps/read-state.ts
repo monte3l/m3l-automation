@@ -1,5 +1,5 @@
-import { Core } from "@m3l-automation/m3l-common";
-import type { AWS } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
+import type { AWS } from "@monte3l/m3l-common";
 
 /**
  * The dependencies `readState` needs, already resolved and guard-checked by
@@ -29,7 +29,7 @@ interface ReadStateDeps {
  *
  * @example
  * ```typescript
- * import type { AWS } from "@m3l-automation/m3l-common";
+ * import type { AWS } from "@monte3l/m3l-common";
  * import { readState } from "./read-state.js";
  *
  * // `operations` is injected by the caller, e.g.

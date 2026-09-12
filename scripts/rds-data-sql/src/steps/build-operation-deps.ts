@@ -13,7 +13,7 @@
 import { readFile, readdir } from "node:fs/promises";
 import { join } from "node:path";
 
-import { Core, type AWS } from "@m3l-automation/m3l-common";
+import { Core, type AWS } from "@monte3l/m3l-common";
 
 import { qualifyIdentifier } from "../lib/identifiers.js";
 import {
@@ -649,7 +649,7 @@ async function buildMigrateDeps(
  *
  * @example
  * ```ts
- * import { Core, type AWS } from "@m3l-automation/m3l-common";
+ * import { Core, type AWS } from "@monte3l/m3l-common";
  * import { buildOperationDeps } from "./build-operation-deps.js";
  * import { resolveRdsDataSqlSettings } from "./resolve-settings.js";
  *

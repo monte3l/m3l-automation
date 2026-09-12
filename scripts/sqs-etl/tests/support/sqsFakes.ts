@@ -1,7 +1,7 @@
 import { vi } from "vitest";
 
-import { Core } from "@m3l-automation/m3l-common";
-import type { AWS } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
+import type { AWS } from "@monte3l/m3l-common";
 
 /**
  * Builds a plain-object fake of `AWS.M3LSQSOperations`'s 5-method public

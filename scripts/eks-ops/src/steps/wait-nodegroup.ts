@@ -1,4 +1,4 @@
-import type { AWS } from "@m3l-automation/m3l-common";
+import type { AWS } from "@monte3l/m3l-common";
 
 /**
  * `steps/wait-nodegroup` — `wait-nodegroup-active` and
@@ -36,7 +36,7 @@ export interface WaitNodegroupDeps {
  *
  * @example
  * ```ts
- * import { AWS } from "@m3l-automation/m3l-common";
+ * import { AWS } from "@monte3l/m3l-common";
  * import { waitNodegroup } from "./wait-nodegroup.js";
  *
  * declare const operations: AWS.M3LEKSOperations;

@@ -1,4 +1,4 @@
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 /**
  * The `operation` parameter's declared operation set (ADR-0055) — the seven
@@ -180,7 +180,7 @@ export const configParameters: readonly Core.M3LConfigParameter[] = [
  *
  * @example
  * ```typescript
- * import { Core } from "@m3l-automation/m3l-common";
+ * import { Core } from "@monte3l/m3l-common";
  * import { configParameters, configValidators } from "./config.js";
  *
  * const schema = new Core.M3LConfigSchema(configParameters, configValidators);

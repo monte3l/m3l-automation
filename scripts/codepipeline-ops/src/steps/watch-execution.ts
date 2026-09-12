@@ -1,5 +1,5 @@
-import { Core } from "@m3l-automation/m3l-common";
-import type { AWS } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
+import type { AWS } from "@monte3l/m3l-common";
 
 /**
  * The two `PipelineExecutionStatus` values meaning "not yet terminal" — poll
@@ -99,7 +99,7 @@ const MS_PER_SECOND = 1000;
  *
  * @example
  * ```typescript
- * import type { AWS, Core } from "@m3l-automation/m3l-common";
+ * import type { AWS, Core } from "@monte3l/m3l-common";
  * import { watchExecution } from "./watch-execution.js";
  *
  * declare const operations: AWS.M3LCodePipelineOperations;

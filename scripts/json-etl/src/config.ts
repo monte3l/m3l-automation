@@ -1,4 +1,4 @@
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 import { fieldName } from "./lib/field-spec.js";
 
@@ -93,7 +93,7 @@ function sortName(value: string): string {
  *
  * @example
  * ```typescript
- * import { Core } from "@m3l-automation/m3l-common";
+ * import { Core } from "@monte3l/m3l-common";
  * import { configParameters, configValidators } from "./config.js";
  *
  * const schema = new Core.M3LConfigSchema(configParameters, configValidators);

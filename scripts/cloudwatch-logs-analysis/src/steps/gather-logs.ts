@@ -1,5 +1,5 @@
-import { Core } from "@m3l-automation/m3l-common";
-import type { AWS } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
+import type { AWS } from "@monte3l/m3l-common";
 
 import type {
   AnalysisGatherer,
@@ -35,7 +35,7 @@ export interface LogsInsightsGathererOptions {
  *
  * @example
  * ```typescript
- * import { AWS, Core } from "@m3l-automation/m3l-common";
+ * import { AWS, Core } from "@monte3l/m3l-common";
  * import { createLogsInsightsGatherer } from "./gather-logs.js";
  *
  * declare const client: AWS.M3LLogsInsightsClient;

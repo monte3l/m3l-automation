@@ -7,7 +7,7 @@
  * runs, per `docs/reference/scripts/rds-data-sql.md`'s `run-execute` row.
  */
 
-import { Core, type AWS } from "@m3l-automation/m3l-common";
+import { Core, type AWS } from "@monte3l/m3l-common";
 
 /** The `Core.M3LError` code {@link Core.confirmDestructive} throws with when the operator declines. */
 const ABORTED_CODE = "ERR_RDS_DATA_SQL_ABORTED";
@@ -135,7 +135,7 @@ function isPlainSelect(sql: string): boolean {
  *
  * @example
  * ```ts
- * import { Core, type AWS } from "@m3l-automation/m3l-common";
+ * import { Core, type AWS } from "@monte3l/m3l-common";
  * import { runExecute } from "./run-execute.js";
  *
  * async function run(

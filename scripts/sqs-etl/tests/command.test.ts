@@ -2,11 +2,11 @@ import { readFileSync } from "node:fs";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import type * as M3LCommon from "@m3l-automation/m3l-common";
+import type * as M3LCommon from "@monte3l/m3l-common";
 
 /**
  * `Core.runScript` and `Core.M3LScript` are mocked at the package level (the
- * fleet's established `vi.mock("@m3l-automation/m3l-common", ...)` factory
+ * fleet's established `vi.mock("@monte3l/m3l-common", ...)` factory
  * pattern) so `execute`'s WIRING can be asserted without running the
  * nine-stage pipeline: a real run resolves configuration and provisions AWS
  * even under `--dry-run`, so it would need real inputs and credentials and
@@ -25,7 +25,7 @@ const runMocks = vi.hoisted(() => ({
   recoveryTotal: 0,
 }));
 
-vi.mock("@m3l-automation/m3l-common", async (importOriginal) => {
+vi.mock("@monte3l/m3l-common", async (importOriginal) => {
   const actual = await importOriginal<typeof M3LCommon>();
   return {
     ...actual,
@@ -70,7 +70,7 @@ vi.mock("@m3l-automation/m3l-common", async (importOriginal) => {
   };
 });
 
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 import { commandModule } from "../src/command.js";
 import { configParameters, configValidators } from "../src/config.js";

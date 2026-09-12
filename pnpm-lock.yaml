@@ -483,104 +483,104 @@ importers:
 
   scripts/agent-operator:
     dependencies:
-      '@m3l-automation/m3l-common':
-        specifier: workspace:@monte3l/m3l-common@*
+      '@monte3l/m3l-common':
+        specifier: workspace:*
         version: link:../../packages/m3l-common
 
   scripts/api-gateway-client:
     dependencies:
-      '@m3l-automation/m3l-common':
-        specifier: workspace:@monte3l/m3l-common@*
+      '@monte3l/m3l-common':
+        specifier: workspace:*
         version: link:../../packages/m3l-common
 
   scripts/athena-query:
     dependencies:
-      '@m3l-automation/m3l-common':
-        specifier: workspace:@monte3l/m3l-common@*
+      '@monte3l/m3l-common':
+        specifier: workspace:*
         version: link:../../packages/m3l-common
 
   scripts/cloudformation-stacks:
     dependencies:
-      '@m3l-automation/m3l-common':
-        specifier: workspace:@monte3l/m3l-common@*
+      '@monte3l/m3l-common':
+        specifier: workspace:*
         version: link:../../packages/m3l-common
 
   scripts/cloudwatch-logs-analysis:
     dependencies:
-      '@m3l-automation/m3l-common':
-        specifier: workspace:@monte3l/m3l-common@*
+      '@monte3l/m3l-common':
+        specifier: workspace:*
         version: link:../../packages/m3l-common
 
   scripts/cloudwatch-logs-insights:
     dependencies:
-      '@m3l-automation/m3l-common':
-        specifier: workspace:@monte3l/m3l-common@*
+      '@monte3l/m3l-common':
+        specifier: workspace:*
         version: link:../../packages/m3l-common
 
   scripts/codepipeline-ops:
     dependencies:
-      '@m3l-automation/m3l-common':
-        specifier: workspace:@monte3l/m3l-common@*
+      '@monte3l/m3l-common':
+        specifier: workspace:*
         version: link:../../packages/m3l-common
 
   scripts/dynamodb-crud:
     dependencies:
-      '@m3l-automation/m3l-common':
-        specifier: workspace:@monte3l/m3l-common@*
+      '@monte3l/m3l-common':
+        specifier: workspace:*
         version: link:../../packages/m3l-common
 
   scripts/ecs-ops:
     dependencies:
-      '@m3l-automation/m3l-common':
-        specifier: workspace:@monte3l/m3l-common@*
+      '@monte3l/m3l-common':
+        specifier: workspace:*
         version: link:../../packages/m3l-common
 
   scripts/eks-ops:
     dependencies:
-      '@m3l-automation/m3l-common':
-        specifier: workspace:@monte3l/m3l-common@*
+      '@monte3l/m3l-common':
+        specifier: workspace:*
         version: link:../../packages/m3l-common
 
   scripts/eventbridge-schedules:
     dependencies:
-      '@m3l-automation/m3l-common':
-        specifier: workspace:@monte3l/m3l-common@*
+      '@monte3l/m3l-common':
+        specifier: workspace:*
         version: link:../../packages/m3l-common
 
   scripts/json-etl:
     dependencies:
-      '@m3l-automation/m3l-common':
-        specifier: workspace:@monte3l/m3l-common@*
+      '@monte3l/m3l-common':
+        specifier: workspace:*
         version: link:../../packages/m3l-common
 
   scripts/lambda-ops:
     dependencies:
-      '@m3l-automation/m3l-common':
-        specifier: workspace:@monte3l/m3l-common@*
+      '@monte3l/m3l-common':
+        specifier: workspace:*
         version: link:../../packages/m3l-common
 
   scripts/rds-data-sql:
     dependencies:
-      '@m3l-automation/m3l-common':
-        specifier: workspace:@monte3l/m3l-common@*
+      '@monte3l/m3l-common':
+        specifier: workspace:*
         version: link:../../packages/m3l-common
 
   scripts/s3-objects:
     dependencies:
-      '@m3l-automation/m3l-common':
-        specifier: workspace:@monte3l/m3l-common@*
+      '@monte3l/m3l-common':
+        specifier: workspace:*
         version: link:../../packages/m3l-common
 
   scripts/sqs-dead-letter-triage:
     dependencies:
-      '@m3l-automation/m3l-common':
-        specifier: workspace:@monte3l/m3l-common@*
+      '@monte3l/m3l-common':
+        specifier: workspace:*
         version: link:../../packages/m3l-common
 
   scripts/sqs-etl:
     dependencies:
-      '@m3l-automation/m3l-common':
-        specifier: workspace:@monte3l/m3l-common@*
+      '@monte3l/m3l-common':
+        specifier: workspace:*
         version: link:../../packages/m3l-common
 
 packages:

@@ -1,4 +1,4 @@
-import { AWS, Core } from "@m3l-automation/m3l-common";
+import { AWS, Core } from "@monte3l/m3l-common";
 
 /**
  * The four single-item DynamoDB operations this step drives: a plain
@@ -54,7 +54,7 @@ function requireField(
  *
  * @example
  * ```typescript
- * import { AWS } from "@m3l-automation/m3l-common";
+ * import { AWS } from "@monte3l/m3l-common";
  * import { runSingleItemOp } from "./single-item-ops.js";
  *
  * const { item } = await runSingleItemOp({

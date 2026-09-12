@@ -16,7 +16,7 @@
  * plain path strings — reading their file contents is a later step's job.
  */
 
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 import { RDS_DATA_SQL_OPERATIONS } from "../config.js";
 import {
@@ -209,7 +209,7 @@ function resolveOperationFields(accessor: Core.M3LConfigAccessor): {
  *
  * @example
  * ```ts
- * import type { Core } from "@m3l-automation/m3l-common";
+ * import type { Core } from "@monte3l/m3l-common";
  * import { resolveRdsDataSqlSettings } from "./resolve-settings.js";
  *
  * function run(config: Core.M3LConfig): void {

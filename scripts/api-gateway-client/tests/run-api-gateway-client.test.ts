@@ -21,7 +21,7 @@ vi.mock("../src/steps/batch-request.js", () => ({
   batchRequest: batchRequestMock,
 }));
 
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 import { runApiGatewayClient } from "../src/steps/run-api-gateway-client.js";
 import { buildConfig, createFakeHttpClient } from "./support/httpFakes.js";

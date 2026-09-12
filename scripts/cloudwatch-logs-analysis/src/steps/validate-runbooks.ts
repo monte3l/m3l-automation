@@ -1,4 +1,4 @@
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 import { buildAnalysisProcedure } from "./build-procedure.js";
 import { listRunbooks, loadRunbook } from "./load-runbook.js";
@@ -90,7 +90,7 @@ function todoProblems(
  *
  * @example
  * ```typescript
- * import { Core } from "@m3l-automation/m3l-common";
+ * import { Core } from "@monte3l/m3l-common";
  * import { validateRunbooks } from "./validate-runbooks.js";
  *
  * const paths = new Core.M3LPaths();
@@ -131,7 +131,7 @@ export async function validateRunbooks(
  *
  * @example
  * ```typescript
- * import { Core } from "@m3l-automation/m3l-common";
+ * import { Core } from "@monte3l/m3l-common";
  * import { reportValidation } from "./validate-runbooks.js";
  *
  * reportValidation(new Core.M3LLogger([]), { checked: 1, problems: [] });

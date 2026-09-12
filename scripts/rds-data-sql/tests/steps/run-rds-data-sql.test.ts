@@ -8,7 +8,7 @@ vi.mock("../../src/steps/preflight-secret.js", () => ({
   preflightSecret: vi.fn(),
 }));
 
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 import { runQuery } from "../../src/steps/run-query.js";
 import { runLoad } from "../../src/steps/run-load.js";

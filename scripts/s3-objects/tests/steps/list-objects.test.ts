@@ -4,7 +4,7 @@ import { EventEmitter } from "node:events";
 
 import { afterEach, describe, expect, expectTypeOf, test, vi } from "vitest";
 
-import type * as M3LCommon from "@m3l-automation/m3l-common";
+import type * as M3LCommon from "@monte3l/m3l-common";
 
 // Make 'node:fs' configurable so vi.spyOn can intercept createWriteStream —
 // mirrors scripts/dynamodb-crud/tests/run-dynamodb-crud.test.ts. This is the
@@ -15,12 +15,12 @@ vi.mock("node:fs", async () => {
   return { ...actual };
 });
 
-vi.mock("@m3l-automation/m3l-common", async (importOriginal) => {
+vi.mock("@monte3l/m3l-common", async (importOriginal) => {
   const actual = await importOriginal<typeof M3LCommon>();
   return { ...actual, AWS: { ...actual.AWS, listObjects: vi.fn() } };
 });
 
-import { AWS, Core } from "@m3l-automation/m3l-common";
+import { AWS, Core } from "@monte3l/m3l-common";
 
 import type { RunListObjectsSummary } from "../../src/steps/list-objects.js";
 import { runListObjects } from "../../src/steps/list-objects.js";

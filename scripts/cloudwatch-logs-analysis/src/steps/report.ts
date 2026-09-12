@@ -1,4 +1,4 @@
-import type { Core } from "@m3l-automation/m3l-common";
+import type { Core } from "@monte3l/m3l-common";
 
 import type {
   AnalysisConclusion,
@@ -247,7 +247,7 @@ function describeIncomplete(
  *
  * @example
  * ```typescript
- * import { Core } from "@m3l-automation/m3l-common";
+ * import { Core } from "@monte3l/m3l-common";
  * import { logReport } from "./report.js";
  *
  * declare const report: import("./report.js").AnalysisReport;

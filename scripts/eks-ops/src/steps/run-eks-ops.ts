@@ -1,5 +1,5 @@
-import { Core } from "@m3l-automation/m3l-common";
-import type { AWS } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
+import type { AWS } from "@monte3l/m3l-common";
 
 import {
   EKS_OPS_OPERATIONS,
@@ -654,7 +654,7 @@ const pipeline = new Core.M3LOperationPipeline<
  *
  * @example
  * ```typescript
- * import { AWS, Core } from "@m3l-automation/m3l-common";
+ * import { AWS, Core } from "@monte3l/m3l-common";
  * import { runEksOps } from "./run-eks-ops.js";
  *
  * declare const operations: AWS.M3LEKSOperations;

@@ -1,4 +1,4 @@
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 const BATCH_SIZE_MIN = 1;
 const BATCH_SIZE_MAX = 10_000;

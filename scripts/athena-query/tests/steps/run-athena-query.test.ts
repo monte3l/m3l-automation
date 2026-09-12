@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, expectTypeOf, it, vi } from "vitest";
 
-import type * as M3LCommon from "@m3l-automation/m3l-common";
+import type * as M3LCommon from "@monte3l/m3l-common";
 
 /**
  * Contract: docs/reference/scripts/athena-query.md, `run-athena-query` row +
@@ -18,7 +18,7 @@ import type * as M3LCommon from "@m3l-automation/m3l-common";
  * terminal-failure. `Core.M3LCheckpointStore` is a stable library class
  * (constructed directly by the source, not a locally dynamic-imported step),
  * so it is intercepted via a package-level
- * `vi.mock("@m3l-automation/m3l-common", ...)` factory that spreads the real
+ * `vi.mock("@monte3l/m3l-common", ...)` factory that spreads the real
  * module and overrides only `Core.M3LCheckpointStore` with a mocked
  * constructor — matching `scripts/lambda-ops/tests/run-lambda-ops.test.ts`'s
  * pattern for `Core.confirmDestructive`. There is a `resolve-settings` step
@@ -28,7 +28,7 @@ import type * as M3LCommon from "@m3l-automation/m3l-common";
  * exercised directly here rather than mocked.
  */
 
-// vi.hoisted() is required here: @m3l-automation/m3l-common is imported
+// vi.hoisted() is required here: @monte3l/m3l-common is imported
 // statically below, so its vi.mock factory runs eagerly at module-eval time
 // when that import is resolved — before a plain top-level `const` would have
 // initialized.
@@ -42,7 +42,7 @@ const exportResultsMock = vi.hoisted(() =>
   vi.fn().mockResolvedValue(undefined),
 );
 
-vi.mock("@m3l-automation/m3l-common", async (importOriginal) => {
+vi.mock("@monte3l/m3l-common", async (importOriginal) => {
   const actual = await importOriginal<typeof M3LCommon>();
   return {
     ...actual,
@@ -66,7 +66,7 @@ vi.mock("../../src/steps/export-results.js", () => ({
   exportResults: exportResultsMock,
 }));
 
-import { AWS, Core } from "@m3l-automation/m3l-common";
+import { AWS, Core } from "@monte3l/m3l-common";
 
 import {
   isAthenaCheckpoint,

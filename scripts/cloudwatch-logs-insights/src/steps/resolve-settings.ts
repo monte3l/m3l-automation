@@ -10,7 +10,7 @@
  * ISO-8601 parse the per-parameter validators cannot express.
  */
 
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 /** Milliseconds in one second, used to convert `Date.parse` output to epoch seconds. */
 const MS_PER_SECOND = 1000;
@@ -92,7 +92,7 @@ function parseEpochSeconds(
  *
  * @example
  * ```ts
- * import type { Core } from "@m3l-automation/m3l-common";
+ * import type { Core } from "@monte3l/m3l-common";
  * import { resolveSettings } from "./resolve-settings.js";
  *
  * function run(config: Core.M3LConfig): void {

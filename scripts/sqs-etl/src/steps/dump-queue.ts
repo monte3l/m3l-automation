@@ -1,5 +1,5 @@
-import { Core } from "@m3l-automation/m3l-common";
-import type { AWS } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
+import type { AWS } from "@monte3l/m3l-common";
 
 /**
  * `dump-queue` — long-polls `receive()` (10 messages/call,
@@ -206,10 +206,10 @@ async function runDumpPages(
  *
  * @example
  * ```typescript
- * import { Core } from "@m3l-automation/m3l-common";
+ * import { Core } from "@monte3l/m3l-common";
  * import { dumpQueue } from "./dump-queue.js";
  *
- * declare const sqsOperations: import("@m3l-automation/m3l-common/aws").M3LSQSOperations;
+ * declare const sqsOperations: import("@monte3l/m3l-common/aws").M3LSQSOperations;
  *
  * await dumpQueue({
  *   config: await new Core.M3LScript({

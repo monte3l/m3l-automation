@@ -1,5 +1,5 @@
-import { Core } from "@m3l-automation/m3l-common";
-import type { AWS } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
+import type { AWS } from "@monte3l/m3l-common";
 
 /**
  * The dependencies `readClusters` needs, already resolved and guard-checked
@@ -31,7 +31,7 @@ interface ReadClustersDeps {
  *
  * @example
  * ```typescript
- * import type { AWS } from "@m3l-automation/m3l-common";
+ * import type { AWS } from "@monte3l/m3l-common";
  * import { readClusters } from "./read-clusters.js";
  *
  * // `operations` is injected by the caller, e.g.

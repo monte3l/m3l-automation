@@ -10,7 +10,7 @@
  * rather than passing it through as `undefined`.
  */
 
-import { Core, type AWS } from "@m3l-automation/m3l-common";
+import { Core, type AWS } from "@monte3l/m3l-common";
 
 /** The `M3LError` code every `resolveAthenaSettings` guard throws with. */
 const ATHENA_SETTINGS_CODE = "ERR_ATHENA_SETTINGS";
@@ -81,7 +81,7 @@ function buildStartInput(
  *
  * @example
  * ```ts
- * import type { Core } from "@m3l-automation/m3l-common";
+ * import type { Core } from "@monte3l/m3l-common";
  * import { resolveAthenaSettings } from "./resolve-settings.js";
  *
  * function run(config: Core.M3LConfig): void {

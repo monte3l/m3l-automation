@@ -1,4 +1,4 @@
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 const WINDOW_MINUTES_MIN = 1;
 const WINDOW_MINUTES_MAX = 1440;

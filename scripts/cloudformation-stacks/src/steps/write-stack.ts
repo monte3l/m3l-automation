@@ -1,5 +1,5 @@
-import { Core } from "@m3l-automation/m3l-common";
-import type { AWS } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
+import type { AWS } from "@monte3l/m3l-common";
 
 /** The three mutating operations `writeStack` dispatches. */
 type WriteOperation = "create-stack" | "update-stack" | "delete-stack";
@@ -178,8 +178,8 @@ function buildUpdateStackInput(
  *
  * @example
  * ```typescript
- * import type { AWS } from "@m3l-automation/m3l-common";
- * import { Core } from "@m3l-automation/m3l-common";
+ * import type { AWS } from "@monte3l/m3l-common";
+ * import { Core } from "@monte3l/m3l-common";
  * import { writeStack } from "./write-stack.js";
  *
  * // `operations`/`reader` are injected by the caller, e.g.

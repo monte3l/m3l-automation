@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
 
-import type * as M3LCommon from "@m3l-automation/m3l-common";
+import type * as M3LCommon from "@monte3l/m3l-common";
 
 /**
  * Contract: spec-conformance-reviewer's `scripts/eventbridge-schedules`
@@ -12,7 +12,7 @@ import type * as M3LCommon from "@m3l-automation/m3l-common";
  * `${operation} rule '${ruleNameForDisplay}'`; `list`/`describe` skip the
  * gate entirely. `Core.confirmDestructive` is a stable library function, not
  * a locally dynamic-imported step, so it is intercepted via a package-level
- * `vi.mock("@m3l-automation/m3l-common", ...)` factory that spreads the real
+ * `vi.mock("@monte3l/m3l-common", ...)` factory that spreads the real
  * module and overrides only `Core.confirmDestructive`, rather than a
  * `vi.mock` of a local module path.
  * `api-gateway-client/tests/run-api-gateway-client.test.ts`
@@ -48,7 +48,7 @@ const deleteRuleMock = vi.fn();
 const enableRuleMock = vi.fn();
 const disableRuleMock = vi.fn();
 // vi.hoisted() is required here (unlike the plain vi.fn() step mocks below):
-// @m3l-automation/m3l-common is imported statically below, so its vi.mock
+// @monte3l/m3l-common is imported statically below, so its vi.mock
 // factory runs eagerly at module-eval time when that import is resolved —
 // before a plain top-level `const` would have initialized. The relative-path
 // step mocks are only resolved lazily via the dispatcher's dynamic import()
@@ -79,7 +79,7 @@ vi.mock("../src/steps/enable-rule.js", () => ({
 vi.mock("../src/steps/disable-rule.js", () => ({
   disableRule: disableRuleMock,
 }));
-vi.mock("@m3l-automation/m3l-common", async (importOriginal) => {
+vi.mock("@monte3l/m3l-common", async (importOriginal) => {
   const actual = await importOriginal<typeof M3LCommon>();
   gateHolder.real = actual.Core.confirmDestructive;
   return {
@@ -88,8 +88,8 @@ vi.mock("@m3l-automation/m3l-common", async (importOriginal) => {
   };
 });
 
-import { Core } from "@m3l-automation/m3l-common";
-import type { AWS } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
+import type { AWS } from "@monte3l/m3l-common";
 
 import { runEventbridgeSchedules } from "../src/steps/run-eventbridge-schedules.js";
 

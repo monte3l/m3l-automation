@@ -18,7 +18,7 @@
  * unchanged, as a general-purpose export path.
  */
 
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 import type { LogsInsightsRow } from "./checkpoint.js";
 
@@ -33,7 +33,7 @@ import type { LogsInsightsRow } from "./checkpoint.js";
  *
  * @example
  * ```ts
- * import type { Core } from "@m3l-automation/m3l-common";
+ * import type { Core } from "@monte3l/m3l-common";
  * import { exportResults } from "./export-results.js";
  *
  * async function finish(paths: Core.M3LPaths): Promise<void> {

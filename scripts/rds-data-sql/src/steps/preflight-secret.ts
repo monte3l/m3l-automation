@@ -8,7 +8,7 @@
  * opaque Data API `BadRequestException` surfacing mid-statement.
  */
 
-import { Core, type AWS } from "@m3l-automation/m3l-common";
+import { Core, type AWS } from "@monte3l/m3l-common";
 
 /** The `Core.M3LError` code `preflightSecret` throws with on a failed `describeSecret` call. */
 const SECRET_PREFLIGHT_CODE = "ERR_RDS_DATA_SQL_SECRET_PREFLIGHT";
@@ -32,7 +32,7 @@ export interface PreflightSecretDeps {
  *
  * @example
  * ```ts
- * import type { Core } from "@m3l-automation/m3l-common";
+ * import type { Core } from "@monte3l/m3l-common";
  * import { preflightSecret } from "./preflight-secret.js";
  *
  * async function run(script: Core.M3LScript, secretArn: string): Promise<void> {

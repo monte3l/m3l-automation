@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, expectTypeOf, test, vi } from "vitest";
 
-import { Core } from "@m3l-automation/m3l-common";
-import type { AWS } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
+import type { AWS } from "@monte3l/m3l-common";
 
 import { writeService } from "../src/steps/write-service.js";
 import { createFakeEcsOperations } from "./support/ecsFakes.js";

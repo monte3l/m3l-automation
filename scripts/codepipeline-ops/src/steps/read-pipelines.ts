@@ -1,5 +1,5 @@
-import { Core } from "@m3l-automation/m3l-common";
-import type { AWS } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
+import type { AWS } from "@monte3l/m3l-common";
 
 /**
  * The dependencies `readPipelines` needs, already resolved and guard-checked
@@ -42,7 +42,7 @@ interface ReadPipelinesDeps {
  *
  * @example
  * ```typescript
- * import type { AWS } from "@m3l-automation/m3l-common";
+ * import type { AWS } from "@monte3l/m3l-common";
  * import { readPipelines } from "./read-pipelines.js";
  *
  * // `operations` is injected by the caller, e.g.

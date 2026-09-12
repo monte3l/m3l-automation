@@ -11,7 +11,7 @@
  * pass, per `docs/reference/scripts/rds-data-sql.md`'s `run-migrate` row.
  */
 
-import { Core, type AWS } from "@m3l-automation/m3l-common";
+import { Core, type AWS } from "@monte3l/m3l-common";
 
 /** The `Core.M3LError` code thrown when a migration file fails this step's own validation. */
 const MIGRATION_INVALID_CODE = "ERR_RDS_DATA_SQL_MIGRATION_INVALID";
@@ -287,7 +287,7 @@ async function applyPendingMigrations(
  *
  * @example
  * ```ts
- * import { Core, type AWS } from "@m3l-automation/m3l-common";
+ * import { Core, type AWS } from "@monte3l/m3l-common";
  * import { runMigrate } from "./run-migrate.js";
  *
  * async function run(

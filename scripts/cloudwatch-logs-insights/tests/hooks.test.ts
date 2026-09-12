@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import type * as M3LCommon from "@m3l-automation/m3l-common";
+import type * as M3LCommon from "@monte3l/m3l-common";
 
 /**
  * Contract: src/hooks.ts. `buildHooks(paths)` returns an
@@ -11,7 +11,7 @@ import type * as M3LCommon from "@m3l-automation/m3l-common";
  * short-circuits before the store is even constructed.
  *
  * `Core.M3LCheckpointStore` is mocked via the package-level
- * `vi.mock("@m3l-automation/m3l-common", ...)` factory (same pattern as
+ * `vi.mock("@monte3l/m3l-common", ...)` factory (same pattern as
  * `run-cloudwatch-logs-insights.test.ts`) so this file asserts the hook's
  * branching in isolation.
  */
@@ -22,7 +22,7 @@ const checkpointMocks = vi.hoisted(() => ({
   delete: vi.fn().mockResolvedValue(undefined),
 }));
 
-vi.mock("@m3l-automation/m3l-common", async (importOriginal) => {
+vi.mock("@monte3l/m3l-common", async (importOriginal) => {
   const actual = await importOriginal<typeof M3LCommon>();
   return {
     ...actual,
@@ -42,7 +42,7 @@ vi.mock("@m3l-automation/m3l-common", async (importOriginal) => {
   };
 });
 
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 import { buildHooks } from "../src/hooks.js";
 

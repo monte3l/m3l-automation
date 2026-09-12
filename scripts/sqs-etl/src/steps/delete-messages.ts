@@ -1,7 +1,7 @@
 import * as fsp from "node:fs/promises";
 
-import { Core } from "@m3l-automation/m3l-common";
-import type { AWS } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
+import type { AWS } from "@monte3l/m3l-common";
 
 /**
  * `delete-messages` — streams `input` JSONL (`{ receiptHandle }` rows),
@@ -182,10 +182,10 @@ async function runDeleteBatches(
  *
  * @example
  * ```typescript
- * import { Core } from "@m3l-automation/m3l-common";
+ * import { Core } from "@monte3l/m3l-common";
  * import { deleteMessages } from "./delete-messages.js";
  *
- * declare const sqsOperations: import("@m3l-automation/m3l-common/aws").M3LSQSOperations;
+ * declare const sqsOperations: import("@monte3l/m3l-common/aws").M3LSQSOperations;
  *
  * await deleteMessages({
  *   config: await new Core.M3LScript({

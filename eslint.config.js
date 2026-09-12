@@ -137,8 +137,14 @@ export default tseslint.config(
 
       // Workspace packages resolve via dist/, which doesn't exist pre-build.
       // TypeScript (pnpm typecheck) is the authoritative resolver for these
-      // imports, so suppressing the ESLint check here is safe.
-      "import-x/no-unresolved": ["error", { ignore: ["^@m3l-automation/"] }],
+      // imports, so suppressing the ESLint check here is safe. `@monte3l/`
+      // covers m3l-common's ADR-0103 renamed specifier (used directly in
+      // scripts/*/src as of the P4a slice) alongside every other package's
+      // pre-existing `@m3l-automation/` scope.
+      "import-x/no-unresolved": [
+        "error",
+        { ignore: ["^@m3l-automation/", "^@monte3l/"] },
+      ],
     },
   },
   {
@@ -294,9 +300,9 @@ export default tseslint.config(
           // Non-literal arguments (template/variable specifiers) can't be
           // checked statically and are out of scope here.
           selector:
-            "ImportExpression[source.type='Literal'][source.value=/^(?!\\.)(?!node:)(?!@m3l-automation\\/m3l-common($|\\/)).+$/]",
+            "ImportExpression[source.type='Literal'][source.value=/^(?!\\.)(?!node:)(?!@monte3l\\/m3l-common($|\\/)).+$/]",
           message:
-            "Scripts may only dynamically import @m3l-automation/m3l-common (or a subpath), node: builtins, or a relative module — ADR-0029 bans script-local dependencies.",
+            "Scripts may only dynamically import @monte3l/m3l-common (or a subpath), node: builtins, or a relative module — ADR-0029 bans script-local dependencies.",
         },
       ],
     },
@@ -339,7 +345,7 @@ export default tseslint.config(
   },
   {
     // Scripts must never import the AWS SDK directly — all AWS SDK usage is
-    // mediated through @m3l-automation/m3l-common/aws (ADR-0027).
+    // mediated through @monte3l/m3l-common/aws (ADR-0027).
     // packages/m3l-common/src/** is intentionally NOT covered by this block:
     // the library itself legitimately imports the SDK. Kept in its own block
     // (not merged with the no-restricted-syntax block above): this rule key
@@ -369,7 +375,7 @@ export default tseslint.config(
               group: ["@aws-sdk", "@aws-sdk/*", "@aws-sdk/**"],
               allowTypeImports: false,
               message:
-                "Scripts must not import @aws-sdk/* directly — use the typed wrappers in @m3l-automation/m3l-common/aws (e.g. M3LLogsInsightsClient). ADR-0027.",
+                "Scripts must not import @aws-sdk/* directly — use the typed wrappers in @monte3l/m3l-common/aws (e.g. M3LLogsInsightsClient). ADR-0027.",
             },
             {
               // Any bare (non-relative) specifier that is neither the
@@ -382,12 +388,12 @@ export default tseslint.config(
               // `($|/)` so a prefix-squat (`@aws-sdk-evil/x`, `@aws-sdkx`)
               // is still banned here rather than slipping past both rules.
               // The library lookahead is bounded the same way so
-              // `@m3l-automation/m3l-common-evil` is banned too.
+              // `@monte3l/m3l-common-evil` is banned too.
               regex:
-                "^(?!\\.)(?!node:)(?!@aws-sdk($|/))(?!@m3l-automation/m3l-common($|/)).+$",
+                "^(?!\\.)(?!node:)(?!@aws-sdk($|/))(?!@monte3l/m3l-common($|/)).+$",
               allowTypeImports: false,
               message:
-                "Scripts may only import @m3l-automation/m3l-common (or a subpath) and node: builtins — ADR-0029 bans script-local dependencies; a new capability becomes a library wrapper first.",
+                "Scripts may only import @monte3l/m3l-common (or a subpath) and node: builtins — ADR-0029 bans script-local dependencies; a new capability becomes a library wrapper first.",
             },
           ],
         },
@@ -401,7 +407,7 @@ export default tseslint.config(
     // past both the static and dynamic checks there, and past
     // check:script-deps (which only inspects package.json manifests, not
     // import statements). Each script depends only on
-    // @m3l-automation/m3l-common; anything shared across scripts belongs in
+    // @monte3l/m3l-common; anything shared across scripts belongs in
     // the library, not a relative import of another script's src. One zone
     // per script directory, generated from the scripts/ directory listing
     // (see scriptPackageNames above) so a new script is covered automatically.
@@ -422,7 +428,7 @@ export default tseslint.config(
               target: `./scripts/${name}`,
               from: "./scripts",
               except: [name],
-              message: `scripts/${name} may not import another script package directly — each script depends only on @m3l-automation/m3l-common (ADR-0029); shared logic belongs in the library.`,
+              message: `scripts/${name} may not import another script package directly — each script depends only on @monte3l/m3l-common (ADR-0029); shared logic belongs in the library.`,
             })),
             {
               // A `target`/`from` containing a glob character is routed
@@ -472,9 +478,9 @@ export default tseslint.config(
         },
         {
           selector:
-            "ImportExpression[source.type='Literal'][source.value=/^(?!\\.)(?!node:)(?!@m3l-automation\\/m3l-common($|\\/)).+$/]",
+            "ImportExpression[source.type='Literal'][source.value=/^(?!\\.)(?!node:)(?!@monte3l\\/m3l-common($|\\/)).+$/]",
           message:
-            "Scripts may only dynamically import @m3l-automation/m3l-common (or a subpath), node: builtins, or a relative module — ADR-0029 bans script-local dependencies.",
+            "Scripts may only dynamically import @monte3l/m3l-common (or a subpath), node: builtins, or a relative module — ADR-0029 bans script-local dependencies.",
         },
         {
           selector: "FunctionDeclaration[id.name!='main']",
@@ -519,9 +525,9 @@ export default tseslint.config(
         },
         {
           selector:
-            "ImportExpression[source.type='Literal'][source.value=/^(?!\\.)(?!node:)(?!@m3l-automation\\/m3l-common($|\\/)).+$/]",
+            "ImportExpression[source.type='Literal'][source.value=/^(?!\\.)(?!node:)(?!@monte3l\\/m3l-common($|\\/)).+$/]",
           message:
-            "Scripts may only dynamically import @m3l-automation/m3l-common (or a subpath), node: builtins, or a relative module — ADR-0029 bans script-local dependencies.",
+            "Scripts may only dynamically import @monte3l/m3l-common (or a subpath), node: builtins, or a relative module — ADR-0029 bans script-local dependencies.",
         },
         {
           selector: "TSEnumDeclaration",
