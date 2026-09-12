@@ -645,4 +645,16 @@ describe("the per-instance sweep ceiling", () => {
       rotated,
     ]);
   });
+
+  test("falls back to the default ceiling, and still sweeps, when maxSweepSeals is NaN", async () => {
+    // `Math.max(0, NaN)` is `NaN`, and `Array.prototype.slice(0, NaN)` is
+    // EMPTY — a malformed override must not silently turn the sweep off.
+    await seedBaseline(null);
+    const stale = await writeSegment(segmentName(YESTERDAY, 1));
+    await writeSegment(segmentName(TODAY, 1));
+
+    await createSealer({ maxSweepSeals: NaN }).sealAfterAppend(undefined);
+
+    expect(await sealedNames()).toEqual([stale]);
+  });
 });

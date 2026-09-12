@@ -49,10 +49,12 @@
  * @packageDocumentation
  */
 
+import { createHash } from "node:crypto";
 import type * as FsPromises from "node:fs/promises";
 import {
   link,
   mkdtemp,
+  readFile,
   rm,
   symlink,
   unlink,
@@ -88,6 +90,14 @@ import type {
 const faults = vi.hoisted(() => ({
   openFault: undefined as
     ((file: string, flags: number) => Error | undefined) | undefined,
+  /**
+   * Like `openFault`, but awaited and free to perform its own I/O first — the
+   * one seam that lets a test mutate a segment's bytes at the exact instant
+   * between a failed append attempt and its retry, which a synchronous
+   * `openFault` cannot do.
+   */
+  openAsyncFault: undefined as
+    ((file: string, flags: number) => Promise<Error | undefined>) | undefined,
   listingError: undefined as Error | undefined,
   opened: [] as { file: string; flags: number }[],
 }));
@@ -112,7 +122,11 @@ vi.mock("node:fs/promises", async (importOriginal) => {
     mode?: number,
   ): Promise<FsPromises.FileHandle> => {
     faults.opened.push({ file, flags });
-    const fault = faults.openFault?.(file, flags);
+    const { openAsyncFault } = faults;
+    const fault =
+      openAsyncFault !== undefined
+        ? await openAsyncFault(file, flags)
+        : faults.openFault?.(file, flags);
     if (fault !== undefined) {
       throw fault;
     }
@@ -130,6 +144,7 @@ vi.mock("node:fs/promises", async (importOriginal) => {
 
 afterEach(() => {
   faults.openFault = undefined;
+  faults.openAsyncFault = undefined;
   faults.listingError = undefined;
   faults.opened = [];
 });
@@ -312,6 +327,14 @@ interface FaultScenario {
    * damages some other way.
    */
   readonly rotatedFrom?: string;
+  /**
+   * `false` marks a row whose fault damages only {@link ROTATED} (or a
+   * caller-supplied `rotatedFrom` the sweep-only variant below never passes)
+   * — `ROTATED` is today-dated, so the sweep never touches it. Such a row
+   * stages no fault at all when driven with no rotation, and a `resolves`
+   * assertion against an unfaulted sealer proves nothing. Defaults to `true`.
+   */
+  readonly sweepReachable?: boolean;
 }
 
 const NO_OVERRIDES: Partial<AppendOnlySealerOptions> = {};
@@ -323,6 +346,7 @@ const FAULTS: readonly FaultScenario[] = [
       await unlink(inSandbox(ROTATED));
       return NO_OVERRIDES;
     },
+    sweepReachable: false,
   },
   {
     name: "the rotated segment has been replaced by a symlink",
@@ -331,6 +355,7 @@ const FAULTS: readonly FaultScenario[] = [
       await symlink(inSandbox(segmentName(TODAY, 2)), inSandbox(ROTATED));
       return NO_OVERRIDES;
     },
+    sweepReachable: false,
   },
   {
     name: "the rotated segment carries a second hard link",
@@ -338,6 +363,7 @@ const FAULTS: readonly FaultScenario[] = [
       await link(inSandbox(ROTATED), inSandbox("planted-second-link"));
       return NO_OVERRIDES;
     },
+    sweepReachable: false,
   },
   {
     name: "the rotated segment exceeds the digest ceiling",
@@ -417,6 +443,7 @@ const FAULTS: readonly FaultScenario[] = [
         },
       };
     },
+    sweepReachable: false,
   },
   {
     name: "the onSealFailed handler itself throws",
@@ -428,6 +455,7 @@ const FAULTS: readonly FaultScenario[] = [
         },
       };
     },
+    sweepReachable: false,
   },
   {
     // A name no writer here renders reaches the sealer as a SHAPE fault, not
@@ -438,8 +466,23 @@ const FAULTS: readonly FaultScenario[] = [
     name: "the rotated name is not one this writer would produce",
     arm: () => NO_OVERRIDES,
     rotatedFrom: "not-a-segment.txt",
+    // The no-rotation variant below never passes `rotatedFrom` at all, so
+    // this row's only fault (a bad `rotatedFrom`) never reaches the sealer
+    // there — `arm` itself stages `NO_OVERRIDES`.
+    sweepReachable: false,
   },
 ];
+
+/**
+ * The rows that stage a fault reachable WITHOUT a rotation — everything else
+ * in {@link FAULTS} damages only {@link ROTATED} (today-dated, so the sweep
+ * never reaches it) or a `rotatedFrom` the no-rotation variant never passes.
+ * Those rows would run `resolves` against an unfaulted sealer, which cannot
+ * fail regardless of which mutation shipped.
+ */
+const SWEEP_REACHABLE_FAULTS: readonly FaultScenario[] = FAULTS.filter(
+  (fault) => fault.sweepReachable !== false,
+);
 
 describe("the sealer never throws", () => {
   test.each(FAULTS)("resolves when $name", async ({ arm, rotatedFrom }) => {
@@ -451,7 +494,7 @@ describe("the sealer never throws", () => {
     ).resolves.toBeUndefined();
   });
 
-  test.each(FAULTS)(
+  test.each(SWEEP_REACHABLE_FAULTS)(
     "resolves when $name and no append rotated",
     async ({ arm }) => {
       // The sweep reaches most of these faults by a different route than the
@@ -575,6 +618,82 @@ describe("reporting a failed seal", () => {
     expect([...contents.seals.keys()].toSorted()).toEqual([good, ROTATED]);
     expect(reported.map((failure) => failure.segment)).toEqual([bad]);
   });
+
+  test("reports a foreign-shaped rotated name with segment undefined and no part of the name", async () => {
+    // The one path where the name is provably NOT writer-derived: it can only
+    // have arrived through the caller-supplied `rotatedFrom`, never through
+    // the inventory or the writer's own counter. A traversal-shaped name
+    // states the actual risk, rather than a merely-malformed one.
+    await seedHealthyTrail();
+    const foreignName = "../../../../etc/passwd";
+
+    await createSealer().sealAfterAppend(foreignName);
+
+    const failure = definedOrThrow(reported.at(0), "a reported failure");
+    expect(failure.segment).toBeUndefined();
+    const context = JSON.stringify(failure.error.context) ?? "";
+    for (const fragment of ["etc", "passwd", foreignName]) {
+      expect(failure.error.message).not.toContain(fragment);
+      expect(context).not.toContain(fragment);
+    }
+  });
+
+  test("marks the sweep attempted before the manifest load, reporting an unreadable manifest once across many appends", async () => {
+    // Previously `#swept` was set AFTER `loadOrInitializeManifest`, so a
+    // manifest that never becomes readable meant every later non-rotating
+    // append re-entered, re-opened it, failed again, and reported again —
+    // once per append, forever. Marking the ATTEMPT (not the outcome) before
+    // the load is what bounds this to one open and one report for the life
+    // of the instance.
+    await symlink(
+      inSandbox("does-not-exist.jsonl"),
+      inSandbox(M3L_APPEND_ONLY_MANIFEST_NAME),
+    );
+    const sealer = createSealer();
+
+    await sealer.sealAfterAppend(undefined);
+    await sealer.sealAfterAppend(undefined);
+    await sealer.sealAfterAppend(undefined);
+
+    expect(reported).toHaveLength(1);
+    expect(opensOf(M3L_APPEND_ONLY_MANIFEST_NAME)).toBe(1);
+  });
+
+  test("a throwing onSealFailed does not abandon the rest of a multi-candidate sweep", async () => {
+    // The existing throwing-handler fixture (`FAULTS`, "the onSealFailed
+    // handler itself throws") runs against a sweep set of exactly one
+    // candidate, so the subordinate guard's claim — that a throwing reporter
+    // does not abandon the REST of a sweep — is never actually exercised.
+    // Two candidates here, the first damaged and the second healthy, close
+    // that gap.
+    await seedBaseline(null);
+    const badStale = await writeSegment(segmentName(YESTERDAY, 1));
+    const goodStale = await writeSegment(segmentName(YESTERDAY, 2));
+    await writeSegment(segmentName(TODAY, 1));
+    faults.openFault = (file) =>
+      path.basename(file) === badStale
+        ? new Error("a permanent EIO on the first candidate only")
+        : undefined;
+    const sealer = new AppendOnlySealer({
+      directory: sandbox,
+      maxSegmentBytes: 8_388_608,
+      maxLineBytes: 65_536,
+      maxManifestBytes: AMPLE_MAX_BYTES,
+      buildError: failurePort(),
+      onSealFailed: () => {
+        throw new Error("a handler that cannot handle");
+      },
+    });
+
+    await sealer.sealAfterAppend(undefined);
+
+    const contents = await readManifest(
+      sandbox,
+      AMPLE_MAX_BYTES,
+      failurePort(),
+    );
+    expect([...contents.seals.keys()]).toContain(goodStale);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -630,5 +749,69 @@ describe("bounded in-process retry", () => {
     await createSealer().sealAfterAppend(ROTATED);
 
     expect(opensOf(ROTATED)).toBeGreaterThan(1);
+  });
+
+  test("holds the measurement fixed across a retried append, even when the segment changes mid-retry", async () => {
+    // The hazard this pins: `appendSeal` failing AFTER its line already
+    // reached the manifest, retried against a FRESH digest, would write a
+    // claim that disagrees with the one already on disk if the segment
+    // changed between attempts — and two disagreeing seals for one segment
+    // are documented as fatal at read time. Splitting `measureSegment` from
+    // `appendClaim` and holding the claim fixed across the append retry is
+    // what makes a retry-born duplicate agree with the original by
+    // construction, never merely by chance.
+    await seedBaseline(null);
+    const rotated = await writeSegment(ROTATED);
+    const originalBytes = await readFile(inSandbox(rotated));
+    const originalSha256 = createHash("sha256")
+      .update(originalBytes)
+      .digest("hex");
+    let manifestAppendAttempts = 0;
+    faults.openAsyncFault = async (file, flags) => {
+      if (
+        path.basename(file) !== M3L_APPEND_ONLY_MANIFEST_NAME ||
+        flags !== APPEND_FLAGS
+      ) {
+        return undefined;
+      }
+      manifestAppendAttempts += 1;
+      if (manifestAppendAttempts === 1) {
+        // Mutate the segment's bytes between the failed first attempt and
+        // the retry that follows it — a rotation or a concurrent writer,
+        // simulated as a direct rewrite.
+        await writeFile(inSandbox(rotated), "mutated-after-first-attempt\n");
+        return new Error("simulated failure on the first append attempt");
+      }
+      return undefined;
+    };
+
+    await createSealer({ maxSealAttempts: 3 }).sealAfterAppend(rotated);
+
+    const contents = await readManifest(
+      sandbox,
+      AMPLE_MAX_BYTES,
+      failurePort(),
+    );
+    const seal = definedOrThrow(contents.seals.get(rotated), "the seal");
+    expect(seal.sha256).toBe(originalSha256);
+    // The digest itself ran exactly once — the retry is entirely on the
+    // append half, never a second measurement.
+    expect(opensOf(rotated)).toBe(1);
+  });
+
+  test("falls back to the default attempt count, and still retries, when maxSealAttempts is NaN", async () => {
+    // `Math.max(1, NaN)` is `NaN`, and a `NaN` loop bound runs the retry ZERO
+    // times — a malformed override must not silently disable the retry.
+    await seedHealthyTrail();
+    faults.openFault = (file) =>
+      path.basename(file) === ROTATED
+        ? new Error("a permanent EIO on every digest attempt")
+        : undefined;
+
+    await createSealer({ maxSealAttempts: NaN }).sealAfterAppend(ROTATED);
+
+    // The documented default (`DEFAULT_MAX_SEAL_ATTEMPTS`) is 3 — this
+    // fixture proves the fallback lands there, not merely that it is >= 1.
+    expect(opensOf(ROTATED)).toBe(3);
   });
 });

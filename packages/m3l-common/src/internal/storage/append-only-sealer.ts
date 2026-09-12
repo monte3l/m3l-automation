@@ -48,22 +48,21 @@
  * @packageDocumentation
  */
 
-import path from "node:path";
-
 import { M3LError } from "../../core/errors/index.js";
 import type { M3LAppendOnlySegment } from "../../core/storage/append-only-read-types.js";
-import { digestSegmentFile } from "./append-only-digest.js";
 import type { AppendOnlyReadFailure } from "./append-only-lines.js";
 import type { ManifestContents } from "./append-only-manifest.js";
-import {
-  appendSeal,
-  loadOrInitializeManifest,
-} from "./append-only-manifest.js";
+import { loadOrInitializeManifest } from "./append-only-manifest.js";
+import { appendClaim, measureSegment } from "./append-only-seal-attempt.js";
 import {
   currentDatePrefix,
   listSegmentFiles,
   parseSegmentName,
 } from "./append-only-segments.js";
+import {
+  baselineBoundaryKey,
+  isAtOrBeforeBaseline,
+} from "./append-only-sweep-policy.js";
 
 /**
  * How many segments one instance's cold-start sweep may seal. A pathological
@@ -80,15 +79,6 @@ const DEFAULT_MAX_SWEEP_SEALS = 64;
  * filesystem that is genuinely down.
  */
 const DEFAULT_MAX_SEAL_ATTEMPTS = 3;
-
-/**
- * The zero-padded width a sequence number is rendered at when two segment
- * names are ORDERED as strings. Wide enough that the padding, not the digit
- * count, decides the comparison — `padStart(4)` would order `9999` after
- * `10000`, which is the ordering `./append-only-segments.js`'s numeric sort
- * already rejects.
- */
-const SEQUENCE_KEY_WIDTH = 12;
 
 /** Reported when a segment's directory inventory cannot be taken. */
 const LISTING_FAILURE_MESSAGE =
@@ -114,7 +104,10 @@ export interface AppendOnlySealFailure {
    *
    * A segment NAME is sanctioned here where a directory path is not: it
    * derives from the writer's own clock and counter, carries zero caller
-   * bytes, and is already public through `listSegments()`.
+   * bytes, and is already public through `listSegments()`. The one exception
+   * is a name {@link parseSegmentName} declines: see
+   * {@link AppendOnlySealer.#sealSegment} for why that name is exactly the
+   * one this carve-out's reasoning does not cover, and reports `undefined`.
    */
   readonly segment: string | undefined;
   /**
@@ -146,57 +139,40 @@ export interface AppendOnlySealerOptions {
    * that throws cannot break it either.
    */
   readonly onSealFailed?: (failure: AppendOnlySealFailure) => void;
-  /** Overrides {@link DEFAULT_MAX_SWEEP_SEALS}. */
+  /**
+   * Overrides {@link DEFAULT_MAX_SWEEP_SEALS}. A non-finite value (`NaN`,
+   * `±Infinity`) falls back to the default instead — see
+   * {@link resolveSealerBound}.
+   */
   readonly maxSweepSeals?: number;
-  /** Overrides {@link DEFAULT_MAX_SEAL_ATTEMPTS}. */
+  /**
+   * Overrides {@link DEFAULT_MAX_SEAL_ATTEMPTS}. Same non-finite fallback as
+   * {@link maxSweepSeals} — see {@link resolveSealerBound}.
+   */
   readonly maxSealAttempts?: number;
 }
 
 /**
- * Renders one segment's `(datePrefix, sequence)` as a string that sorts the
- * way `./append-only-segments.js` sorts the inventory.
+ * Resolves one of the sealer's caller-overridable bounds: `override` when
+ * it is a finite number, clamped up to `floor`; `fallback` when `override`
+ * is `undefined` or not finite.
  *
- * A single comparable key rather than a two-field tuple comparison on
- * purpose: one `<=` states "at or before" in one place, where the tuple form
- * spreads the same rule across three conditions that must agree.
+ * **A malformed override must not silently disable what it bounds.**
+ * `Math.max(floor, NaN)` is `NaN`, and a `NaN` reaching
+ * `Array.prototype.slice(0, …)` yields an EMPTY list — the sweep silently
+ * off — or a zero-iteration `for` loop bound, indistinguishable from
+ * "already sealed". Once these two options reach the public surface a later
+ * slice adds, the value is no longer library-controlled, so this is what
+ * keeps a caller's typo from reading as success.
  */
-function segmentOrderKey(datePrefix: string, sequence: number): string {
-  return `${datePrefix}-${String(sequence).padStart(SEQUENCE_KEY_WIDTH, "0")}`;
-}
-
-/**
- * The sweep's legacy boundary as an order key, or `undefined` when the
- * manifest states none.
- *
- * `?? ""` folds three states into that one answer, and each is the same
- * answer for the same reason: no baseline record at all, a baseline stating
- * `upTo: null` (sealing has been in force since the stream's first segment),
- * and a baseline naming something {@link parseSegmentName} declines — a name
- * no writer here renders is not a boundary this trail can state anything
- * about, exactly as `./append-only-manifest.js`'s `highestSegmentName`
- * refuses to derive one from a foreign file. The empty string is not a
- * segment name, so it parses as `undefined` like any other foreign name.
- */
-function baselineBoundaryKey(contents: ManifestContents): string | undefined {
-  const parsed = parseSegmentName(contents.baseline?.upTo ?? "");
-  return parsed === undefined
-    ? undefined
-    : segmentOrderKey(parsed.datePrefix, parsed.sequence);
-}
-
-/**
- * `true` when `segment` falls at or before the baseline, and so is `legacy`:
- * bytes written before sealing was in force, which a digest taken NOW cannot
- * vouch for. Retro-digesting one would state a proof nobody can honour.
- */
-function isAtOrBeforeBaseline(
-  segment: M3LAppendOnlySegment,
-  boundaryKey: string | undefined,
-): boolean {
-  return (
-    boundaryKey !== undefined &&
-    segmentOrderKey(segment.datePrefix, segment.sequence) <= boundaryKey
-  );
+function resolveSealerBound(
+  override: number | undefined,
+  fallback: number,
+  floor: number,
+): number {
+  return override !== undefined && Number.isFinite(override)
+    ? Math.max(floor, override)
+    : fallback;
 }
 
 /**
@@ -272,13 +248,29 @@ export class AppendOnlySealer {
   readonly #maxSealAttempts: number;
 
   /**
-   * Whether this instance has already swept.
+   * Whether this instance has already ATTEMPTED its one sweep.
    *
    * Per-INSTANCE state, deliberately not a latch written into the directory:
    * a crashed process's successor must sweep the backlog it left, and it can
-   * only know to do so by being a new instance. Set before the sweep runs, so
-   * a sweep that fails costs the append path one attempt rather than one per
-   * append forever.
+   * only know to do so by being a new instance. Set at the top of
+   * {@link AppendOnlySealer.#sealAndSweep}, before the manifest is even
+   * loaded — marking the ATTEMPT, not the outcome, is the point. A manifest
+   * that cannot be read (a symlink planted over it, a permissions change)
+   * must still flip this to `true`, or every later no-rotation append
+   * re-enters `#sealAndSweep`, re-opens the unreadable manifest, fails again,
+   * and reports again — one extra open and one report per append for the
+   * life of the instance, the unbounded append-path cost this module exists
+   * not to impose.
+   *
+   * The trade this makes is real: an instance whose first load fails will
+   * not sweep later even if the manifest becomes readable again. That is
+   * deliberate — the sweep is best-effort recovery that every NEW instance
+   * repeats, so the cost of never marking the attempt is one deferred
+   * backlog per unlucky instance, which is bounded, against unbounded work
+   * on the append path, which is not. A ROTATION seal is unaffected: it
+   * re-attempts the manifest load on every rotation regardless of this
+   * flag, which is correct (a rotation is about bytes this process itself
+   * just wrote) and rare (bounded by how often the writer rotates).
    */
   #swept: boolean = false;
 
@@ -292,13 +284,15 @@ export class AppendOnlySealer {
     this.#maxManifestBytes = options.maxManifestBytes;
     this.#buildError = options.buildError;
     this.#onSealFailed = options.onSealFailed;
-    this.#maxSweepSeals = Math.max(
+    this.#maxSweepSeals = resolveSealerBound(
+      options.maxSweepSeals,
+      DEFAULT_MAX_SWEEP_SEALS,
       0,
-      options.maxSweepSeals ?? DEFAULT_MAX_SWEEP_SEALS,
     );
-    this.#maxSealAttempts = Math.max(
+    this.#maxSealAttempts = resolveSealerBound(
+      options.maxSealAttempts,
+      DEFAULT_MAX_SEAL_ATTEMPTS,
       1,
-      options.maxSealAttempts ?? DEFAULT_MAX_SEAL_ATTEMPTS,
     );
   }
 
@@ -340,8 +334,17 @@ export class AppendOnlySealer {
    * Ordered so the rotation seal — about bytes this process itself just
    * wrote — is attempted before any backlog work that could fail, and so the
    * sweep's per-instance budget can never be consumed by it.
+   *
+   * `#swept` is captured into `alreadySwept` and flipped to `true` BEFORE the
+   * manifest load, not after — see `#swept`'s own TSDoc for why the attempt,
+   * not the outcome, is what must be marked. The local capture is what lets
+   * this method still tell "already swept before this call" from "swept for
+   * the first time just now": both read `true` off the field by the time the
+   * sweep step is reached, and only the local remembers which.
    */
   async #sealAndSweep(rotatedFrom: string | undefined): Promise<void> {
+    const alreadySwept = this.#swept;
+    this.#swept = true;
     const contents = await loadOrInitializeManifest(
       this.#directory,
       this.#maxManifestBytes,
@@ -354,10 +357,9 @@ export class AppendOnlySealer {
     if (rotatedFrom !== undefined) {
       await this.#sealSegment(rotatedFrom, sealed);
     }
-    if (this.#swept) {
+    if (alreadySwept) {
       return;
     }
-    this.#swept = true;
     await this.#sweep(contents, sealed);
   }
 
@@ -375,6 +377,20 @@ export class AppendOnlySealer {
    * name, and whose failures propagate raw — wrapped here into the owner's
    * vocabulary, then out to the total guard, since a directory that cannot be
    * listed is not attributable to any one segment.
+   *
+   * **A candidate cut by the cap reaches no reporter at all** — it is neither
+   * sealed nor passed to `#sealSegment`, so `onSealFailed` never fires for it.
+   * This is deliberate, not an oversight: a directory holding more backlog
+   * than one instance's budget is not a failure of any one segment, and
+   * routing the excess to `onSealFailed` would fire on every cold start of a
+   * large healthy trail, exactly the sort of alarm an operator learns to
+   * ignore. The backlog still converges: candidates are taken oldest-first,
+   * so each new instance's sweep works down from where the last one's cap
+   * cut off, and the same-instance rotation seal keeps pace with newly
+   * created segments regardless. The excess becomes observable another way —
+   * as `verify()`'s `unsealed` verdict for whatever a sweep has not yet
+   * reached — which is the intended channel for "not sealed yet", as opposed
+   * to `onSealFailed`'s "tried and failed to seal".
    */
   async #sweep(contents: ManifestContents, sealed: Set<string>): Promise<void> {
     let segments: readonly M3LAppendOnlySegment[];
@@ -401,60 +417,78 @@ export class AppendOnlySealer {
   }
 
   /**
-   * Measures one segment and appends its seal, retrying a bounded number of
-   * times before reporting the LAST failure exactly once.
+   * Measures one segment and appends its seal, retrying each half a bounded
+   * number of times before reporting the LAST failure exactly once.
    *
-   * Retry is in-process and immediate: the failure worth surviving here is a
-   * transient read error on an otherwise healthy file, and waiting is not
-   * something an append path may do. A segment the manifest already names is
-   * not re-sealed — an agreeing duplicate is tolerated at read time, but
-   * measuring a file again to write a line that says what is already said is
-   * work the append path should not pay for.
+   * **The measurement is taken at most once; the claim it produces is what
+   * every retried append carries.** Retrying digest-and-append as one whole
+   * used to re-run the digest on every attempt too, so an `appendSeal` that
+   * failed AFTER its line already reached the manifest — a write that lands
+   * but whose confirmation is lost — would be retried with a FRESH digest. If
+   * the segment changed between attempts (a rotation, a concurrent writer),
+   * the retry's line would disagree with the one already on disk, and
+   * `./append-only-manifest.js` documents that a segment named by two
+   * disagreeing seals throws at read time — a best-effort path that must
+   * never fail an append would have made the whole trail unreadable. Splitting
+   * measurement from append and holding the claim fixed across the second
+   * loop makes a retry-born duplicate agree with the original by
+   * construction, never merely by chance.
+   *
+   * Retry is in-process and immediate in both halves: the failure worth
+   * surviving here is a transient read/write error on an otherwise healthy
+   * file, and waiting is not something an append path may do. A segment the
+   * manifest already names is not re-sealed — an agreeing duplicate is
+   * tolerated at read time, but measuring a file again to write a line that
+   * says what is already said is work the append path should not pay for.
    *
    * A name {@link parseSegmentName} declines is refused rather than digested.
    * Whatever such a name reached the writer by, joining it onto the stream
    * directory and hashing whatever comes back would seal bytes that are not
-   * this trail's, under a name no reader will ever look for.
+   * this trail's, under a name no reader will ever look for. It is also
+   * reported with `segment: undefined`, not the rejected name — see
+   * {@link AppendOnlySealFailure.segment} for the general carve-out and why
+   * THIS path is its one exception. Every other caller of `#sealSegment`
+   * passes a name the inventory already accepted or the writer's own
+   * rotation counter produced; a name this check declines can only have
+   * arrived through `sealAfterAppend`'s caller-supplied `rotatedFrom`, and
+   * provably did NOT come from either trusted source —
+   * `"../../../../etc/passwd"` parses as declined precisely because it is
+   * attacker-shaped, and a failure channel is not the place to hand it back.
    */
   async #sealSegment(segment: string, sealed: Set<string>): Promise<void> {
     if (sealed.has(segment)) {
       return;
     }
     if (parseSegmentName(segment) === undefined) {
-      this.#report(segment, this.#buildError(FOREIGN_NAME_MESSAGE));
+      // `undefined`, not `segment`: this is the one path where the name is
+      // provably NOT writer-derived — see this method's TSDoc for why that
+      // makes it the exception to `AppendOnlySealFailure.segment`'s own
+      // carve-out.
+      this.#report(undefined, this.#buildError(FOREIGN_NAME_MESSAGE));
       return;
     }
-    let lastFailure: unknown;
-    for (let attempt = 0; attempt < this.#maxSealAttempts; attempt += 1) {
-      try {
-        await this.#writeSeal(segment);
-        sealed.add(segment);
-        return;
-      } catch (cause) {
-        lastFailure = cause;
-      }
+    const measurement = await measureSegment({
+      directory: this.#directory,
+      segment,
+      maxDigestBytes: this.#maxDigestBytes,
+      maxSealAttempts: this.#maxSealAttempts,
+      buildError: this.#buildError,
+    });
+    if (!measurement.ok) {
+      this.#report(segment, measurement.failure);
+      return;
     }
-    this.#report(segment, lastFailure);
-  }
-
-  /**
-   * One attempt: measure the segment's raw bytes, then append the claim.
-   *
-   * Both halves go through the shipped modules, so this module issues no
-   * filesystem call of its own and inherits every refusal they apply. The
-   * measurement is deliberately a re-read of what is ON DISK rather than an
-   * incremental hash maintained while appending: the latter could not cover
-   * an adopted segment, a crashed process's segment, or two interleaved
-   * writers, and would prove "what I wrote" rather than "what is there" —
-   * inverting the point of a tamper proof (ADR-0102).
-   */
-  async #writeSeal(segment: string): Promise<void> {
-    const digest = await digestSegmentFile(
-      path.join(this.#directory, segment),
-      this.#maxDigestBytes,
-      this.#buildError,
-    );
-    await appendSeal(this.#directory, { segment, ...digest }, this.#buildError);
+    const append = await appendClaim({
+      directory: this.#directory,
+      claim: measurement.value,
+      maxSealAttempts: this.#maxSealAttempts,
+      buildError: this.#buildError,
+    });
+    if (!append.ok) {
+      this.#report(segment, append.failure);
+      return;
+    }
+    sealed.add(segment);
   }
 
   /**
