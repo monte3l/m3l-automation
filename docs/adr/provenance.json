@@ -27,7 +27,7 @@
       },
       {
         "path": "CLAUDE.md",
-        "blob": "d21b331def53b2265dd98981f3b2fca1e2bc21d9"
+        "blob": "95646074493873cac03f58bd9e78c686e1326206"
       },
       {
         "path": "docs/contributing/contributing.md",
@@ -264,7 +264,7 @@
       },
       {
         "path": "CLAUDE.md",
-        "blob": "d21b331def53b2265dd98981f3b2fca1e2bc21d9"
+        "blob": "95646074493873cac03f58bd9e78c686e1326206"
       },
       {
         "path": "docs/adr/template.md",
@@ -323,7 +323,7 @@
       },
       {
         "path": "CLAUDE.md",
-        "blob": "d21b331def53b2265dd98981f3b2fca1e2bc21d9"
+        "blob": "95646074493873cac03f58bd9e78c686e1326206"
       },
       {
         "path": "docs/implementation-status.md",
@@ -409,7 +409,7 @@
       },
       {
         "path": "CLAUDE.md",
-        "blob": "d21b331def53b2265dd98981f3b2fca1e2bc21d9"
+        "blob": "95646074493873cac03f58bd9e78c686e1326206"
       },
       {
         "path": "docs/contributing/branch-protection.md",
@@ -526,7 +526,7 @@
     "sourceFiles": [
       {
         "path": ".github/workflows/release.yml",
-        "blob": "bcc324f459586c63d1cf0b8e8d327624d0d5c518"
+        "blob": "98fe951bb71757c021e42b1adc6306c301d7b64e"
       },
       {
         "path": "bin/lint-commit.mjs",
@@ -662,7 +662,7 @@
       },
       {
         "path": "CLAUDE.md",
-        "blob": "d21b331def53b2265dd98981f3b2fca1e2bc21d9"
+        "blob": "95646074493873cac03f58bd9e78c686e1326206"
       },
       {
         "path": "docs/implementation-status.md",
@@ -719,7 +719,7 @@
       },
       {
         "path": "CLAUDE.md",
-        "blob": "d21b331def53b2265dd98981f3b2fca1e2bc21d9"
+        "blob": "95646074493873cac03f58bd9e78c686e1326206"
       },
       {
         "path": "docs/contributing/model-selection.md",
@@ -757,7 +757,7 @@
     "sourceFiles": [
       {
         "path": "CLAUDE.md",
-        "blob": "d21b331def53b2265dd98981f3b2fca1e2bc21d9"
+        "blob": "95646074493873cac03f58bd9e78c686e1326206"
       },
       {
         "path": "docs/reference/aws/clients.md",
@@ -881,7 +881,7 @@
     "sourceFiles": [
       {
         "path": "CLAUDE.md",
-        "blob": "d21b331def53b2265dd98981f3b2fca1e2bc21d9"
+        "blob": "95646074493873cac03f58bd9e78c686e1326206"
       },
       {
         "path": "docs/adr/README.md",
@@ -1002,7 +1002,7 @@
       },
       {
         "path": "docs/logs/README.md",
-        "blob": "1d5bae007921d079eb4e2863b6fa8d40af603d6a"
+        "blob": "bfb0d3ab53677b33d7cec814282285fec429f617"
       },
       {
         "path": "docs/plans/IMPLEMENTATION.md",
@@ -1149,7 +1149,7 @@
     "sourceFiles": [
       {
         "path": "CLAUDE.md",
-        "blob": "d21b331def53b2265dd98981f3b2fca1e2bc21d9"
+        "blob": "95646074493873cac03f58bd9e78c686e1326206"
       }
     ],
     "verifiedAt": "2026-09-12"
@@ -1363,7 +1363,7 @@
       },
       {
         "path": "CLAUDE.md",
-        "blob": "d21b331def53b2265dd98981f3b2fca1e2bc21d9"
+        "blob": "95646074493873cac03f58bd9e78c686e1326206"
       },
       {
         "path": "docs/contributing/filing-work.md",
@@ -1737,7 +1737,7 @@
       },
       {
         "path": "CLAUDE.md",
-        "blob": "d21b331def53b2265dd98981f3b2fca1e2bc21d9"
+        "blob": "95646074493873cac03f58bd9e78c686e1326206"
       },
       {
         "path": "docs/contributing/subagent-context-management.md",
@@ -1915,7 +1915,7 @@
       },
       {
         "path": "CLAUDE.md",
-        "blob": "d21b331def53b2265dd98981f3b2fca1e2bc21d9"
+        "blob": "95646074493873cac03f58bd9e78c686e1326206"
       },
       {
         "path": "docs/contributing/model-selection.md",
@@ -1993,7 +1993,7 @@
       },
       {
         "path": "CLAUDE.md",
-        "blob": "d21b331def53b2265dd98981f3b2fca1e2bc21d9"
+        "blob": "95646074493873cac03f58bd9e78c686e1326206"
       },
       {
         "path": "docs/contributing/host-resources.md",
@@ -2051,7 +2051,7 @@
       },
       {
         "path": "CLAUDE.md",
-        "blob": "d21b331def53b2265dd98981f3b2fca1e2bc21d9"
+        "blob": "95646074493873cac03f58bd9e78c686e1326206"
       },
       {
         "path": "docs/research/harness-refresh.md",
@@ -2097,7 +2097,7 @@
       },
       {
         "path": "CLAUDE.md",
-        "blob": "d21b331def53b2265dd98981f3b2fca1e2bc21d9"
+        "blob": "95646074493873cac03f58bd9e78c686e1326206"
       },
       {
         "path": "docs/research/retrospective.md",
@@ -2110,7 +2110,7 @@
     "sourceFiles": [
       {
         "path": "CLAUDE.md",
-        "blob": "d21b331def53b2265dd98981f3b2fca1e2bc21d9"
+        "blob": "95646074493873cac03f58bd9e78c686e1326206"
       },
       {
         "path": "docs/plans/2026-08-20-agent-operator.md",
@@ -2218,7 +2218,7 @@
       },
       {
         "path": "CLAUDE.md",
-        "blob": "d21b331def53b2265dd98981f3b2fca1e2bc21d9"
+        "blob": "95646074493873cac03f58bd9e78c686e1326206"
       },
       {
         "path": "docs/contributing/agent-operating-model.md",
@@ -2524,7 +2524,7 @@
       },
       {
         "path": "CLAUDE.md",
-        "blob": "d21b331def53b2265dd98981f3b2fca1e2bc21d9"
+        "blob": "95646074493873cac03f58bd9e78c686e1326206"
       },
       {
         "path": "docs/contributing/glossary.md",
@@ -2532,7 +2532,7 @@
       },
       {
         "path": "docs/logs/README.md",
-        "blob": "1d5bae007921d079eb4e2863b6fa8d40af603d6a"
+        "blob": "bfb0d3ab53677b33d7cec814282285fec429f617"
       }
     ],
     "verifiedAt": "2026-09-12"
