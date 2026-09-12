@@ -129,6 +129,14 @@ export interface M3LAgentDecisionLogOptions {
    * absorbed here rather than being allowed to reach the caller of
    * `write()`.
    *
+   * For the same reason, it should not be declared `async`: the handler is
+   * called synchronously and its return value is never awaited, so the type
+   * permits an `async` handler but the library neither waits for nor
+   * observes what it resolves or rejects with. A rejection from a returned
+   * promise is discarded rather than left to become an unhandled rejection —
+   * a caller whose own reporting can fail must handle that failure inside
+   * the handler itself.
+   *
    * A truthy non-function is rejected at construction with
    * `ERR_INVALID_ARGUMENT`; a falsy value (including omitting the key)
    * degrades to "no handler" — see

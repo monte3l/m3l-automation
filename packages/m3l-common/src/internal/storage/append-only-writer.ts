@@ -63,6 +63,7 @@ import {
   SEGMENT_EXPECTED_LINK_COUNT,
   SEGMENT_FILE_MODE,
 } from "./append-only-fs.js";
+import { renderLine } from "./append-only-line-ceiling.js";
 import type { ActiveSegment } from "./append-only-segments.js";
 import {
   currentDatePrefix,
@@ -179,7 +180,12 @@ export class AppendOnlyWriter<TEntry> {
    *   cache, not the platter — see this module's header on `fsync`.
    */
   async write(entry: TEntry): Promise<void> {
-    const line = this.renderLine(entry);
+    const line = renderLine(
+      entry,
+      this.maxLineBytes,
+      this.renderEntry,
+      this.errors,
+    );
     const appended = this.tail.then(async () => await this.append(line));
     // Chained onto `this.tail`, not the promise below: lands before the next
     // append but never delays this one — that latency/ordering guarantee
@@ -231,69 +237,6 @@ export class AppendOnlyWriter<TEntry> {
    */
   async flush(): Promise<void> {
     await this.tail;
-  }
-
-  /**
-   * Refuses an entry that cannot possibly fit, **before** the owner's
-   * renderer projects and serializes it.
-   *
-   * The ceiling in {@link AppendOnlyWriter.renderLine} is exact but is only
-   * reached after a full walk of the caller's graph and a `JSON.stringify`
-   * of it — up to a second of synchronous, event-loop-blocking work to refuse
-   * one entry, and past the engine's maximum string length a raw
-   * `RangeError` escapes outside the owner's documented vocabulary. One own
-   * string value longer than `maxLineBytes` is enough to know the line cannot
-   * fit: a UTF-8 encoding is never shorter than the string's UTF-16 length
-   * (ASCII is one byte per unit, everything else more), so the comparison
-   * needs no encoding pass at all.
-   *
-   * Only own **data** properties at the top level are read. An accessor is
-   * left uninvoked on purpose — the projection in the owner's renderer is
-   * where the caller's graph is read, and reading it twice would run a
-   * getter's side effects twice. The check is therefore an early-out, never
-   * the ceiling itself: everything it does not catch is caught exactly by
-   * `renderLine`.
-   *
-   * The byte count handed to `errors.oversize` is the offending value's own
-   * encoded size — a strict lower bound on the line it would have produced,
-   * which also carries that value's JSON escaping, its key, and every sibling
-   * field. Reporting the exact figure would need the serialization this check
-   * exists to avoid, and it is already over the ceiling either way.
-   */
-  private rejectObviouslyOversize(entry: TEntry): void {
-    if (typeof entry !== "object" || entry === null) {
-      return;
-    }
-    for (const key of Object.keys(entry)) {
-      const descriptor = Object.getOwnPropertyDescriptor(entry, key);
-      const value: unknown = descriptor?.value;
-      if (typeof value === "string" && value.length > this.maxLineBytes) {
-        throw this.errors.oversize(
-          Buffer.byteLength(value, "utf8"),
-          this.maxLineBytes,
-        );
-      }
-    }
-  }
-
-  /**
-   * Renders the exact line the filesystem will receive and proves it fits in
-   * one atomic write.
-   *
-   * The ceiling governs the LINE, not the serialization alone: the newline is
-   * part of what one `write()` must carry atomically, so an entry serializing
-   * to exactly the ceiling is one byte too large. The check runs here, ahead
-   * of (and outside) the append guard below, because a line too large to
-   * write is not a filesystem failure and must not be reported as one.
-   */
-  private renderLine(entry: TEntry): string {
-    this.rejectObviouslyOversize(entry);
-    const line = `${this.renderEntry(entry)}\n`;
-    const lineBytes = Buffer.byteLength(line, "utf8");
-    if (lineBytes > this.maxLineBytes) {
-      throw this.errors.oversize(lineBytes, this.maxLineBytes);
-    }
-    return line;
   }
 
   /**
@@ -456,8 +399,12 @@ export class AppendOnlyWriter<TEntry> {
    * additionally broke the routing test. Do not remove either guard on the
    * strength of the other still being present.
    *
-   * `this.active` is `undefined` when the append this call follows threw and
-   * cleared it — nothing to seal against, so this returns early.
+   * The guard below type-narrows `this.active`, optional on the class — it
+   * proves this is set before its fields are read. Unreachable via this
+   * file's wiring: a failed append rejects `appended`, whose rejection arm
+   * skips this method, so it runs only once an append has assigned
+   * `this.active`. Kept as defence in depth against a future change to
+   * `write()`'s chaining, not a case to expect today.
    */
   private async sealAfterAppend(
     rotatedFrom: AppendOnlyRotatedSegment | undefined,

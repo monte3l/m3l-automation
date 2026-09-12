@@ -546,3 +546,109 @@ describe("onSealFailed reports a genuinely refused manifest", () => {
     await expect(stream.append({ event: "second" })).resolves.toBeUndefined();
   });
 });
+
+// ---------------------------------------------------------------------------
+// 8, 9, 10 — an ASYNC onSealFailed whose promise rejects (not a sync throw)
+//
+// `onSealFailed` is typed `(failure) => void`, but TypeScript's void-return
+// compatibility rule accepts an `async` handler too — the shape this class's
+// own `@example` invites for reporting elsewhere. `reportSealFailure`
+// (internal/storage/append-only-seal-report.ts) detects the returned
+// thenable and attaches a rejection handler without awaiting it, so a
+// rejection never becomes an unhandled promise rejection outside the
+// sealer — which, unhandled, terminates the process on this library's
+// Node 24+ floor. This is a SEPARATE mechanism from the synchronous
+// `try`/`catch` pinned above (test 3 here is the sync-throw sibling, kept
+// in this same block so the two guards are visibly distinct and a mutation
+// to one cannot hide behind the other).
+// ---------------------------------------------------------------------------
+
+describe("onSealFailed's returned promise rejecting does not break anything", () => {
+  test("a promise-rejecting onSealFailed handler does not fail the triggering append, and the entry is durable in its segment", async () => {
+    const dir = path.join(workDir, "async-rejecting-handler-audit");
+    await plantManifestSymlink(dir);
+
+    let handlerCalls = 0;
+    const stream = new M3LAppendOnlyStream({
+      directory: dir,
+      // eslint-disable-next-line @typescript-eslint/no-misused-promises -- pinning the exact hazard: onSealFailed is typed to return void, but TS's void-return compatibility rule accepts this async handler, the shape the public @example invites elsewhere
+      onSealFailed: async (failure) => {
+        handlerCalls += 1;
+        void failure;
+        await Promise.resolve();
+        throw new Error("handler blew up asynchronously");
+      },
+    });
+
+    await expect(
+      stream.append({ marker: "async-rejecting-first" }),
+    ).resolves.toBeUndefined();
+    // Guarantees the first append's seal attempt — and its onSealFailed
+    // call — has settled before `handlerCalls` and the manifest are read.
+    await flush(stream);
+
+    // Proves the handler actually ran (and thus that its rejection was the
+    // thing under test) — without this, the test below would pass even if
+    // the handler were never invoked at all.
+    expect(handlerCalls).toBeGreaterThanOrEqual(1);
+
+    const listing = await stream.listSegments();
+    expect(listing.segments).toHaveLength(1);
+    const segmentName = definedOrThrow(
+      listing.segments[0],
+      "the only segment",
+    ).name;
+    const raw = await readFile(path.join(dir, segmentName), "utf8");
+    expect(raw).toContain("async-rejecting-first");
+
+    // A later append still succeeds: the rejection did not poison the
+    // sealer's serialized tail chain for subsequent appends.
+    await expect(
+      stream.append({ marker: "async-rejecting-second" }),
+    ).resolves.toBeUndefined();
+  });
+
+  test("stream.flush() still resolves with a promise-rejecting onSealFailed handler wired", async () => {
+    const dir = path.join(workDir, "async-rejecting-handler-flush-audit");
+    await plantManifestSymlink(dir);
+
+    let handlerCalls = 0;
+    const stream = new M3LAppendOnlyStream({
+      directory: dir,
+      // eslint-disable-next-line @typescript-eslint/no-misused-promises -- pinning the exact hazard: onSealFailed is typed to return void, but TS's void-return compatibility rule accepts this async handler, the shape the public @example invites elsewhere
+      onSealFailed: async () => {
+        handlerCalls += 1;
+        await Promise.resolve();
+        throw new Error("handler blew up asynchronously during flush");
+      },
+    });
+
+    await stream.append({ marker: "flush-target" });
+    await expect(stream.flush()).resolves.toBeUndefined();
+    expect(handlerCalls).toBeGreaterThanOrEqual(1);
+  });
+
+  test("a synchronously-throwing onSealFailed handler is still swallowed — the pre-existing, separate guard", async () => {
+    const dir = path.join(workDir, "sync-throwing-handler-sibling-audit");
+    await plantManifestSymlink(dir);
+
+    let handlerCalls = 0;
+    const stream = new M3LAppendOnlyStream({
+      directory: dir,
+      onSealFailed: () => {
+        handlerCalls += 1;
+        throw new Error("deliberately thrown, synchronously");
+      },
+    });
+
+    await expect(
+      stream.append({ marker: "sync-throw-first" }),
+    ).resolves.toBeUndefined();
+    await flush(stream);
+
+    expect(handlerCalls).toBeGreaterThanOrEqual(1);
+    await expect(
+      stream.append({ marker: "sync-throw-second" }),
+    ).resolves.toBeUndefined();
+  });
+});

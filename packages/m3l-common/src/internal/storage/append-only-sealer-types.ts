@@ -188,18 +188,25 @@ export interface AppendOnlySealerOptions {
    * Told about every seal that could not be written. Optional: the sealer
    * never depends on a handler being there to absorb a failure, and a handler
    * that throws cannot break it either.
+   *
+   * Called synchronously from `./append-only-sealer.js`'s `#report`, which
+   * never awaits its return value — it should not be declared `async`, since
+   * the type permits that but the sealer neither waits for nor observes what
+   * the returned promise resolves or rejects with. A rejection is discarded
+   * rather than left to become an unhandled rejection; an owner whose own
+   * reporting can fail must handle that failure inside the handler itself.
    */
   readonly onSealFailed?: (failure: AppendOnlySealFailure) => void;
   /**
    * Overrides the sealer's default sweep cap. A non-finite value (`NaN`,
    * `±Infinity`) falls back to the default instead — see
-   * `./append-only-sealer.js`'s `resolveSealerBound`.
+   * {@link resolveSealerBound}.
    */
   readonly maxSweepSeals?: number;
   /**
    * Overrides the sealer's default per-segment attempt count. Same
    * non-finite fallback as {@link maxSweepSeals} — see
-   * `./append-only-sealer.js`'s `resolveSealerBound`.
+   * {@link resolveSealerBound}.
    */
   readonly maxSealAttempts?: number;
 }
@@ -235,3 +242,42 @@ export interface AppendOnlySealerOptions {
  */
 export const DEFAULT_MAX_MANIFEST_BYTES: number =
   M3L_APPEND_ONLY_MAX_SEGMENT_BYTES;
+
+/**
+ * How many segments one instance's cold-start sweep may seal. A pathological
+ * directory — a crashed process's whole backlog, or a trail nobody has run
+ * the sealer against since an upgrade — must not turn one cold start into an
+ * unbounded read on the append path.
+ */
+export const DEFAULT_MAX_SWEEP_SEALS: number = 64;
+
+/**
+ * How many times one segment's seal is attempted before it is reported. More
+ * than one because a transient `EIO`/`EAGAIN` on a single read should not cost
+ * a proof; bounded because the append path is not the place to wait out a
+ * filesystem that is genuinely down.
+ */
+export const DEFAULT_MAX_SEAL_ATTEMPTS: number = 3;
+
+/**
+ * Resolves one of the sealer's caller-overridable bounds: `override` when
+ * it is a finite number, clamped up to `floor`; `fallback` when `override`
+ * is `undefined` or not finite.
+ *
+ * **A malformed override must not silently disable what it bounds.**
+ * `Math.max(floor, NaN)` is `NaN`, and a `NaN` reaching
+ * `Array.prototype.slice(0, …)` yields an EMPTY list — the sweep silently
+ * off — or a zero-iteration `for` loop bound, indistinguishable from
+ * "already sealed". Once these two options reach the public surface a later
+ * slice adds, the value is no longer library-controlled, so this is what
+ * keeps a caller's typo from reading as success.
+ */
+export function resolveSealerBound(
+  override: number | undefined,
+  fallback: number,
+  floor: number,
+): number {
+  return override !== undefined && Number.isFinite(override)
+    ? Math.max(floor, override)
+    : fallback;
+}

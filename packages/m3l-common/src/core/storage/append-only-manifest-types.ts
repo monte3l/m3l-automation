@@ -24,6 +24,13 @@ import type { M3LError } from "../errors/index.js";
  * raw filesystem detail that explains the failure survives on
  * `error.cause`.
  *
+ * The handler this is reported to is called synchronously and its return
+ * value is never awaited, so it should not be declared `async` — the type
+ * permits it, but the library neither waits for nor observes the result. A
+ * rejection it produces is discarded rather than surfaced as an unhandled
+ * rejection, so a caller whose own reporting can fail must handle that
+ * failure inside the handler itself.
+ *
  * @example
  * ```ts
  * import type { M3LAppendOnlySealFailure } from "@monte3l/m3l-common/core";

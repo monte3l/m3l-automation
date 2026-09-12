@@ -12,6 +12,7 @@
  */
 
 import { M3LError } from "../../core/errors/index.js";
+import { isPromise } from "../../core/utils/guards.js";
 import type { AppendOnlyReadFailure } from "./append-only-lines.js";
 import type { AppendOnlySealFailure } from "./append-only-sealer-types.js";
 
@@ -37,14 +38,30 @@ const SEAL_FAILURE_MESSAGE = "append-only stream: failed to seal a segment";
  * sealer could still have worked through. Nothing is left to report a
  * reporting failure to, which is precisely why it ends here.
  *
- * @param handler - The owner's optional failure handler, called with the
- *   built failure. Caller code: may itself throw, and that throw is
- *   swallowed rather than propagated — see this function's TSDoc.
- * @param buildError - The owner's error vocabulary. Caller code: may itself
- *   throw, swallowed the same way as `handler`.
+ * **A returned thenable is neutralised too, not only a synchronous throw.**
+ * `onSealFailed` is typed to return `void`, but TypeScript's void-return
+ * compatibility rule accepts an `async` handler — the natural shape for
+ * "report it somewhere", which `./append-only-sealer.js`'s own `@example`
+ * invites — and a rejection from that handler's promise is not a
+ * synchronous throw the `try` below can catch. Left unattended, that
+ * rejection would surface as an unhandled promise rejection outside this
+ * function entirely, which can terminate the process: the opposite of the
+ * never-throws contract the sealer exists to hold. The rejection is
+ * attached to and swallowed, never awaited — awaiting here would let a slow
+ * handler stall every subsequent append on this serialized path.
+ *
+ * @param handler - The owner's optional failure handler, as supplied to
+ *   {@link "./append-only-sealer-types.js".AppendOnlySealerOptions.onSealFailed}.
+ *   Caller code: may itself throw, and that throw — like a rejection from a
+ *   returned thenable — is swallowed rather than propagated; see this
+ *   function's TSDoc.
+ * @param buildError - The owner's error vocabulary, as supplied to
+ *   {@link "./append-only-sealer-types.js".AppendOnlySealerOptions.buildError}.
+ *   Caller code: may itself throw, swallowed the same way as `handler`.
  * @param segment - The segment that could not be sealed, or `undefined` for
  *   a manifest-level failure — see
- *   {@link "./append-only-sealer-types.js".AppendOnlySealFailure.segment}.
+ *   {@link "./append-only-sealer-types.js".AppendOnlySealFailure.segment}
+ *   for the general carve-out and its exceptions.
  * @param cause - The underlying failure: either an already-typed
  *   {@link M3LError} (passed through unchanged) or raw detail to wrap via
  *   `buildError`.
@@ -73,7 +90,12 @@ export function reportSealFailure(
       cause instanceof M3LError
         ? cause
         : buildError(SEAL_FAILURE_MESSAGE, { cause });
-    handler?.({ segment, error });
+    const result = handler?.({ segment, error }) as unknown;
+    if (isPromise(result)) {
+      void result.catch(() => {
+        // Best-effort by construction: see this function's TSDoc.
+      });
+    }
   } catch {
     // Best-effort by construction: see this function's TSDoc.
   }

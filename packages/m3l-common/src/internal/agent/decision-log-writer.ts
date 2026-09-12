@@ -49,12 +49,9 @@ import type { M3LAgentDecisionLogEntry } from "../../core/agent/decision-log-typ
 import { M3L_AGENT_MAX_LOG_ENTRY_BYTES } from "../../core/agent/decision-log-types.js";
 import { M3LError } from "../../core/errors/index.js";
 import type { M3LAppendOnlySealFailure } from "../../core/storage/append-only-manifest-types.js";
-import {
-  isFunction,
-  isNumber,
-  isPlainObject,
-} from "../../core/utils/guards.js";
+import { isNumber, isPlainObject } from "../../core/utils/guards.js";
 import { DEFAULT_MAX_MANIFEST_BYTES } from "../storage/append-only-manifest.js";
+import { readOnSealFailed } from "../storage/append-only-options.js";
 import { AppendOnlySealer } from "../storage/append-only-sealer.js";
 import type { AppendOnlyWriterErrors } from "../storage/append-only-writer.js";
 import { AppendOnlyWriter } from "../storage/append-only-writer.js";
@@ -129,35 +126,6 @@ function readOptionalPositiveInteger(
 }
 
 /**
- * Reads the optional `onSealFailed` handler: rejects a truthy non-function,
- * degrades any falsy value to `undefined` — "no handler". Mirrors
- * `internal/storage/append-only-options.ts`'s `readOnSealFailed` exactly, so
- * the two options bags agree on what a caller-supplied handler must look
- * like.
- *
- * **The polarity must stay `value && !isFunction(value)`.** Tightening it to
- * `value !== undefined && !isFunction(value)` would make `null` and `""`
- * throw instead of degrading to the safe "no handler" state the documented
- * contract promises — a falsy value here is not a caller mistake, it is the
- * same "absent" that omitting the key entirely already means.
- *
- * Reads `bag["onSealFailed"]` into a local exactly once and validates that
- * local: re-reading the property to decide, then again to return, would let
- * an accessor answer the check and the use differently.
- */
-function readOnSealFailed(
-  bag: Readonly<Record<string, unknown>>,
-): ((failure: M3LAppendOnlySealFailure) => void) | undefined {
-  const value = Object.hasOwn(bag, "onSealFailed")
-    ? bag["onSealFailed"]
-    : undefined;
-  if (value && !isFunction(value)) {
-    throw invalidArgument("onSealFailed", "not-a-function");
-  }
-  return isFunction(value) ? value : undefined;
-}
-
-/**
  * The validated constructor overrides. Each field is still optional: an
  * absent one means "use the documented default", which the public class
  * resolves (it owns the default directory and the two ceiling constants).
@@ -210,7 +178,10 @@ export function validateAgentDecisionLogOptions(
     directory: readOptionalDirectory(options),
     maxSegmentBytes: readOptionalPositiveInteger(options, "maxSegmentBytes"),
     maxSegmentAgeMs: readOptionalPositiveInteger(options, "maxSegmentAgeMs"),
-    onSealFailed: readOnSealFailed(options),
+    // The truthy-non-function / falsy-degrades polarity this validates —
+    // and why it must not be tightened — is documented once, on the shared
+    // {@link "../storage/append-only-options.js".readOnSealFailed}.
+    onSealFailed: readOnSealFailed(options, invalidArgument),
   };
 }
 /**

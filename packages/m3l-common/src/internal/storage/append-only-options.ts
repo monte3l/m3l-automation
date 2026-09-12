@@ -159,8 +159,22 @@ function readLineCeiling(bag: Readonly<Record<string, unknown>>): number {
 }
 
 /**
+ * The shape of a caller-side boundary error builder a shared validator can
+ * be parameterised by, matching how `internal/agent/validation.ts`'s
+ * `assertAllowedKeys` already takes one — every owner supplies its own
+ * builder so the message and `context` it produces stay that owner's,
+ * while the validation logic itself is written once.
+ */
+type InvalidArgumentBuilder = (field: string, violation: string) => M3LError;
+
+/**
  * Reads the optional `onSealFailed` handler: rejects a truthy non-function,
- * degrades any falsy value to `undefined` — "no handler".
+ * degrades any falsy value to `undefined` — "no handler". Shared by every
+ * owner of an `onSealFailed` option — `validateStreamOptions` below and
+ * `internal/agent/decision-log-writer.ts`'s
+ * `validateAgentDecisionLogOptions` — each supplying its own
+ * `invalidArgument` builder so the thrown error's message and `context`
+ * still read as that owner's.
  *
  * `onSealFailed` is currently the ONLY channel a caller has for a best-effort
  * manifest seal that could not be written (a `verify()` surface ships in a
@@ -181,8 +195,9 @@ function readLineCeiling(bag: Readonly<Record<string, unknown>>): number {
  * that would reject `null`, `0`, `""` and `false` too, which the documented
  * polarity above forbids.
  */
-function readOnSealFailed(
+export function readOnSealFailed(
   bag: Readonly<Record<string, unknown>>,
+  invalidArgument: InvalidArgumentBuilder,
 ): ((failure: M3LAppendOnlySealFailure) => void) | undefined {
   const value = Object.hasOwn(bag, "onSealFailed")
     ? bag["onSealFailed"]
@@ -221,7 +236,7 @@ export function validateStreamOptions(options: unknown): ResolvedStreamOptions {
       M3L_APPEND_ONLY_MAX_SEGMENT_AGE_MS,
     ),
     maxLineBytes: readLineCeiling(options),
-    onSealFailed: readOnSealFailed(options),
+    onSealFailed: readOnSealFailed(options, invalidArgument),
   };
 }
 

@@ -56,6 +56,11 @@ import {
   corroborateClaim,
   measureSegment,
 } from "./append-only-seal-attempt.js";
+import {
+  DEFAULT_MAX_SEAL_ATTEMPTS,
+  DEFAULT_MAX_SWEEP_SEALS,
+  resolveSealerBound,
+} from "./append-only-sealer-types.js";
 import type {
   AppendOnlyRotatedSegment,
   AppendOnlySealFailure,
@@ -72,22 +77,6 @@ import {
   selectSweepCandidates,
 } from "./append-only-sweep-policy.js";
 
-/**
- * How many segments one instance's cold-start sweep may seal. A pathological
- * directory — a crashed process's whole backlog, or a trail nobody has run
- * the sealer against since an upgrade — must not turn one cold start into an
- * unbounded read on the append path.
- */
-const DEFAULT_MAX_SWEEP_SEALS = 64;
-
-/**
- * How many times one segment's seal is attempted before it is reported. More
- * than one because a transient `EIO`/`EAGAIN` on a single read should not cost
- * a proof; bounded because the append path is not the place to wait out a
- * filesystem that is genuinely down.
- */
-const DEFAULT_MAX_SEAL_ATTEMPTS = 3;
-
 /** Reported when a segment's directory inventory cannot be taken. */
 const LISTING_FAILURE_MESSAGE =
   "append-only stream: failed to list segments while sealing";
@@ -100,31 +89,12 @@ const FOREIGN_NAME_MESSAGE =
 const ROTATION_DISAGREEMENT_MESSAGE =
   "append-only stream: deferred a rotation seal — segment size disagrees with the writer's count";
 
-/** Re-exported for existing importers — see `./append-only-sealer-types.js`. */
-export type { AppendOnlySealFailure, AppendOnlySealerOptions };
-
 /**
- * Resolves one of the sealer's caller-overridable bounds: `override` when
- * it is a finite number, clamped up to `floor`; `fallback` when `override`
- * is `undefined` or not finite.
- *
- * **A malformed override must not silently disable what it bounds.**
- * `Math.max(floor, NaN)` is `NaN`, and a `NaN` reaching
- * `Array.prototype.slice(0, …)` yields an EMPTY list — the sweep silently
- * off — or a zero-iteration `for` loop bound, indistinguishable from
- * "already sealed". Once these two options reach the public surface a later
- * slice adds, the value is no longer library-controlled, so this is what
- * keeps a caller's typo from reading as success.
+ * Re-exported so every existing importer of this module keeps working
+ * unchanged — see `./append-only-sealer-types.js` for the definitions and
+ * their full TSDoc.
  */
-function resolveSealerBound(
-  override: number | undefined,
-  fallback: number,
-  floor: number,
-): number {
-  return override !== undefined && Number.isFinite(override)
-    ? Math.max(floor, override)
-    : fallback;
-}
+export type { AppendOnlySealFailure, AppendOnlySealerOptions };
 
 /**
  * Seals segments on the writer's behalf: the one the writer just rotated away
@@ -534,7 +504,17 @@ export class AppendOnlySealer {
     sealed.add(segment);
   }
 
-  /** Delegates to {@link "./append-only-seal-report.js".reportSealFailure}. */
+  /**
+   * Hands one failure to the owner, in the owner's own vocabulary.
+   *
+   * Delegates to
+   * {@link "./append-only-seal-report.js".reportSealFailure} — see that
+   * function's TSDoc for the full contract: why an already-typed
+   * {@link "../../core/errors/index.js".M3LError} is passed through rather
+   * than double-wrapped, why the guard is still needed even under
+   * {@link AppendOnlySealer.sealAfterAppend}'s total guard, and why a
+   * returned thenable is neutralised rather than awaited.
+   */
   #report(segment: string | undefined, cause: unknown): void {
     reportSealFailure(this.#onSealFailed, this.#buildError, segment, cause);
   }
