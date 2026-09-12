@@ -166,6 +166,32 @@ import { Core } from "@m3l-automation/m3l-common";
  * before any filesystem call, so it is a caller fault a retry cannot fix — a
  * non-retryable 400, never the trail-outage 503 above.
  *
+ * The final four codes are the X13 session-flow-export domain module's own
+ * addition (`sessions/flow-export.ts`, `sessions/flow-yaml.ts`), layered on
+ * top of the same `console_sessions`/`console_session_steps` tables the X6
+ * codes above already cover — this module only reads them, writing nothing
+ * new. `ERR_CONSOLE_SESSION_FLOW_EXPORT_EMPTY` is raised when the requested
+ * session has no recorded steps at all: there is nothing to compose into a
+ * flow document. `ERR_CONSOLE_SESSION_FLOW_EXPORT_INVALID` covers two
+ * distinct caught-before-any-write shapes: the requested flow name fails its
+ * `/^[a-z0-9-]+$/` grammar, or a step's persisted `parameters` (round-tripped
+ * through JSON, so typed `unknown` at rest) is not a plain string-valued
+ * record — either way, nothing about the request or the session's stored
+ * data lets this exporter proceed. `ERR_CONSOLE_SESSION_FLOW_EXPORT_SECRET`
+ * is raised when a step's parameter key — its canonical name OR any declared
+ * alias — is marked secret by the target script's own descriptor: writing
+ * that value as a YAML literal to an exportable flow file would leak a
+ * credential to disk, so the export refuses outright rather than redacting
+ * or continuing. This alias check is deliberately STRICTER than
+ * `packages/m3l-cli/src/flow/validate-guards.ts`'s own
+ * `screenSecretParameters`, which only checks canonical names — a session
+ * step can carry a literal alias key that a canonical-only screen would miss
+ * entirely. `ERR_CONSOLE_SESSION_FLOW_EXPORT_EXISTS` is reserved for a later
+ * PR's write-collision case (the route that persists the rendered YAML to a
+ * named flow file): raised when the target file already exists and the
+ * caller did not request an overwrite — nothing in this PR's pure domain
+ * module raises it yet.
+ *
  * @example
  * ```ts
  * function isConfigError(code: M3LConsoleErrorCode): boolean {
@@ -212,7 +238,11 @@ export type M3LConsoleErrorCode =
   | "ERR_CONSOLE_SESSION_ARTIFACT_GONE"
   | "ERR_CONSOLE_SCRIPT_INTROSPECTION_FAILED"
   | "ERR_CONSOLE_AUDIT_WRITE_FAILED"
-  | "ERR_CONSOLE_AUDIT_RECORD_INVALID";
+  | "ERR_CONSOLE_AUDIT_RECORD_INVALID"
+  | "ERR_CONSOLE_SESSION_FLOW_EXPORT_EMPTY"
+  | "ERR_CONSOLE_SESSION_FLOW_EXPORT_INVALID"
+  | "ERR_CONSOLE_SESSION_FLOW_EXPORT_SECRET"
+  | "ERR_CONSOLE_SESSION_FLOW_EXPORT_EXISTS";
 
 /**
  * Constructor options for {@link M3LConsoleError}.

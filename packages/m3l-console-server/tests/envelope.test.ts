@@ -325,6 +325,47 @@ const CLASSIFICATION_TABLE: Record<
     retryable: false,
     fault: false,
   },
+  // X13 session -> flow export (ADR-0068's Decision, snapshot-to-literals
+  // design). An empty session (no steps recorded yet) is a caller-facing
+  // precondition failure — same 409 reasoning as
+  // ERR_CONSOLE_RUN_NOT_CANCELLABLE: the request is well-formed, but the
+  // session's current state can't satisfy it.
+  ERR_CONSOLE_SESSION_FLOW_EXPORT_EMPTY: {
+    status: 409,
+    origin: "caller",
+    retryable: false,
+    fault: false,
+  },
+  // An invalid requested flow name, or a step parameter whose persisted
+  // value is not a plain string, is a caller input problem caught before
+  // any write — same reasoning as ERR_CONSOLE_SESSION_REFERENCE_INVALID.
+  ERR_CONSOLE_SESSION_FLOW_EXPORT_INVALID: {
+    status: 400,
+    origin: "caller",
+    retryable: false,
+    fault: false,
+  },
+  // A step parameter (by canonical name OR declared alias) the target
+  // script marks secret refuses the export outright rather than writing a
+  // credential-bearing literal to disk — a caller-facing safety refusal,
+  // not a server fault; retrying with the same session changes nothing.
+  ERR_CONSOLE_SESSION_FLOW_EXPORT_SECRET: {
+    status: 409,
+    origin: "caller",
+    retryable: false,
+    fault: false,
+  },
+  // ASSUMPTION (flagged for the hub, see console-error.test.ts's matching
+  // note): models the design plan's `wx`-by-default write, refusing when
+  // the target flow file already exists and `overwrite` was not requested
+  // — a caller-facing state conflict, same 409/caller/non-retryable/
+  // non-fault shape as ERR_CONSOLE_SESSION_TRANSITION_INVALID.
+  ERR_CONSOLE_SESSION_FLOW_EXPORT_EXISTS: {
+    status: 409,
+    origin: "caller",
+    retryable: false,
+    fault: false,
+  },
 };
 
 // `Object.entries` widens the key to `string`; `CLASSIFICATION_TABLE`'s
