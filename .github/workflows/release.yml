@@ -20,18 +20,26 @@ concurrency:
 jobs:
   publish:
     name: Publish @monte3l/m3l-common
-    # workflow_dispatch accepts any branch/tag from the UI; GitHub Packages
-    # versions are immutable, so publishing an unreviewed ref by mistake
-    # cannot be undone by re-publishing. Restrict the job itself, not just
-    # the trigger, to main — the one ref that already passed the required
-    # `verify`/`review` checks before it could land there.
-    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
       contents: read
       packages: write
     steps:
+      # workflow_dispatch accepts any branch/tag from the UI; GitHub Packages
+      # versions are immutable, so publishing an unreviewed ref by mistake
+      # cannot be undone by re-publishing. A job-level `if:` would silently
+      # skip the whole job on a non-main dispatch — reporting green with
+      # nothing published and no explanation, exactly the silently-swallowed
+      # failure this repo's error-handling rule forbids. Fail loudly instead:
+      # the one ref this restricts to is the one that already passed the
+      # required `verify`/`review` checks before it could land on main.
+      - name: Refuse to publish from a non-main ref
+        if: github.ref != 'refs/heads/main'
+        run: |
+          echo "::error::release.yml only publishes from main — dispatched ref was '${{ github.ref }}'. Re-dispatch this workflow from main." >&2
+          exit 1
+
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 1
@@ -54,10 +62,10 @@ jobs:
       # shape) before a manually-dispatched, high-consequence, infrequent
       # publish, rather than trusting a stale prior CI run. The PR-diff-scoped
       # gates (check:exports-semver's label check, check:review-size) are not
-      # meaningfully re-validated here — this dispatch targets main directly
-      # (the `if:` above), not a PR range, and main's branch protection
-      # already required them to pass, with a signed commit, before this ref
-      # could exist.
+      # meaningfully re-validated here — the guard step above already
+      # restricts this dispatch to main, not a PR range, and main's branch
+      # protection already required them to pass, with a signed commit,
+      # before this ref could exist.
       - name: Verify
         run: pnpm verify
 
@@ -74,8 +82,8 @@ jobs:
       # clean-working-tree check. The latter is harmless here — a fresh clone
       # right before this step has nothing uncommitted to hide — but is
       # disabled by the same flag, not by choice; `pnpm verify` above, plus
-      # the `if:` restricting this job to main, are this job's actual safety
-      # net.
+      # the main-only guard step at the top of this job, are this job's
+      # actual safety net.
       - name: Publish
         run: pnpm --filter @monte3l/m3l-common publish --no-git-checks
         env:

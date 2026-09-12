@@ -1,6 +1,6 @@
 /**
  * Tests for the registry-immutability publish-version gate
- * (bin/check-publish-version.mjs) — covers the four exported pure/async
+ * (bin/check-publish-version.mjs) — covers the five exported pure/async
  * functions (`PACKAGE_DIR`, `REGISTRY`, `readPublishTarget`,
  * `registryPathSegment`, `versionExists`). The module's CLI main block is
  * guarded behind `if (process.argv[1] === fileURLToPath(import.meta.url))`,
