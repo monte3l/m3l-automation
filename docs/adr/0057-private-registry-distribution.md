@@ -1,7 +1,7 @@
 # 0057. Distribute the CLI and its fleet via a private GitHub Packages registry
 
-- **Status:** Accepted
-- **Relations:** partially-supersedes: 0020 (clauses: the "internal, never-published" stance and the absence of any release workflow — hand-managed `version`, no changelog automation, Conventional Commits and signed-commit enforcement, and the exports-map contract gates all remain in force)
+- **Status:** Partially-superseded
+- **Relations:** partially-supersedes: 0020 (clauses: the "internal, never-published" stance and the absence of any release workflow — hand-managed `version`, no changelog automation, Conventional Commits and signed-commit enforcement, and the exports-map contract gates all remain in force); partially-superseded-by: 0103 (clauses: the registry namespace `@m3l-automation` → `@monte3l`; the CI credential from a long-lived publish-scoped token to the ephemeral per-job `GITHUB_TOKEN`; the publish set from the whole fleet in lockstep to `m3l-common` alone for the first release, with the fleet publish deferred)
 - **Date:** 2026-08-20
 - **Deciders:** Enrico Lionello (maintainer); Claude (design synthesis)
 

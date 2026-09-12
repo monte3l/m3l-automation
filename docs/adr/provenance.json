@@ -150,7 +150,7 @@
       },
       {
         "path": "docs/plans/IMPLEMENTATION.md",
-        "blob": "eeeabbba58887023003b4751cb5247ba12f59432"
+        "blob": "87588193ea8a51452f364ed352c7ef69a63104f7"
       },
       {
         "path": "package.json",
@@ -183,7 +183,7 @@
       },
       {
         "path": "docs/plans/IMPLEMENTATION.md",
-        "blob": "eeeabbba58887023003b4751cb5247ba12f59432"
+        "blob": "87588193ea8a51452f364ed352c7ef69a63104f7"
       },
       {
         "path": "docs/reference/core/errors.md",
@@ -243,10 +243,10 @@
     "sourceFiles": [
       {
         "path": "docs/contributing/branch-protection.md",
-        "blob": "1349156a0c2f39058a85c101086f5736306fb356"
+        "blob": "e23190814ee6c58547f8ebecdac7ec497cdf73b9"
       }
     ],
-    "verifiedAt": "2026-09-10"
+    "verifiedAt": "2026-09-12"
   },
   "0010": {
     "sourceFiles": [
@@ -413,10 +413,10 @@
       },
       {
         "path": "docs/contributing/branch-protection.md",
-        "blob": "1349156a0c2f39058a85c101086f5736306fb356"
+        "blob": "e23190814ee6c58547f8ebecdac7ec497cdf73b9"
       }
     ],
-    "verifiedAt": "2026-09-11"
+    "verifiedAt": "2026-09-12"
   },
   "0016": {
     "sourceFiles": [
@@ -462,14 +462,14 @@
       },
       {
         "path": "docs/contributing/branch-protection.md",
-        "blob": "1349156a0c2f39058a85c101086f5736306fb356"
+        "blob": "e23190814ee6c58547f8ebecdac7ec497cdf73b9"
       },
       {
         "path": "docs/logs/2026-07-24-w5-promote-destructive-gate.md",
         "blob": "6198c75526c1d14fffd18d7835768d02d25712fe"
       }
     ],
-    "verifiedAt": "2026-09-10"
+    "verifiedAt": "2026-09-12"
   },
   "0017": {
     "sourceFiles": [
@@ -601,7 +601,7 @@
       },
       {
         "path": "docs/plans/IMPLEMENTATION.md",
-        "blob": "eeeabbba58887023003b4751cb5247ba12f59432"
+        "blob": "87588193ea8a51452f364ed352c7ef69a63104f7"
       },
       {
         "path": "docs/reference/catalog.json",
@@ -666,7 +666,7 @@
       },
       {
         "path": "docs/plans/IMPLEMENTATION.md",
-        "blob": "eeeabbba58887023003b4751cb5247ba12f59432"
+        "blob": "87588193ea8a51452f364ed352c7ef69a63104f7"
       },
       {
         "path": "docs/reference/catalog.json",
@@ -728,7 +728,7 @@
     "sourceFiles": [
       {
         "path": "docs/plans/IMPLEMENTATION.md",
-        "blob": "eeeabbba58887023003b4751cb5247ba12f59432"
+        "blob": "87588193ea8a51452f364ed352c7ef69a63104f7"
       },
       {
         "path": "docs/reference/aws/clients.md",
@@ -864,7 +864,7 @@
       },
       {
         "path": "docs/plans/IMPLEMENTATION.md",
-        "blob": "eeeabbba58887023003b4751cb5247ba12f59432"
+        "blob": "87588193ea8a51452f364ed352c7ef69a63104f7"
       },
       {
         "path": "docs/research/writing-custom-tools-and-mcp.md",
@@ -881,7 +881,7 @@
       },
       {
         "path": "docs/adr/README.md",
-        "blob": "6e7a44588d580395795ef205b0b6d8c1a12f6a79"
+        "blob": "9d6960226ec545c5efe925756bc57ce799d83e41"
       },
       {
         "path": "docs/logs/2026-08-14-aws-rds-data.md",
@@ -893,7 +893,7 @@
       },
       {
         "path": "docs/plans/IMPLEMENTATION.md",
-        "blob": "eeeabbba58887023003b4751cb5247ba12f59432"
+        "blob": "87588193ea8a51452f364ed352c7ef69a63104f7"
       },
       {
         "path": "docs/ROADMAP.md",
@@ -998,11 +998,11 @@
       },
       {
         "path": "docs/logs/README.md",
-        "blob": "5fdb41159103dc8c11dc96df848643f991e341d4"
+        "blob": "1d5bae007921d079eb4e2863b6fa8d40af603d6a"
       },
       {
         "path": "docs/plans/IMPLEMENTATION.md",
-        "blob": "eeeabbba58887023003b4751cb5247ba12f59432"
+        "blob": "87588193ea8a51452f364ed352c7ef69a63104f7"
       },
       {
         "path": "docs/ROADMAP.md",
@@ -1019,7 +1019,7 @@
     "sourceFiles": [
       {
         "path": "docs/plans/IMPLEMENTATION.md",
-        "blob": "eeeabbba58887023003b4751cb5247ba12f59432"
+        "blob": "87588193ea8a51452f364ed352c7ef69a63104f7"
       },
       {
         "path": "docs/ROADMAP.md",
@@ -1048,7 +1048,7 @@
       },
       {
         "path": "docs/plans/IMPLEMENTATION.md",
-        "blob": "eeeabbba58887023003b4751cb5247ba12f59432"
+        "blob": "87588193ea8a51452f364ed352c7ef69a63104f7"
       },
       {
         "path": "packages/m3l-common/src/aws/credentials/manager.ts",
@@ -1196,7 +1196,7 @@
       },
       {
         "path": "docs/plans/IMPLEMENTATION.md",
-        "blob": "eeeabbba58887023003b4751cb5247ba12f59432"
+        "blob": "87588193ea8a51452f364ed352c7ef69a63104f7"
       },
       {
         "path": "docs/reference/cli.md",
@@ -1238,7 +1238,7 @@
       },
       {
         "path": "docs/plans/IMPLEMENTATION.md",
-        "blob": "eeeabbba58887023003b4751cb5247ba12f59432"
+        "blob": "87588193ea8a51452f364ed352c7ef69a63104f7"
       },
       {
         "path": "docs/reference/aws/clients.md",
@@ -1267,7 +1267,7 @@
       },
       {
         "path": "docs/plans/IMPLEMENTATION.md",
-        "blob": "eeeabbba58887023003b4751cb5247ba12f59432"
+        "blob": "87588193ea8a51452f364ed352c7ef69a63104f7"
       },
       {
         "path": "docs/reference/core/checkpoint.md",
@@ -1404,7 +1404,7 @@
       },
       {
         "path": "docs/plans/IMPLEMENTATION.md",
-        "blob": "eeeabbba58887023003b4751cb5247ba12f59432"
+        "blob": "87588193ea8a51452f364ed352c7ef69a63104f7"
       },
       {
         "path": "docs/ROADMAP.md",
@@ -1462,7 +1462,7 @@
       },
       {
         "path": "docs/plans/IMPLEMENTATION.md",
-        "blob": "eeeabbba58887023003b4751cb5247ba12f59432"
+        "blob": "87588193ea8a51452f364ed352c7ef69a63104f7"
       },
       {
         "path": "docs/reference/cli.md",
@@ -1500,11 +1500,11 @@
       },
       {
         "path": "docs/plans/2026-08-20-m3l-console.md",
-        "blob": "d924dafbfa8f83aa2400d2967707ff84a33358bd"
+        "blob": "685551357bacf8bef6e2d76c154a3deb2117938c"
       },
       {
         "path": "docs/plans/IMPLEMENTATION.md",
-        "blob": "eeeabbba58887023003b4751cb5247ba12f59432"
+        "blob": "87588193ea8a51452f364ed352c7ef69a63104f7"
       }
     ],
     "verifiedAt": "2026-09-12"
@@ -1517,7 +1517,7 @@
       },
       {
         "path": "docs/plans/IMPLEMENTATION.md",
-        "blob": "eeeabbba58887023003b4751cb5247ba12f59432"
+        "blob": "87588193ea8a51452f364ed352c7ef69a63104f7"
       },
       {
         "path": "docs/research/agent-cli-integration.md",
@@ -1552,7 +1552,7 @@
     "sourceFiles": [
       {
         "path": "docs/adr/README.md",
-        "blob": "6e7a44588d580395795ef205b0b6d8c1a12f6a79"
+        "blob": "9d6960226ec545c5efe925756bc57ce799d83e41"
       },
       {
         "path": "docs/research/agent-cli-integration.md",
@@ -1587,11 +1587,11 @@
     "sourceFiles": [
       {
         "path": "docs/plans/2026-08-20-m3l-console.md",
-        "blob": "d924dafbfa8f83aa2400d2967707ff84a33358bd"
+        "blob": "685551357bacf8bef6e2d76c154a3deb2117938c"
       },
       {
         "path": "docs/plans/IMPLEMENTATION.md",
-        "blob": "eeeabbba58887023003b4751cb5247ba12f59432"
+        "blob": "87588193ea8a51452f364ed352c7ef69a63104f7"
       }
     ],
     "verifiedAt": "2026-09-12"
@@ -1626,11 +1626,11 @@
     "sourceFiles": [
       {
         "path": "docs/plans/2026-08-20-m3l-console.md",
-        "blob": "d924dafbfa8f83aa2400d2967707ff84a33358bd"
+        "blob": "685551357bacf8bef6e2d76c154a3deb2117938c"
       },
       {
         "path": "docs/plans/IMPLEMENTATION.md",
-        "blob": "eeeabbba58887023003b4751cb5247ba12f59432"
+        "blob": "87588193ea8a51452f364ed352c7ef69a63104f7"
       },
       {
         "path": "docs/reference/console.md",
@@ -1651,7 +1651,7 @@
       },
       {
         "path": "docs/plans/IMPLEMENTATION.md",
-        "blob": "eeeabbba58887023003b4751cb5247ba12f59432"
+        "blob": "87588193ea8a51452f364ed352c7ef69a63104f7"
       },
       {
         "path": "docs/reference/console.md",
@@ -1753,7 +1753,7 @@
       },
       {
         "path": "docs/plans/IMPLEMENTATION.md",
-        "blob": "eeeabbba58887023003b4751cb5247ba12f59432"
+        "blob": "87588193ea8a51452f364ed352c7ef69a63104f7"
       },
       {
         "path": "docs/reference/catalog.json",
@@ -1806,7 +1806,7 @@
       },
       {
         "path": "docs/plans/IMPLEMENTATION.md",
-        "blob": "eeeabbba58887023003b4751cb5247ba12f59432"
+        "blob": "87588193ea8a51452f364ed352c7ef69a63104f7"
       },
       {
         "path": "docs/ROADMAP.md",
@@ -1854,7 +1854,7 @@
       },
       {
         "path": "docs/plans/IMPLEMENTATION.md",
-        "blob": "eeeabbba58887023003b4751cb5247ba12f59432"
+        "blob": "87588193ea8a51452f364ed352c7ef69a63104f7"
       },
       {
         "path": "docs/ROADMAP.md",
@@ -1948,7 +1948,7 @@
       },
       {
         "path": "docs/plans/IMPLEMENTATION.md",
-        "blob": "eeeabbba58887023003b4751cb5247ba12f59432"
+        "blob": "87588193ea8a51452f364ed352c7ef69a63104f7"
       },
       {
         "path": "docs/ROADMAP.md",
@@ -2064,14 +2064,14 @@
       },
       {
         "path": "docs/contributing/branch-protection.md",
-        "blob": "1349156a0c2f39058a85c101086f5736306fb356"
+        "blob": "e23190814ee6c58547f8ebecdac7ec497cdf73b9"
       },
       {
         "path": "docs/contributing/hooks-reference.md",
         "blob": "d43814fdd47c705983c349fc6d817957956a3b64"
       }
     ],
-    "verifiedAt": "2026-09-10"
+    "verifiedAt": "2026-09-12"
   },
   "0084": {
     "sourceFiles": [
@@ -2114,7 +2114,7 @@
       },
       {
         "path": "docs/plans/IMPLEMENTATION.md",
-        "blob": "eeeabbba58887023003b4751cb5247ba12f59432"
+        "blob": "87588193ea8a51452f364ed352c7ef69a63104f7"
       },
       {
         "path": "docs/reference/cli.md",
@@ -2383,7 +2383,7 @@
       },
       {
         "path": "docs/adr/README.md",
-        "blob": "6e7a44588d580395795ef205b0b6d8c1a12f6a79"
+        "blob": "9d6960226ec545c5efe925756bc57ce799d83e41"
       },
       {
         "path": "docs/contributing/filing-work.md",
@@ -2404,7 +2404,7 @@
       },
       {
         "path": "docs/adr/README.md",
-        "blob": "6e7a44588d580395795ef205b0b6d8c1a12f6a79"
+        "blob": "9d6960226ec545c5efe925756bc57ce799d83e41"
       },
       {
         "path": "docs/decision-notes/README.md",
@@ -2482,7 +2482,7 @@
       },
       {
         "path": "docs/contributing/branch-protection.md",
-        "blob": "1349156a0c2f39058a85c101086f5736306fb356"
+        "blob": "e23190814ee6c58547f8ebecdac7ec497cdf73b9"
       }
     ],
     "verifiedAt": "2026-09-12"
@@ -2528,7 +2528,7 @@
       },
       {
         "path": "docs/logs/README.md",
-        "blob": "5fdb41159103dc8c11dc96df848643f991e341d4"
+        "blob": "1d5bae007921d079eb4e2863b6fa8d40af603d6a"
       }
     ],
     "verifiedAt": "2026-09-12"
@@ -2619,11 +2619,11 @@
     "sourceFiles": [
       {
         "path": "docs/adr/README.md",
-        "blob": "6e7a44588d580395795ef205b0b6d8c1a12f6a79"
+        "blob": "9d6960226ec545c5efe925756bc57ce799d83e41"
       },
       {
         "path": "docs/plans/2026-08-20-m3l-console.md",
-        "blob": "d924dafbfa8f83aa2400d2967707ff84a33358bd"
+        "blob": "685551357bacf8bef6e2d76c154a3deb2117938c"
       },
       {
         "path": "packages/m3l-console-server/src/boot/audit-rebuild.ts",

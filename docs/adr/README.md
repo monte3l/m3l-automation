@@ -188,7 +188,7 @@ surface).
 | 0054 | [Typed command-module contract and hybrid execution](./0054-command-module-contract-and-hybrid-execution.md)                                              | Accepted             |
 | 0055 | [Declarative, enumerable operations in script config](./0055-declarative-operation-introspection.md)                                                      | Accepted             |
 | 0056 | [Cross-script orchestration engine in `m3l-cli` (`m3l flow`)](./0056-cross-script-orchestration-engine.md)                                                | Accepted             |
-| 0057 | [Distribute the CLI and its fleet via a private GitHub Packages registry](./0057-private-registry-distribution.md)                                        | Accepted             |
+| 0057 | [Distribute the CLI and its fleet via a private GitHub Packages registry](./0057-private-registry-distribution.md)                                        | Partially-superseded |
 | 0058 | [Agent-operator programme: staged AI-agent operation of the m3l fleet](./0058-agent-operator-programme.md)                                                | Accepted             |
 | 0059 | [`aws/bedrock-runtime` typed wrapper and tool-use loop primitives](./0059-bedrock-runtime-wrapper-and-loop-primitives.md)                                 | Accepted             |
 | 0060 | [Agent policy layer: graded autonomy as a real authorization control](./0060-agent-policy-layer.md)                                                       | Accepted             |
@@ -234,5 +234,6 @@ surface).
 | 0100 | [Test I/O is governed by sandbox isolation, not by an I/O ban](./0100-test-fs-sandbox-isolation.md)                                                       | Accepted             |
 | 0101 | [Pre-flight parameter-resolution check for `m3l flow run`](./0101-flow-preflight-parameter-resolution-check.md)                                           | Accepted             |
 | 0102 | [Sealed-segment manifest: the append-only audit trail becomes boundable and provable](./0102-sealed-segment-manifest.md)                                  | Accepted             |
+| 0103 | [Rename the publish scope to `@monte3l` and stage U13's first release to `m3l-common` alone](./0103-publish-scope-rename-and-staged-first-release.md)     | Accepted             |
 
 <!-- END GENERATED ADR INDEX -->
