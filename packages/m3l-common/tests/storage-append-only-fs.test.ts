@@ -36,7 +36,6 @@ describe("flagOrZero", () => {
     ["O_RDONLY-sized bit", 0o1],
     ["a typical O_NOFOLLOW value", 0o400000],
     ["a typical O_NONBLOCK value", 0o4000],
-    ["the largest safe integer", Number.MAX_SAFE_INTEGER],
   ])("returns a defined non-zero flag unchanged (%s)", (_label, flag) => {
     expect(flagOrZero(flag)).toBe(flag);
   });

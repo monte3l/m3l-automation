@@ -27,16 +27,15 @@
  *
  * A segment is opened for reading with the same `O_NOFOLLOW` refusal the
  * writer applies through {@link APPEND_FLAGS}, which lives here too, so a
- * segment path replaced by a symlink is refused rather than followed, and —
- * unlike an earlier version of this comment claimed — the writer's
- * `nlink === 1` hardlink check IS
- * mirrored here, on the same opened descriptor, for a reason specific to the
- * read side: a hardlink lets a lower-privilege actor **nominate** a file
- * whose contents they cannot read themselves, for a higher-privilege reader
- * to read and then republish into the audit index — where the nominating
- * actor can read it. That is a confused-deputy read primitive, not "a file
- * with two names", and skipping the check here would leave it open even
- * though the writer already closes it on the write side.
+ * segment path replaced by a symlink is refused rather than followed, and the
+ * writer's `nlink === 1` hardlink check IS mirrored here, on the same opened
+ * descriptor, for a reason specific to the read side: a hardlink lets a
+ * lower-privilege actor **nominate** a file whose contents they cannot read
+ * themselves, for a higher-privilege reader to read and then republish into
+ * the audit index — where the nominating actor can read it. That is a
+ * confused-deputy read primitive, not "a file with two names", and skipping
+ * the check here would leave it open even though the writer already closes it
+ * on the write side.
  *
  * The same `fstat` also refuses anything that opened but is not a plain
  * regular file — a FIFO planted at a segment path, in particular, would
