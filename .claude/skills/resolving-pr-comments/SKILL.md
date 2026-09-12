@@ -187,12 +187,16 @@ After printing the preview, branch on the verdict from Step 2:
   not proceed to Step 4.
 - **PASS, Should-fix section non-empty**: nothing blocks the `review` check, but
   `should-fix-ack` (the required-check-in-waiting added by `docs/adr/0097`) fails this
-  PR until an `Acknowledged-Should-Fix:` commit footer lands somewhere in its commit
-  range — REVIEW.md's Should-fix tier now says so explicitly. Tell the user "The bot
-  review shows PASS, but N Should-fix finding(s) still need acknowledgment before
-  should-fix-ack passes." and **continue to Step 4** — the Must-fix loop there is
-  naturally a no-op (nothing to iterate), so only the Should-fix/Nits loop and Step 9's
-  acknowledgment footer actually run.
+  PR until an `Acknowledged-Should-Fix:` commit footer lands in a commit pushed AFTER
+  this round's reviewed commit — REVIEW.md's Should-fix tier now says so explicitly. An
+  earlier round's footer no longer satisfies a later round's findings (issue #1193): the
+  gate binds each round's acknowledgment to that round's own commit range, not the PR's
+  whole range. Step 9 below already produces this naturally — its footer commit is a new
+  push responding to the comment Step 3 just read, so it necessarily lands after that
+  comment's reviewed sha. Tell the user "The bot review shows PASS, but N Should-fix
+  finding(s) still need acknowledgment before should-fix-ack passes." and **continue to
+  Step 4** — the Must-fix loop there is naturally a no-op (nothing to iterate), so only
+  the Should-fix/Nits loop and Step 9's acknowledgment footer actually run.
 - **FAIL with an empty Must-fix list** (the anomaly case): tell the user "The bot
   verdict is FAIL but no Must-fix items were found. See Should-fix / Nits above.
   Investigate whether the bot miscategorised a finding or if a non-blocking item was

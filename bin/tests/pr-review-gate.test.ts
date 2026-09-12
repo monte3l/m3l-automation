@@ -2,8 +2,10 @@ import { describe, expect, test } from "vitest";
 import {
   REVIEW_GATE_WORKFLOW_PATH,
   buildDeltaPatch,
+  collectShouldFixRounds,
   countReviewComments,
   countShouldFixFindings,
+  describeShouldFixAckOutcome,
   describeWorkflowGateChange,
   hasShouldFixAcknowledgment,
   parseMustFixSection,
@@ -11,6 +13,7 @@ import {
   parseShouldFixSection,
   parseVerdict,
   parseVerdictFile,
+  planShouldFixAckRanges,
   resolveVerdict,
   selectShouldFixComment,
 } from "../../bin/lib/pr-review-gate.mjs";
@@ -645,6 +648,498 @@ describe("selectShouldFixComment", () => {
       "- PASS",
     ].join("\n");
     expect(selectShouldFixComment([round1, round2, round3])).toBe(round1);
+  });
+});
+
+describe("collectShouldFixRounds", () => {
+  test("keeps every round with findings, each with its own sha, section, and count", () => {
+    const round1Bullets = [
+      "- `src/foo.ts:10` — consider extracting this branch (clarity).",
+      "- `src/bar.ts:5` — missing a doc comment (documentation).",
+    ];
+    const round1 = [
+      "### Should-fix",
+      "",
+      ...round1Bullets,
+      "",
+      "### Verdict",
+      "",
+      "- FAIL — a Must-fix remains.",
+      "",
+      "<!-- claude-review-sha: aaaa111 -->",
+    ].join("\n");
+    const round2Bullets = [
+      "- `src/baz.ts:1` — rename for clarity (readability).",
+    ];
+    const round2 = [
+      "### Should-fix",
+      "",
+      ...round2Bullets,
+      "",
+      "### Verdict",
+      "",
+      "- PASS",
+      "",
+      "<!-- claude-review-sha: bbbb222 -->",
+    ].join("\n");
+    const round3 = [
+      "### Should-fix",
+      "",
+      "_None._",
+      "",
+      "### Verdict",
+      "",
+      "- PASS",
+    ].join("\n");
+    expect(collectShouldFixRounds([round1, round2, round3])).toEqual([
+      { round: 1, sha: "aaaa111", count: 2, section: round1Bullets.join("\n") },
+      { round: 2, sha: "bbbb222", count: 1, section: round2Bullets.join("\n") },
+    ]);
+  });
+
+  // The core regression this function exists for (issue #1193 / PR #1190):
+  // round 1 and round 2 raise the SAME count of findings but DIFFERENT
+  // findings — selectShouldFixComment's "pick one loudest round" would
+  // silently discard whichever round didn't win the tie-break. This function
+  // must keep both, each bound to its own reviewed sha.
+  test("keeps two rounds with the same finding count but different findings as separate entries", () => {
+    const round1Bullets = [
+      "- `src/notify.ts:42` — group-send falls back to per-recipient sends silently on partial failure (behavior).",
+      "- `docs/reference/notes.md:10` — the Notes count in the docs disagrees with the implementation (accuracy).",
+    ];
+    const round1 = [
+      "### Should-fix",
+      "",
+      ...round1Bullets,
+      "",
+      "### Verdict",
+      "",
+      "- FAIL — a Must-fix remains.",
+      "",
+      "<!-- claude-review-sha: 1111aaa -->",
+    ].join("\n");
+    const round2Bullets = [
+      "- `src/spawn-win32.ts:88` — spawning with `detached: true` on win32 carries an extra process-group cost not called out (performance).",
+      "- `src/parse.ts:120` — this `catch` block has no test coverage (testing).",
+    ];
+    const round2 = [
+      "### Should-fix",
+      "",
+      ...round2Bullets,
+      "",
+      "### Verdict",
+      "",
+      "- PASS",
+      "",
+      "<!-- claude-review-sha: 2222bbb -->",
+    ].join("\n");
+    const result = collectShouldFixRounds([round1, round2]);
+    expect(result).toEqual([
+      { round: 1, sha: "1111aaa", count: 2, section: round1Bullets.join("\n") },
+      { round: 2, sha: "2222bbb", count: 2, section: round2Bullets.join("\n") },
+    ]);
+  });
+
+  test("a non-verdict reply interleaved between two real rounds does not consume a round ordinal", () => {
+    const round1 = [
+      "### Should-fix",
+      "",
+      "- `src/foo.ts:10` — consider extracting this branch (clarity).",
+      "",
+      "### Verdict",
+      "",
+      "- FAIL — a Must-fix remains.",
+    ].join("\n");
+    const reply = "Thanks for the ping! Happy to help.";
+    const round2 = [
+      "### Should-fix",
+      "",
+      "- `src/bar.ts:5` — missing a doc comment (documentation).",
+      "",
+      "### Verdict",
+      "",
+      "- PASS",
+    ].join("\n");
+    const result = collectShouldFixRounds([round1, reply, round2]);
+    expect(result).toHaveLength(2);
+    expect(result[1]?.round).toBe(2);
+  });
+
+  test("a body with Should-fix bullets but no claude-review-sha marker gets sha: null, not dropped", () => {
+    const body = [
+      "### Should-fix",
+      "",
+      "- `src/foo.ts:10` — consider extracting this branch (clarity).",
+      "",
+      "### Verdict",
+      "",
+      "- FAIL — a Must-fix remains.",
+    ].join("\n");
+    expect(collectShouldFixRounds([body])).toEqual([
+      {
+        round: 1,
+        sha: null,
+        count: 1,
+        section:
+          "- `src/foo.ts:10` — consider extracting this branch (clarity).",
+      },
+    ]);
+  });
+
+  test("two bodies sharing the same claude-review-sha marker (an edited/re-posted comment) collapse to one entry, keeping the larger count", () => {
+    const bodyA = [
+      "### Should-fix",
+      "",
+      "- `src/foo.ts:10` — consider extracting this branch (clarity).",
+      "",
+      "### Verdict",
+      "",
+      "- FAIL — a Must-fix remains.",
+      "",
+      "<!-- claude-review-sha: cafe1234 -->",
+    ].join("\n");
+    const bodyBBullets = [
+      "- `src/foo.ts:10` — consider extracting this branch (clarity).",
+      "- `src/bar.ts:5` — missing a doc comment (documentation).",
+      "- `src/baz.ts:1` — rename for clarity (readability).",
+    ];
+    const bodyB = [
+      "### Should-fix",
+      "",
+      ...bodyBBullets,
+      "",
+      "### Verdict",
+      "",
+      "- FAIL — a Must-fix remains.",
+      "",
+      "<!-- claude-review-sha: cafe1234 -->",
+    ].join("\n");
+    const result = collectShouldFixRounds([bodyA, bodyB]);
+    expect(result).toHaveLength(1);
+    expect(result[0]?.count).toBe(3);
+    expect(result[0]?.sha).toBe("cafe1234");
+  });
+
+  // Regression for the dedup fix: a later duplicate for the same sha can win
+  // on count, but must NOT overwrite the kept entry's `round` — the ordinal
+  // must stay the FIRST-seen one, matching the entry's fixed array position,
+  // or a failure message could read "Round 2" for the array's first entry.
+  test("a later duplicate that wins on count keeps the FIRST-seen round ordinal, not its own", () => {
+    const round1 = [
+      "### Should-fix",
+      "",
+      "- `src/foo.ts:10` — consider extracting this branch (clarity).",
+      "",
+      "### Verdict",
+      "",
+      "- FAIL — a Must-fix remains.",
+      "",
+      "<!-- claude-review-sha: cafe1234 -->",
+    ].join("\n");
+    const round2Bullets = [
+      "- `src/foo.ts:10` — consider extracting this branch (clarity).",
+      "- `src/bar.ts:5` — missing a doc comment (documentation).",
+      "- `src/baz.ts:1` — rename for clarity (readability).",
+    ];
+    const round2 = [
+      "### Should-fix",
+      "",
+      ...round2Bullets,
+      "",
+      "### Verdict",
+      "",
+      "- FAIL — a Must-fix remains.",
+      "",
+      "<!-- claude-review-sha: cafe1234 -->",
+    ].join("\n");
+    const round3 = [
+      "### Should-fix",
+      "",
+      "- `src/qux.ts:1` — extract this constant (clarity).",
+      "",
+      "### Verdict",
+      "",
+      "- PASS",
+      "",
+      "<!-- claude-review-sha: beef5678 -->",
+    ].join("\n");
+    const result = collectShouldFixRounds([round1, round2, round3]);
+    expect(result).toHaveLength(2);
+    expect(result[0]).toEqual({
+      round: 1,
+      sha: "cafe1234",
+      count: 3,
+      section: round2Bullets.join("\n"),
+    });
+    expect(result[1]).toEqual({
+      round: 3,
+      sha: "beef5678",
+      count: 1,
+      section: "- `src/qux.ts:1` — extract this constant (clarity).",
+    });
+  });
+
+  test("returns an empty array for an empty input array", () => {
+    expect(collectShouldFixRounds([])).toEqual([]);
+  });
+
+  test("returns an empty array when every body is a non-verdict reply or has zero findings", () => {
+    const reply = "Thanks for the ping! Happy to help.";
+    const suppressed = [
+      "### Should-fix",
+      "",
+      "_None._",
+      "",
+      "### Verdict",
+      "",
+      "- PASS",
+    ].join("\n");
+    expect(collectShouldFixRounds([reply, suppressed])).toEqual([]);
+  });
+});
+
+describe("planShouldFixAckRanges", () => {
+  test("a usable sha not equal to head produces an unscoped, non-empty range", () => {
+    const round = { round: 1, sha: "sha1", count: 2, section: "- a finding" };
+    const result = planShouldFixAckRanges([round], {
+      base: "base1",
+      head: "head1",
+      shaStatus: { sha1: "usable" },
+    });
+    expect(result).toEqual([
+      {
+        round,
+        from: "sha1",
+        to: "head1",
+        degraded: false,
+        degradeReason: null,
+        empty: false,
+      },
+    ]);
+  });
+
+  test("a usable sha equal to head produces an empty range — the round that just posted its own finding", () => {
+    const round = { round: 1, sha: "sha1", count: 2, section: "- a finding" };
+    const result = planShouldFixAckRanges([round], {
+      base: "base1",
+      head: "sha1",
+      shaStatus: { sha1: "usable" },
+    });
+    expect(result).toEqual([
+      {
+        round,
+        from: "sha1",
+        to: "sha1",
+        degraded: false,
+        degradeReason: null,
+        empty: true,
+      },
+    ]);
+  });
+
+  test("an unreachable sha degrades to the full base..head range with a reason naming the round and sha", () => {
+    const round = { round: 1, sha: "sha1", count: 2, section: "- a finding" };
+    const result = planShouldFixAckRanges([round], {
+      base: "base1",
+      head: "head1",
+      shaStatus: { sha1: "unreachable" },
+    });
+    expect(result).toHaveLength(1);
+    const plan = result[0];
+    expect(plan?.from).toBe("base1");
+    expect(plan?.to).toBe("head1");
+    expect(plan?.degraded).toBe(true);
+    expect(plan?.empty).toBe(false);
+    expect(plan?.degradeReason).not.toBeNull();
+    expect(plan?.degradeReason).toContain("round 1");
+    expect(plan?.degradeReason).toContain("sha1");
+  });
+
+  test("a missing sha degrades the same shape as unreachable, but with a distinct reason wording", () => {
+    const round = { round: 1, sha: "sha1", count: 2, section: "- a finding" };
+    const unreachable = planShouldFixAckRanges([round], {
+      base: "base1",
+      head: "head1",
+      shaStatus: { sha1: "unreachable" },
+    })[0];
+    const missing = planShouldFixAckRanges([round], {
+      base: "base1",
+      head: "head1",
+      shaStatus: { sha1: "missing" },
+    })[0];
+    expect(missing?.from).toBe("base1");
+    expect(missing?.to).toBe("head1");
+    expect(missing?.degraded).toBe(true);
+    expect(missing?.degradeReason).not.toBeNull();
+    expect(missing?.degradeReason).not.toBe(unreachable?.degradeReason);
+  });
+
+  test("a null sha degrades to base..head with a reason mentioning the missing marker", () => {
+    const round = { round: 1, sha: null, count: 1, section: "- a finding" };
+    const result = planShouldFixAckRanges([round], {
+      base: "base1",
+      head: "head1",
+      shaStatus: {},
+    });
+    const plan = result[0];
+    expect(plan?.from).toBe("base1");
+    expect(plan?.to).toBe("head1");
+    expect(plan?.degraded).toBe(true);
+    expect(plan?.degradeReason).toContain("no claude-review-sha marker");
+  });
+
+  test("plans two rounds independently, preserving input order (one usable, one degraded)", () => {
+    const roundUsable = { round: 1, sha: "shaU", count: 1, section: "- a" };
+    const roundDegraded = { round: 2, sha: "shaD", count: 1, section: "- b" };
+    const result = planShouldFixAckRanges([roundUsable, roundDegraded], {
+      base: "base1",
+      head: "head1",
+      shaStatus: { shaU: "usable", shaD: "missing" },
+    });
+    expect(result).toHaveLength(2);
+    expect(result[0]?.round).toBe(roundUsable);
+    expect(result[0]?.degraded).toBe(false);
+    expect(result[0]?.from).toBe("shaU");
+    expect(result[1]?.round).toBe(roundDegraded);
+    expect(result[1]?.degraded).toBe(true);
+    expect(result[1]?.from).toBe("base1");
+  });
+});
+
+describe("describeShouldFixAckOutcome", () => {
+  test("every evaluation acknowledged produces ok: true with no unacknowledged entries or messages", () => {
+    const round = { round: 1, sha: "sha1", count: 2, section: "- a finding" };
+    const evaluation = {
+      round,
+      from: "sha1",
+      to: "head1",
+      degraded: false,
+      degradeReason: null,
+      empty: false,
+      acknowledged: true,
+    };
+    const result = describeShouldFixAckOutcome([evaluation]);
+    expect(result.ok).toBe(true);
+    expect(result.unacknowledged).toEqual([]);
+    expect(result.messages).toEqual([]);
+    expect(result.summary.length).toBeGreaterThan(0);
+  });
+
+  test("an unacknowledged, non-empty-range evaluation produces one message naming the round, sha, range, and section text", () => {
+    const round = {
+      round: 1,
+      sha: "sha1",
+      count: 2,
+      section: "- `src/foo.ts:10` — a real finding (rule).",
+    };
+    const evaluation = {
+      round,
+      from: "sha1",
+      to: "head1",
+      degraded: false,
+      degradeReason: null,
+      empty: false,
+      acknowledged: false,
+    };
+    const result = describeShouldFixAckOutcome([evaluation]);
+    expect(result.ok).toBe(false);
+    expect(result.messages).toHaveLength(1);
+    expect(result.messages[0]).toContain("Round 1");
+    expect(result.messages[0]).toContain("sha1");
+    expect(result.messages[0]).toContain("sha1..head1");
+    expect(result.messages[0]).toContain(round.section);
+  });
+
+  test("an unacknowledged, empty-range evaluation gets a distinct message conveying no commit exists yet", () => {
+    const round = {
+      round: 1,
+      sha: "sha1",
+      count: 2,
+      section: "- `src/foo.ts:10` — a real finding (rule).",
+    };
+    const nonEmptyEvaluation = {
+      round,
+      from: "sha1",
+      to: "head1",
+      degraded: false,
+      degradeReason: null,
+      empty: false,
+      acknowledged: false,
+    };
+    const emptyEvaluation = {
+      round,
+      from: "sha1",
+      to: "sha1",
+      degraded: false,
+      degradeReason: null,
+      empty: true,
+      acknowledged: false,
+    };
+    const nonEmptyMessage = describeShouldFixAckOutcome([nonEmptyEvaluation])
+      .messages[0];
+    const emptyMessage = describeShouldFixAckOutcome([emptyEvaluation])
+      .messages[0];
+    expect(emptyMessage).not.toBe(nonEmptyMessage);
+    expect(emptyMessage).toContain("no commit exists");
+  });
+
+  test("a degraded but acknowledged evaluation appears in degraded, not in unacknowledged, and keeps ok true", () => {
+    const round = { round: 1, sha: "sha1", count: 1, section: "- a finding" };
+    const evaluation = {
+      round,
+      from: "base1",
+      to: "head1",
+      degraded: true,
+      degradeReason:
+        "round 1's reviewed commit sha1 is not present in this checkout",
+      empty: false,
+      acknowledged: true,
+    };
+    const result = describeShouldFixAckOutcome([evaluation]);
+    expect(result.degraded).toEqual([evaluation]);
+    expect(result.unacknowledged).toEqual([]);
+    expect(result.ok).toBe(true);
+  });
+
+  test("an empty input array reads as nothing to acknowledge", () => {
+    const result = describeShouldFixAckOutcome([]);
+    expect(result).toEqual({
+      ok: true,
+      unacknowledged: [],
+      degraded: [],
+      messages: [],
+      summary: result.summary,
+    });
+    expect(result.summary).toContain("nothing to acknowledge");
+  });
+
+  test("a mix of one acknowledged and one unacknowledged evaluation reports only the unacknowledged one", () => {
+    const roundA = { round: 1, sha: "sha1", count: 1, section: "- a finding" };
+    const roundB = { round: 2, sha: "sha2", count: 1, section: "- b finding" };
+    const acknowledgedEvaluation = {
+      round: roundA,
+      from: "sha1",
+      to: "head1",
+      degraded: false,
+      degradeReason: null,
+      empty: false,
+      acknowledged: true,
+    };
+    const unacknowledgedEvaluation = {
+      round: roundB,
+      from: "sha2",
+      to: "head1",
+      degraded: false,
+      degradeReason: null,
+      empty: false,
+      acknowledged: false,
+    };
+    const result = describeShouldFixAckOutcome([
+      acknowledgedEvaluation,
+      unacknowledgedEvaluation,
+    ]);
+    expect(result.unacknowledged).toEqual([unacknowledgedEvaluation]);
+    expect(result.messages).toHaveLength(1);
   });
 });
 
