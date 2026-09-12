@@ -19,6 +19,11 @@
  * restarting at zero is exactly the defect class this layer exists to
  * prevent: it would leave `maxSegmentBytes` unenforced on a file that is
  * already full.
+ *
+ * The filesystem policy this layer applies — the mode a stream directory is
+ * created with, and the number of directory entries a segment may have — is
+ * not defined here: both come from `./append-only-fs.js`, which is the single
+ * home for those refusals across the reader, the writer, and this layer.
  */
 
 import type { Stats } from "node:fs";
@@ -29,6 +34,10 @@ import type {
   M3LAppendOnlySegment,
   M3LAppendOnlySegmentListing,
 } from "../../core/storage/append-only-read-types.js";
+import {
+  DIRECTORY_MODE,
+  SEGMENT_EXPECTED_LINK_COUNT,
+} from "./append-only-fs.js";
 
 /**
  * One segment file name's parsed parts: its UTC date prefix and sequence.
@@ -47,22 +56,6 @@ const SEGMENT_NAME_PATTERN = /^(\d{4}-\d{2}-\d{2})-(\d{4,})\.jsonl$/;
 
 /** The length of the `YYYY-MM-DD` date prefix within an ISO-8601 timestamp. */
 const DATE_PREFIX_LENGTH = 10;
-
-/**
- * The permission mode the stream directory is **created** with: owner-only
- * read/write/traverse, matching the mode this repo already applies to a
- * console session's artifact directory
- * (`m3l-console-server/src/sessions/artifacts.ts`) for the same class of
- * data.
- *
- * An audit trail left group- or world-readable under a default umask is a
- * disclosure on its own, and it widens the planted-link problem the writer
- * guards: anyone who can create a file in the directory can plant the next
- * segment name. The process umask can only **remove** bits from a mode passed
- * explicitly, never add one, so a stricter umask still wins; a directory that
- * already exists keeps the mode it was created with.
- */
-const DIRECTORY_MODE = 0o700;
 
 /** The zero-padded width of a segment's sequence number in its file name. */
 const SEQUENCE_WIDTH = 4;
@@ -200,7 +193,8 @@ export function currentDatePrefix(): string {
 }
 
 /**
- * Creates `directory` if needed — owner-only, see {@link DIRECTORY_MODE} —
+ * Creates `directory` if needed — owner-only, see
+ * {@link "./append-only-fs.js".DIRECTORY_MODE} —
  * and derives the active segment from what is already in it: today's highest-sequence segment, adopted with its real size
  * and age, or a fresh sequence-1 record when the directory holds none.
  *
@@ -291,13 +285,16 @@ export async function nextSegment(
  * three that did not.
  *
  * A **hardlink** at a segment name — a second directory entry for the same
- * inode as a file elsewhere — is also refused: `stats.nlink !== 1` is
- * checked alongside `isFile()`, using the same `lstat` result, since `nlink`
- * survives without ever opening the file. Two limits remain even so: (1) the
+ * inode as a file elsewhere — is also refused: `nlink` is checked against
+ * {@link "./append-only-fs.js".SEGMENT_EXPECTED_LINK_COUNT} alongside
+ * `isFile()`, using the same `lstat` result, since `nlink` survives without
+ * ever opening the file. Two limits remain even so: (1) the
  * check cannot say *which* of two links is the one this writer created, so a
  * legitimate segment that something later hardlinked elsewhere is also
  * skipped — that under-report is the deliberate direction, matching `read()`
- * (`append-only-reader.ts:436`), which refuses such a segment outright;
+ * (`append-only-reader.ts`'s `readSegmentEntries`), which refuses such a
+ * segment outright through
+ * {@link "./append-only-fs.js".assertSegmentIsReadable};
  * `skipped` means "not what this writer left behind", not "an I/O error
  * occurred". (2) unlike the writer's check, which tests the descriptor it
  * then uses, this one tests a **path** and is therefore not TOCTOU-free — it
@@ -358,7 +355,7 @@ export async function listSegmentFiles(
       }
       throw cause;
     }
-    if (!stats.isFile() || stats.nlink !== 1) {
+    if (!stats.isFile() || stats.nlink !== SEGMENT_EXPECTED_LINK_COUNT) {
       skipped += 1;
       continue;
     }

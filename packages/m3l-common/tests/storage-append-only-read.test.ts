@@ -884,11 +884,12 @@ describe("planted FIFO refusal (M1 — must never hang)", () => {
   // `AbortSignal`, so `O_RDONLY` on a FIFO with no writer would block in the
   // kernel forever.
   //
-  // THE FIX: `SEGMENT_READ_FLAGS` (`append-only-reader.ts:94`) sets
-  // `O_NONBLOCK` so the kernel returns `ENXIO` immediately for a FIFO with
-  // no writer, and the `fstat` check (`append-only-reader.ts:~419-434`) gates
-  // on `stats.isFile()` before any read — both guards reject a non-regular
-  // file before the reader ever blocks.
+  // THE FIX: `SEGMENT_READ_FLAGS` (`append-only-fs.ts`) sets `O_NONBLOCK` so
+  // the kernel returns `ENXIO` immediately for a FIFO with no writer, and the
+  // `fstat` check (`assertSegmentIsReadable`, same file) gates on
+  // `stats.isFile()` before any read — both guards reject a non-regular file
+  // before the reader ever blocks. Cited by symbol and file, never by line:
+  // line citations retarget silently and no gate catches a stale one.
   //
   // This test's own pass/fail signal IS a hard timeout: the exploit's failure
   // mode was "hangs", not "throws", so a missing guard manifests as an
