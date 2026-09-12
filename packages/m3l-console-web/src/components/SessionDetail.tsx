@@ -19,12 +19,14 @@ import {
   fetchSessionStepArtifact as fetchSessionStepArtifactDefault,
   fetchSessionSteps as fetchSessionStepsDefault,
 } from "../api/sessions.js";
+import { exportSessionAsFlow as exportSessionAsFlowDefault } from "../api/session-flow-export.js";
 import type { M3LTreePathSegment } from "../internal/step-reference.js";
 import { useBindingForm } from "../internal/session-binding-form.js";
 import { formatTimestampMs } from "../internal/timestamps.js";
 import { BindingForm } from "./SessionBindingForm.js";
 import { DecisionPrompt } from "./DecisionPrompt.js";
 import { JsonTreeViewer } from "./JsonTreeViewer.js";
+import { SessionFlowExport } from "./SessionFlowExport.js";
 import { SessionStepLauncher } from "./SessionStepLauncher.js";
 
 /** Props accepted by {@link SessionDetail}. */
@@ -94,6 +96,12 @@ export interface SessionDetailProps {
    * tests can supply a fake without mocking a module.
    */
   readonly answerSessionDecision?: typeof answerSessionDecisionDefault;
+  /**
+   * Writer used by the embedded {@link SessionFlowExport} to export the
+   * session as a flow document. Defaults to the real `exportSessionAsFlow`;
+   * injectable so tests can supply a fake without mocking a module.
+   */
+  readonly exportSessionAsFlow?: typeof exportSessionAsFlowDefault;
 }
 
 type SessionDetailState =
@@ -527,6 +535,7 @@ interface SessionDetailDependencies {
   readonly answerSessionDecision: typeof answerSessionDecisionDefault;
   readonly fetchScript: typeof fetchScriptDefault;
   readonly addSessionStep: typeof addSessionStepDefault;
+  readonly exportSessionAsFlow: typeof exportSessionAsFlowDefault;
 }
 
 /**
@@ -552,6 +561,8 @@ function resolveSessionDetailDependencies(
       props.answerSessionDecision ?? answerSessionDecisionDefault,
     fetchScript: props.fetchScript ?? fetchScriptDefault,
     addSessionStep: props.addSessionStep ?? addSessionStepDefault,
+    exportSessionAsFlow:
+      props.exportSessionAsFlow ?? exportSessionAsFlowDefault,
   };
 }
 
@@ -611,6 +622,10 @@ export function SessionDetail(props: SessionDetailProps): ReactElement {
         onStepLaunched={reload}
         fetchScript={deps.fetchScript}
         addSessionStep={deps.addSessionStep}
+      />
+      <SessionFlowExport
+        sessionId={id}
+        exportSessionAsFlow={deps.exportSessionAsFlow}
       />
     </div>
   );
