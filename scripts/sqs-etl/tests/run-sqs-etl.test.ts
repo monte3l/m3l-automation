@@ -35,7 +35,7 @@ vi.mock("../src/steps/list-queues.js", () => ({
   listQueues: listQueuesMock,
 }));
 
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 import { runSqsEtl } from "../src/steps/run-sqs-etl.js";
 import { buildConfig, createFakeSqsOperations } from "./support/sqsFakes.js";

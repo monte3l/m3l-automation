@@ -50,8 +50,8 @@
  * @packageDocumentation
  */
 
-import { Core } from "@m3l-automation/m3l-common";
-import type { AWS } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
+import type { AWS } from "@monte3l/m3l-common";
 
 import type { AgentDecisionRecorder } from "./decision-recorder.js";
 import type { AgentRunLedger } from "./run-ledger.js";
@@ -62,7 +62,7 @@ import type { AgentRunLedger } from "./run-ledger.js";
  *
  * @example
  * ```ts
- * import type { AWS } from "@m3l-automation/m3l-common";
+ * import type { AWS } from "@monte3l/m3l-common";
  * import type { AgentToolExecution } from "./gate-tool.js";
  *
  * const execution: AgentToolExecution = {
@@ -91,8 +91,8 @@ export interface AgentToolExecution {
  *
  * @example
  * ```ts
- * import { Core } from "@m3l-automation/m3l-common";
- * import type { AWS } from "@m3l-automation/m3l-common";
+ * import { Core } from "@monte3l/m3l-common";
+ * import type { AWS } from "@monte3l/m3l-common";
  * import type { AgentToolExecution, AgentToolSpec } from "./gate-tool.js";
  *
  * const spec: AgentToolSpec = {
@@ -178,8 +178,8 @@ export interface AgentToolPhase {
  *
  * @example
  * ```ts
- * import { Core } from "@m3l-automation/m3l-common";
- * import type { AWS } from "@m3l-automation/m3l-common";
+ * import { Core } from "@monte3l/m3l-common";
+ * import type { AWS } from "@monte3l/m3l-common";
  * import type {
  *   AgentToolExecution,
  *   TwoPhaseAgentToolSpec,
@@ -249,7 +249,7 @@ export interface TwoPhaseAgentToolSpec extends Omit<AgentToolSpec, "execute"> {
  *
  * @example
  * ```ts
- * import { Core } from "@m3l-automation/m3l-common";
+ * import { Core } from "@monte3l/m3l-common";
  * import type { GateToolDeps } from "./gate-tool.js";
  *
  * declare const policy: Core.M3LAgentPolicy;
@@ -1093,8 +1093,8 @@ async function runGatedTool(
  *
  * @example
  * ```ts
- * import { Core } from "@m3l-automation/m3l-common";
- * import type { AWS } from "@m3l-automation/m3l-common";
+ * import { Core } from "@monte3l/m3l-common";
+ * import type { AWS } from "@monte3l/m3l-common";
  * import { gateToolSpec } from "./gate-tool.js";
  * import type { AgentToolSpec, GateToolDeps } from "./gate-tool.js";
  *
@@ -1416,7 +1416,7 @@ async function runTwoPhaseGatedTool(
  *
  * @example
  * ```ts
- * import type { AWS } from "@m3l-automation/m3l-common";
+ * import type { AWS } from "@monte3l/m3l-common";
  * import { gateTwoPhaseToolSpec } from "./gate-tool.js";
  * import type { GateToolDeps, TwoPhaseAgentToolSpec } from "./gate-tool.js";
  *

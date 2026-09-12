@@ -1,5 +1,5 @@
-import { Core } from "@m3l-automation/m3l-common";
-import type { AWS } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
+import type { AWS } from "@monte3l/m3l-common";
 
 import type { TriageEntityLookup, TriageLookupTier } from "./preset.js";
 
@@ -40,7 +40,7 @@ function isAborted(signal: AbortSignal | undefined): boolean {
  *
  * @example
  * ```typescript
- * import type { AWS } from "@m3l-automation/m3l-common";
+ * import type { AWS } from "@monte3l/m3l-common";
  * import { createDynamoDBLookup } from "./lookup-entity.js";
  *
  * declare const operations: AWS.M3LDynamoDBOperations;

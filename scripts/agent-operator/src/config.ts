@@ -1,4 +1,4 @@
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 import { isAllowedScriptName } from "./lib/cli-names.js";
 import { AGENT_OPERATOR_FLOW_NAME_RE } from "./lib/flow-names.js";
@@ -478,7 +478,7 @@ export const configParameters: readonly Core.M3LConfigParameter[] = [
  *
  * @example
  * ```typescript
- * import { Core } from "@m3l-automation/m3l-common";
+ * import { Core } from "@monte3l/m3l-common";
  * import { configParameters, configValidators } from "./config.js";
  *
  * const schema = new Core.M3LConfigSchema(configParameters, configValidators);

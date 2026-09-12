@@ -1,5 +1,5 @@
-import { Core } from "@m3l-automation/m3l-common";
-import type { AWS } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
+import type { AWS } from "@monte3l/m3l-common";
 
 /**
  * `redrive-queue` — moves messages from a DLQ (`dlqUrl`) back to their
@@ -249,10 +249,10 @@ async function runRedrivePages(
  *
  * @example
  * ```typescript
- * import { Core } from "@m3l-automation/m3l-common";
+ * import { Core } from "@monte3l/m3l-common";
  * import { redriveQueue } from "./redrive-queue.js";
  *
- * declare const sqsOperations: import("@m3l-automation/m3l-common/aws").M3LSQSOperations;
+ * declare const sqsOperations: import("@monte3l/m3l-common/aws").M3LSQSOperations;
  *
  * await redriveQueue({
  *   config: await new Core.M3LScript({

@@ -8,8 +8,8 @@
 
 import { isAbsolute, join } from "node:path";
 
-import { Core } from "@m3l-automation/m3l-common";
-import type { AWS } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
+import type { AWS } from "@monte3l/m3l-common";
 
 import {
   AGENT_NAME_DEFAULT,
@@ -601,7 +601,7 @@ function resolveCliEntrypoint(
  *
  * @example
  * ```ts
- * import { Core } from "@m3l-automation/m3l-common";
+ * import { Core } from "@monte3l/m3l-common";
  * import { resolveAgentOperatorRuntime } from "./resolve-runtime.js";
  *
  * declare const config: Core.M3LConfig;

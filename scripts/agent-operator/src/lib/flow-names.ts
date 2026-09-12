@@ -84,7 +84,7 @@ export type AgentOperatorFlowName = string & {
  *
  * Why this is a **local copy** rather than an import of the CLI's own
  * pattern: `scripts/agent-operator` declares exactly one runtime
- * dependency, `@m3l-automation/m3l-common` (ADR-0029) — `packages/m3l-cli`
+ * dependency, `@monte3l/m3l-common` (ADR-0029) — `packages/m3l-cli`
  * is not on that list and is not importable from here. Do not "fix" this
  * duplication with an import; it cannot resolve.
  *

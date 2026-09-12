@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
 
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 import { applyActions } from "../src/steps/execute-actions.js";
 import type { ApplyResult } from "../src/steps/execute-actions.js";

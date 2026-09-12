@@ -31,7 +31,7 @@ import {
   vi,
 } from "vitest";
 
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 import { FLOW_TIMEOUT_MS_DEFAULT } from "../../src/config.js";
 import { M3LAgentOperatorCliError } from "../../src/lib/errors.js";

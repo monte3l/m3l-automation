@@ -16,7 +16,7 @@
  * hand-assembling Converse content blocks.
  */
 
-import type { AWS, Core } from "@m3l-automation/m3l-common";
+import type { AWS, Core } from "@monte3l/m3l-common";
 
 import { makeBedrockTokenUsage } from "./bedrockFakes.js";
 

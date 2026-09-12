@@ -10,7 +10,7 @@
  * @packageDocumentation
  */
 
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 /**
  * The closed set of machine-readable codes `agent-operator` can raise.
@@ -153,7 +153,7 @@ interface M3LAgentOperatorCliErrorOptions {
  *
  * @example
  * ```ts
- * import { Core } from "@m3l-automation/m3l-common";
+ * import { Core } from "@monte3l/m3l-common";
  * import { M3LAgentOperatorCliError } from "./errors.js";
  *
  * function assertHasName(name: string | undefined): asserts name is string {

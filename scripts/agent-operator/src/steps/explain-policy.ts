@@ -15,7 +15,7 @@
  * @packageDocumentation
  */
 
-import type { Core } from "@m3l-automation/m3l-common";
+import type { Core } from "@monte3l/m3l-common";
 
 import type { AgentCliSurface } from "../lib/cli-surface.js";
 import type {
@@ -142,7 +142,7 @@ function buildSummary(
  * @returns The rendered policy's summary.
  * @example
  * ```ts
- * import { Core } from "@m3l-automation/m3l-common";
+ * import { Core } from "@monte3l/m3l-common";
  * import { explainPolicy } from "./explain-policy.js";
  * import { createAgentCliSurface } from "../lib/cli-surface.js";
  *

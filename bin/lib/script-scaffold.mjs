@@ -251,24 +251,14 @@ export function commandModuleErrors(commandSrc) {
 
 /**
  * The one permitted runtime dependency's key and required value (ADR-0022 +
- * ADR-0029), the renamed `@monte3l/m3l-common` name as of ADR-0103's P4a
- * slice. Mirrors `templates/script/package.json.tmpl`, the generator's own
+ * ADR-0029), the renamed `@monte3l/m3l-common` name as of ADR-0103's P4a/P4a2
+ * slices. Mirrors `templates/script/package.json.tmpl`, the generator's own
  * copy of this same value, and the
  * `LIBRARY_DEPENDENCY_NAME`/`LIBRARY_DEPENDENCY_VALUE` pair in
  * `bin/check-script-deps.mjs`.
- *
- * TRANSITIONAL (ADR-0103 P4a / P4a2): 4 scripts packages (agent-operator,
- * sqs-dead-letter-triage, cloudwatch-logs-analysis, sqs-etl) still declare
- * the pre-rename aliased shape until P4a2 migrates them too (deferred out
- * of P4a for GitHub's 300-file diff-view ceiling and the review-size
- * ceiling — docs/plans/2026-09-12-u13-registry-publish.md).
- * `packageManifestErrors` below accepts EITHER shape until then; delete
- * `TRANSITIONAL_ALIASED_NAME`/`VALUE` and that branch once P4a2 lands.
  */
 const LIBRARY_DEPENDENCY_NAME = "@monte3l/m3l-common";
 const LIBRARY_DEPENDENCY_VALUE = "workspace:*";
-const TRANSITIONAL_ALIASED_NAME = "@m3l-automation/m3l-common";
-const TRANSITIONAL_ALIASED_VALUE = "workspace:@monte3l/m3l-common@*";
 
 /**
  * Validate a script's package.json against the ADR-0022 package contract.
@@ -294,10 +284,7 @@ export function packageManifestErrors(pkg, name) {
   }
   const hasCurrentDependency =
     pkg.dependencies?.[LIBRARY_DEPENDENCY_NAME] === LIBRARY_DEPENDENCY_VALUE;
-  const hasTransitionalAliasedDependency =
-    pkg.dependencies?.[TRANSITIONAL_ALIASED_NAME] ===
-    TRANSITIONAL_ALIASED_VALUE;
-  if (!hasCurrentDependency && !hasTransitionalAliasedDependency) {
+  if (!hasCurrentDependency) {
     problems.push(
       `dependencies must include "${LIBRARY_DEPENDENCY_NAME}": ${JSON.stringify(LIBRARY_DEPENDENCY_VALUE)}`,
     );

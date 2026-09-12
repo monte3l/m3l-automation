@@ -16,8 +16,8 @@
  * @packageDocumentation
  */
 
-import { Core } from "@m3l-automation/m3l-common";
-import type { AWS } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
+import type { AWS } from "@monte3l/m3l-common";
 
 import type { TriagePreset, TriageVerdict } from "./preset.js";
 import type { TriageReport } from "./report.js";
@@ -240,7 +240,7 @@ export function buildExecutePlan(report: TriageReport): ExecutePlan {
  *
  * @example
  * ```typescript
- * import { Core } from "@m3l-automation/m3l-common";
+ * import { Core } from "@monte3l/m3l-common";
  * import { logExecutePlan } from "./execute-plan.js";
  *
  * declare const plan: import("./execute-plan.js").ExecutePlan;

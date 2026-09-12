@@ -77,7 +77,7 @@
 
 import { join } from "node:path";
 
-import type { Core } from "@m3l-automation/m3l-common";
+import type { Core } from "@monte3l/m3l-common";
 
 import { M3LAgentOperatorCliError } from "./errors.js";
 import { assertAllowedFlowName } from "./flow-names.js";
@@ -137,7 +137,7 @@ export interface FlowDefinitionReader {
  *
  * @example
  * ```ts
- * import { Core } from "@m3l-automation/m3l-common";
+ * import { Core } from "@monte3l/m3l-common";
  * import type { VerifyFlowNamesDeps } from "./flow-definitions.js";
  *
  * const deps: VerifyFlowNamesDeps = {
@@ -482,7 +482,7 @@ function rejectIfStepScriptLacksRunGrant(
  *
  * @example
  * ```ts
- * import { Core } from "@m3l-automation/m3l-common";
+ * import { Core } from "@monte3l/m3l-common";
  * import { verifyFlowNames } from "./flow-definitions.js";
  *
  * const target = await verifyFlowNames({

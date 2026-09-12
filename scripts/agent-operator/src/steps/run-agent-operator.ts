@@ -15,7 +15,7 @@
 
 import { dirname } from "node:path";
 
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 import type { AGENT_OPERATOR_COMMAND_DECLARATIONS } from "../config.js";
 import { AGENT_OPERATOR_COMMANDS, POLICY_FILE_DEFAULT } from "../config.js";
@@ -185,7 +185,7 @@ async function runExplainPolicy(deps: RunAgentOperatorDeps): Promise<void> {
  *
  * @example
  * ```ts
- * import { Core } from "@m3l-automation/m3l-common";
+ * import { Core } from "@monte3l/m3l-common";
  * import { runAgentOperator } from "./run-agent-operator.js";
  *
  * declare const config: Core.M3LConfig;
