@@ -29,9 +29,20 @@
  * Everything this module does is a property of real bytes on a real
  * filesystem — a real symlink, a real hardlink, a real missing file, a real
  * multi-byte UTF-8 encoding — so this suite uses a REAL per-test `mkdtemp`
- * sandbox throughout and never mocks `node:fs`/`node:fs/promises`
- * (ADR-0100). A mocked read would be asserting the mock's idea of the bytes,
- * which is exactly the thing under test.
+ * sandbox throughout (ADR-0100) and reads every one of those bytes through
+ * the real `node:fs/promises`. A mocked read would be asserting the mock's
+ * idea of the bytes, which is exactly the thing under test.
+ *
+ * ONE fault no fixture can arrange is a `close()` the kernel refuses — and it
+ * is the only way to tell this module's two close paths apart: on the SUCCESS
+ * path a failed close throws and displaces a measurement that already
+ * completed, while on a FAILURE path it is CHAINED onto the error already in
+ * flight rather than replacing it. So `open` ALONE is wrapped (see
+ * "Handle-release fault injection" below). It is a pass-through returning the
+ * real handle, and only when a test explicitly arms a close failure does it
+ * hand back an object DELEGATING to that same real handle with `close()`
+ * overridden. Every `read`, every `fstat` and every byte in this file —
+ * armed tests included — is still the real filesystem's.
  *
  * A new sibling file on purpose: `check:test-counts` pins a count for
  * `storage.test.ts` alone and treats the append-only siblings as unmatched
@@ -41,6 +52,7 @@
  */
 
 import { createHash } from "node:crypto";
+import type * as FsPromises from "node:fs/promises";
 import {
   link,
   mkdtemp,
@@ -61,6 +73,7 @@ import {
   expect,
   expectTypeOf,
   test,
+  vi,
 } from "vitest";
 
 import { M3LError } from "../src/core/errors/index.js";
@@ -70,6 +83,99 @@ import {
 } from "../src/internal/storage/append-only-digest.js";
 import type { SegmentDigestResult } from "../src/internal/storage/append-only-digest.js";
 import type { AppendOnlyReadFailure } from "../src/internal/storage/append-only-lines.js";
+
+// ---------------------------------------------------------------------------
+// Handle-release fault injection
+// ---------------------------------------------------------------------------
+
+/**
+ * The one fault real bytes cannot produce: a `close()` that rejects. Held in
+ * `vi.hoisted` state because the `vi.mock` factory below is hoisted above
+ * every import in this file, and a plain module-level `const` would not yet
+ * be initialized when that factory runs.
+ */
+const faults = vi.hoisted(() => ({
+  /**
+   * When set, every `open()` from here on returns a handle whose `close()`
+   * rejects with this error. `undefined` — the state every test both starts
+   * and ends in — makes the wrapper a pure pass-through.
+   */
+  closeError: undefined as Error | undefined,
+  /**
+   * The REAL handles behind an armed close failure. Their `close()` was
+   * never reached, so this suite releases them itself rather than leaking a
+   * descriptor (and Node's garbage-collection warning about one) into the
+   * rest of the run.
+   */
+  unreleased: [] as FsPromises.FileHandle[],
+  /**
+   * How many times an ARMED handle's `close()` was called in the current
+   * test. The only observable trace of a close on a path whose whole
+   * contract is to stay silent about its failure — without it, a test of
+   * that path passes identically against a module that never attempts the
+   * release at all.
+   */
+  closeAttempts: 0,
+}));
+
+/**
+ * `open` and nothing else: `importOriginal` keeps every other export — the
+ * `readFile`/`stat`/`mkdtemp`/`writeFile`/`symlink`/`link`/`rm` this file
+ * uses, and the `read()` the module's own chunk loop runs — the genuine
+ * article. Unarmed (every pre-existing test here) the wrapper returns the
+ * real handle unchanged, so those tests reach the same filesystem through the
+ * same call they did before this mock existed.
+ */
+vi.mock("node:fs/promises", async (importOriginal) => {
+  const actual = await importOriginal<typeof FsPromises>();
+  const open: typeof actual.open = async (filePath, flags, mode) => {
+    const handle = await actual.open(filePath, flags, mode);
+    const { closeError } = faults;
+    if (closeError === undefined) {
+      return handle;
+    }
+    faults.unreleased.push(handle);
+    // Prototype delegation, not a hand-written fake: `stat()` and `read()`
+    // remain the real handle's own methods over the real descriptor, so the
+    // bytes and the `fstat` refusals under test are untouched and ONLY the
+    // release fails.
+    const derived: FsPromises.FileHandle = Object.create(
+      handle,
+    ) as FsPromises.FileHandle;
+    derived.close = (): Promise<void> => {
+      faults.closeAttempts += 1;
+      return Promise.reject(closeError);
+    };
+    return derived;
+  };
+  return { ...actual, open };
+});
+
+/**
+ * Arms the close failure for the remainder of the current test and returns
+ * the error a failing `close()` rejects with, so the test can assert on its
+ * identity rather than on a message.
+ */
+function armCloseFailure(): Error {
+  const closeError = new Error("simulated EIO on close");
+  faults.closeError = closeError;
+  return closeError;
+}
+
+afterEach(async () => {
+  faults.closeError = undefined;
+  faults.closeAttempts = 0;
+  const unreleased = faults.unreleased.splice(0);
+  await Promise.all(
+    unreleased.map(async (handle) => {
+      try {
+        await handle.close();
+      } catch {
+        // Nothing left to release; the descriptor is already gone.
+      }
+    }),
+  );
+});
 
 // ---------------------------------------------------------------------------
 // Independently pinned digests
@@ -127,6 +233,26 @@ function digestChunks(chunks: readonly Uint8Array[]): SegmentDigestResult {
     digest.update(chunk);
   }
   return digest.finish();
+}
+
+/**
+ * Asserts a misuse of a finished {@link SegmentDigest} is refused with the
+ * library's own caller-input failure: an `M3LError` carrying
+ * `ERR_INVALID_ARGUMENT`, never a bare `Error` and never a stray `TypeError`
+ * a later refactor happens to produce. The class is load-bearing, not
+ * decoration — this class is driven from the reader's inline verification on
+ * the PUBLIC read path, so a misuse escaping as anything else is invisible to
+ * a caller's `instanceof M3LError` catch.
+ */
+function expectInvalidArgument(run: () => unknown): void {
+  let thrown: unknown;
+  try {
+    run();
+  } catch (error) {
+    thrown = error;
+  }
+  expect(thrown).toBeInstanceOf(M3LError);
+  expect(thrown).toMatchObject({ code: "ERR_INVALID_ARGUMENT" });
 }
 
 /** Awaits `run` and returns whatever it rejected with, or `undefined`. */
@@ -423,7 +549,7 @@ describe("SegmentDigest", () => {
         byteLength: 8,
         sha256: ONE_ENTRY_SHA256,
       });
-      expect(() => digest.finish()).toThrow();
+      expectInvalidArgument(() => digest.finish());
     });
 
     test("refuses an update() after finish()", () => {
@@ -431,9 +557,9 @@ describe("SegmentDigest", () => {
       digest.update(Buffer.from(ONE_ENTRY, "utf8"));
       expect(digest.finish().entryCount).toBe(1);
 
-      expect(() => {
+      expectInvalidArgument(() => {
         digest.update(Buffer.from('{"late":true}\n', "utf8"));
-      }).toThrow();
+      });
     });
   });
 });
@@ -621,6 +747,66 @@ describe("digestSegmentFile", () => {
         expectPortBuiltFailure(thrown, port, [PROC_STATUS_PATH, "/proc"]);
       },
     );
+
+    // A ceiling that is not a size a segment could have is not a small
+    // ceiling every segment fails — it is not a ceiling at all, and it is
+    // refused through the caller's own port before anything is opened.
+    //
+    // The fixture is deliberately EMPTY, because that is what makes these
+    // rows discriminate. Left unvalidated, each of these values is
+    // normalised into a working buffer size by the module's private
+    // `digestChunkSize` (`Math.min(65_536, Math.max(1, maxBytes + 1))`), an
+    // empty segment then yields no bytes, no ceiling is ever crossed, and
+    // the call RESOLVES — reporting a seal under a bound nobody could state.
+    // Every row below resolves under that implementation and rejects under
+    // this one.
+    test.each([
+      { label: "zero", maxBytes: 0 },
+      { label: "a negative ceiling", maxBytes: -1 },
+      { label: "a fractional ceiling", maxBytes: 1.5 },
+      { label: "NaN", maxBytes: Number.NaN },
+      { label: "Infinity", maxBytes: Number.POSITIVE_INFINITY },
+    ])(
+      "refuses $label as a ceiling instead of measuring under it",
+      async ({ maxBytes }) => {
+        const filePath = await writeFixture("unusable-ceiling.jsonl", "");
+        const port = createFailurePort();
+
+        const thrown = await catchRejected(() =>
+          digestSegmentFile(filePath, maxBytes, port.build),
+        );
+
+        const call = expectPortBuiltFailure(
+          thrown,
+          port,
+          pathSecrets(filePath),
+        );
+        // The ceiling the caller passed in and NOTHING else: no path, and no
+        // byte count of a segment that was never opened. `toEqual` rather
+        // than `toMatchObject`, so an added key fails here.
+        expect(call.context).toEqual({ maxBytes });
+        expect(Object.keys(call.context)).toEqual(["maxBytes"]);
+      },
+    );
+
+    test("refuses an unusable ceiling before the segment is opened", async () => {
+      // A path that does not exist: were the ceiling checked after `open`,
+      // the caller would get the ENOENT-caused digest failure instead — the
+      // wrong vocabulary for what is a caller-input violation, and proof the
+      // segment was reached at all.
+      const filePath = path.join(sandbox, "never-opened.jsonl");
+      const port = createFailurePort();
+
+      const thrown = await catchRejected(() =>
+        digestSegmentFile(filePath, 0, port.build),
+      );
+
+      const call = expectPortBuiltFailure(thrown, port, pathSecrets(filePath));
+      expect(call.context).toEqual({ maxBytes: 0 });
+      // No chained filesystem cause, because no filesystem call happened.
+      expect(call.cause).toBeUndefined();
+      expect(errnoCodeOf(call.cause)).toBeUndefined();
+    });
   });
 
   describe("failure paths", () => {
@@ -676,6 +862,135 @@ describe("digestSegmentFile", () => {
       // `assertSegmentIsReadable`'s own library-computed context — the proof
       // that the shared refusal fired, rather than some unrelated failure.
       expect(call.context).toMatchObject({ isFile: true, nlink: 2 });
+    });
+  });
+
+  // The two close paths are hand-written branches whose entire point is that
+  // they behave DIFFERENTLY from each other, so these tests are written to
+  // tell them apart rather than to agree that "it throws": swap the two
+  // behaviours in the implementation and each of the first two tests below
+  // fails — the first would resolve with its measurement, the second would
+  // surface the close failure instead of the error already in flight.
+  describe("releasing the segment handle", () => {
+    const CONTENT = '{"a":1}\n{"b":2}\n';
+
+    test("throws a success-path close failure, returning no measurement", async () => {
+      const filePath = await writeFixture("close-fails.jsonl", CONTENT);
+      const control = createFailurePort();
+
+      // Control run over the SAME bytes with a working close: the
+      // measurement completes and resolves. Without it, the rejection below
+      // would be equally consistent with a segment that simply cannot be
+      // read, and the test would not be about the close at all.
+      await expect(
+        digestSegmentFile(filePath, 1024, control.build),
+      ).resolves.toEqual({
+        entryCount: 2,
+        byteLength: 16,
+        sha256: referenceSha256(Buffer.from(CONTENT, "utf8")),
+      });
+      expect(control.calls).toEqual([]);
+
+      const closeError = armCloseFailure();
+      const port = createFailurePort();
+
+      const thrown = await catchRejected(() =>
+        digestSegmentFile(filePath, 1024, port.build),
+      );
+
+      // The caller receives the CLOSE failure, not the completed
+      // `SegmentDigestResult` the control run proved is available: a seal
+      // reported over a descriptor the OS never released is not a clean
+      // measurement, so the finished result is displaced rather than
+      // returned. `expectPortBuiltFailure` pins both halves — exactly one
+      // port call, and the rejected value IS that call's error, so no
+      // measurement object can have been resolved.
+      const call = expectPortBuiltFailure(thrown, port, pathSecrets(filePath));
+      expect(call.cause).toBe(closeError);
+      // Exactly one port call (asserted above) is also the proof that the
+      // best-effort release did NOT fire a second failure over the same
+      // handle: the success path claims the close before attempting it. The
+      // attempt count says the same thing from the other side — ONE close,
+      // not a second one from the `finally`.
+      expect(port.calls).toHaveLength(1);
+      expect(faults.closeAttempts).toBe(1);
+    });
+
+    test("chains a failure-path close failure onto the error in flight instead of replacing it", async () => {
+      // A ceiling refusal raised MID-READ, with the handle still open — the
+      // state the best-effort release exists for.
+      const filePath = await writeFixture(
+        "over-and-close-fails.jsonl",
+        CONTENT,
+      );
+      const closeError = armCloseFailure();
+      const port = createFailurePort();
+
+      const thrown = await catchRejected(() =>
+        digestSegmentFile(filePath, 8, port.build),
+      );
+
+      expect(port.calls).toHaveLength(2);
+      const primary = definedOrThrow(port.calls[0], "the primary failure");
+      const closeFailure = definedOrThrow(port.calls[1], "the close failure");
+      // The PRIMARY error is what the caller receives and must act on. An
+      // implementation that let the close failure win here — the success
+      // path's behaviour, applied to the wrong path — would surface
+      // `closeFailure.error` and fail both assertions.
+      expect(thrown).toBe(primary.error);
+      expect(thrown).not.toBe(closeFailure.error);
+      expect(primary.context).toMatchObject({ maxBytes: 8 });
+      expect(primary.cause).toBeUndefined();
+      // ...and the close failure is not silently dropped either: a
+      // descriptor the OS refused to release is a real second fault, so it
+      // stays reachable through the primary error's own cause chain.
+      expect(closeFailure.cause).toBe(closeError);
+      expect(primary.error.cause).toBe(closeFailure.error);
+      expect(faults.closeAttempts).toBe(1);
+      // Neither failure carries caller data, the same hygiene every other
+      // port call in this suite is held to.
+      for (const recorded of port.calls) {
+        for (const secret of pathSecrets(filePath)) {
+          expect(recorded.message).not.toContain(secret);
+          expect(JSON.stringify(recorded.context) ?? "").not.toContain(secret);
+        }
+      }
+    });
+
+    test("stays silent about a close failure when no primary error exists to chain onto", async () => {
+      // The only honest route to the no-primary arm of the best-effort
+      // release: the caller's OWN error port throws, so the `catch` never
+      // gets as far as building — let alone assigning — a primary error.
+      // What the caller must still receive is the port's own failure,
+      // UN-MUTATED: a cleanup failure is never grafted onto an error this
+      // module did not build, and never replaces it either.
+      const original = await writeFixture(
+        "original-throwing-port.jsonl",
+        ONE_ENTRY,
+      );
+      const planted = path.join(sandbox, "planted-throwing-port.jsonl");
+      await link(original, planted);
+      // The hardlink is what makes the port be called at all (the shared
+      // `nlink` refusal), with the handle already open.
+      expect((await stat(planted)).nlink).toBe(2);
+      const closeError = armCloseFailure();
+      const portError = new Error("the caller's own error port failed");
+      const build: AppendOnlyReadFailure = () => {
+        throw portError;
+      };
+
+      const thrown = await catchRejected(() =>
+        digestSegmentFile(planted, 1024, build),
+      );
+
+      expect(thrown).toBe(portError);
+      expect(thrown).not.toBe(closeError);
+      expect(portError.cause).toBeUndefined();
+      expect(Object.hasOwn(portError, "cause")).toBe(false);
+      // Silence is the contract here, so it has to be told apart from the
+      // module simply never reaching the release: the handle WAS closed
+      // (once), that close DID fail, and nothing about it surfaced.
+      expect(faults.closeAttempts).toBe(1);
     });
   });
 });

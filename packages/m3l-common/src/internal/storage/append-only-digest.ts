@@ -74,6 +74,10 @@ const DIGEST_CHUNK_BYTES = 65_536; // 64 KiB
 const FINISHED_MESSAGE =
   "append-only stream: this segment digest has already been finished";
 
+/** Reported when the caller's ceiling is not a size a segment could have. */
+const INVALID_CEILING_MESSAGE =
+  "append-only stream: the maximum digestible size must be a positive integer";
+
 /** Reported when a segment's raw bytes exceed the caller's ceiling. */
 const OVER_CEILING_MESSAGE =
   "append-only stream: a segment exceeds the maximum digestible size";
@@ -142,7 +146,7 @@ export interface SegmentDigestResult {
  * about one exact byte range, so an instance that could be re-read or
  * extended afterwards is a measurement two callers could legitimately
  * disagree about. Both `update()` after `finish()` and a second `finish()`
- * throw.
+ * throw an {@link M3LError} with `code: "ERR_INVALID_ARGUMENT"`.
  *
  * @example
  * ```ts
@@ -169,15 +173,21 @@ export class SegmentDigest {
   /**
    * Rejects any use of this instance after it has been finished.
    *
-   * Throws a plain `Error` on purpose: this module reports every SEGMENT
-   * failure through the caller's own error port precisely so it never names a
-   * public error class it does not own, and it has no port to hand here —
-   * reusing an instance past `finish()` is a defect in this library's own
-   * calling code, not a condition a caller of the stream can reach or handle.
+   * Throws a bare {@link M3LError} carrying `code: "ERR_INVALID_ARGUMENT"`
+   * (already classified `origin: "caller"` in the error catalog) — the house
+   * shape for a caller-input violation, the same one
+   * {@link "./append-only-options.js".invalidArgument} builds. No error PORT
+   * is involved and none is needed: this is a misuse of an object, not a
+   * failure of a segment operation, and the object has no port to hand.
+   *
+   * It roots at the library's single error hierarchy all the same. This class
+   * is driven from the reader's inline verification on the public read path,
+   * so a misuse that escaped as a plain `Error` would be invisible to a
+   * caller's `instanceof M3LError` catch.
    */
   #assertNotFinished(): void {
     if (this.#finished) {
-      throw new Error(FINISHED_MESSAGE);
+      throw new M3LError(FINISHED_MESSAGE, { code: "ERR_INVALID_ARGUMENT" });
     }
   }
 
@@ -220,8 +230,14 @@ export class SegmentDigest {
  * against bytes actually read, so a file of exactly `maxBytes` must be
  * readable in full before the following read reports end-of-file, while a
  * file of `maxBytes + 1` must be able to deliver that one extra byte for the
- * refusal to fire. `Math.max` keeps a degenerate ceiling from asking for a
- * zero-length buffer, which would read nothing forever.
+ * refusal to fire.
+ *
+ * `Math.max` is a local floor, not the ceiling's validation:
+ * {@link digestSegmentFile} refuses a non-positive or non-integer ceiling at
+ * its boundary before anything is opened, so `maxBytes + 1` is already at
+ * least 2 by the time this runs. It stays as this private helper's own
+ * structural guarantee that it can never hand `readChunks` a zero-length
+ * buffer, which would read nothing forever.
  */
 function digestChunkSize(maxBytes: number): number {
   return Math.min(DIGEST_CHUNK_BYTES, Math.max(1, maxBytes + 1));
@@ -261,6 +277,37 @@ async function digestOpenSegment(
 }
 
 /**
+ * Releases a segment handle on a NON-success path, after a failure has
+ * already been raised. Never throws.
+ *
+ * Deliberately the same shape as `./append-only-reader.js`'s helper of the
+ * same name, down to the `primaryError !== undefined` guard: a close failure
+ * is CHAINED onto the error already in flight rather than replacing it,
+ * because that error is what the caller must act on while a descriptor the OS
+ * refused to release is still a real second fault. With no primary error
+ * there is nothing to chain onto, so the close failure stays silent. Every
+ * route here today passes through a `catch` that always assigns, but holding
+ * that guarantee by reasoning rather than by structure is exactly what a
+ * later edit breaks in silence.
+ */
+async function releaseAfterFailure(
+  handle: FileHandle,
+  primaryError: unknown,
+  buildError: AppendOnlyReadFailure,
+): Promise<void> {
+  try {
+    await handle.close();
+  } catch (closeError) {
+    if (primaryError !== undefined) {
+      chainSecondaryFailure(
+        primaryError,
+        buildError(CLOSE_FAILURE_MESSAGE, { cause: closeError }),
+      );
+    }
+  }
+}
+
+/**
  * Measures the segment at `segmentPath` in one bounded sequential pass:
  * opened under `./append-only-fs.js`'s guarded flags, proven by its post-open
  * `fstat` refusals, read in chunks against `maxBytes`, and closed on every
@@ -288,10 +335,21 @@ async function digestOpenSegment(
  * outcome for it to displace, and a seal reported over a descriptor the OS
  * never released is not a clean measurement. On a FAILURE path the close is
  * best-effort and its failure is CHAINED onto the error already in flight
- * rather than replacing it. `closeAttempted` keeps the two apart.
+ * rather than replacing it ({@link releaseAfterFailure}). `closeAttempted`
+ * keeps the two apart.
+ *
+ * The ceiling itself is validated FIRST, before the segment is opened. A
+ * non-positive or non-integer `maxBytes` is not a small ceiling every segment
+ * fails, it is not a ceiling at all — left unchecked it would be normalised
+ * into a working buffer size by {@link digestChunkSize} and then quietly
+ * succeed for an empty segment, reporting a seal under a bound nobody could
+ * state. It is refused through `buildError` like any other failure of this
+ * operation, rather than as a bare throw, because a caller who asked for a
+ * measurement gets one vocabulary back for every way it can fail.
  *
  * @param segmentPath - The segment file to measure.
- * @param maxBytes - The ceiling, enforced against bytes actually read.
+ * @param maxBytes - The ceiling, enforced against bytes actually read. Must be
+ *   a positive integer; anything else is refused before the segment is opened.
  * @param buildError - The caller's error vocabulary for every failure here.
  * @returns The segment's entry count, byte length and `sha256`.
  * @example
@@ -309,6 +367,13 @@ export async function digestSegmentFile(
   maxBytes: number,
   buildError: AppendOnlyReadFailure,
 ): Promise<SegmentDigestResult> {
+  if (!Number.isInteger(maxBytes) || maxBytes <= 0) {
+    throw buildError(INVALID_CEILING_MESSAGE, {
+      // Library-computed facts only: the ceiling the caller passed in, which
+      // is an operational bound and never a byte of the segment's contents.
+      context: { maxBytes },
+    });
+  }
   let handle: FileHandle | undefined;
   let closeAttempted = false;
   let primaryError: unknown;
@@ -333,17 +398,7 @@ export async function digestSegmentFile(
     throw primaryError;
   } finally {
     if (!closeAttempted && handle !== undefined) {
-      try {
-        await handle.close();
-      } catch (closeError) {
-        // Best-effort: an error is already in flight and it is the one the
-        // caller must act on, but a descriptor the OS refused to release is
-        // a real second fault, so it is chained rather than dropped.
-        chainSecondaryFailure(
-          primaryError,
-          buildError(CLOSE_FAILURE_MESSAGE, { cause: closeError }),
-        );
-      }
+      await releaseAfterFailure(handle, primaryError, buildError);
     }
   }
 }
