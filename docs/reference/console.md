@@ -34,7 +34,8 @@ session, append steps, raise and answer decisions, and read a session's
 persisted binding audit trail; X7d added the step-artifact read surface and
 standalone binding selection. X11 added the step-list and decision-list read
 surfaces its drill-down UI needs to enumerate a session's plan and pending
-decisions, ahead of the UI itself:
+decisions, ahead of the UI itself. X13 added exporting a proven-repeatable
+session as a committed `m3l flow` definition:
 
 | Method | Path                                          | Auth     | Shipped in |
 | ------ | --------------------------------------------- | -------- | ---------- |
@@ -51,6 +52,7 @@ decisions, ahead of the UI itself:
 | `POST` | `/api/v1/sessions/:id/bindings`               | required | X7d        |
 | `GET`  | `/api/v1/sessions/:id/steps`                  | required | X11        |
 | `GET`  | `/api/v1/sessions/:id/decisions`              | required | X11        |
+| `POST` | `/api/v1/sessions/:id/flow-export`            | required | X13        |
 
 X10 shipped script discovery: enumerate the launchable scripts under the
 configured scripts directory, and read one script's declared parameters and
@@ -181,6 +183,15 @@ The X6 session codes:
 | `ERR_CONSOLE_SESSION_ARTIFACT_TOO_LARGE` | 413    | A step's recorded output exceeds the artifact or session-total cap.                       |
 | `ERR_CONSOLE_SESSION_ARTIFACT_GONE`      | 410    | The step's artifact file no longer exists — deleted by the retention sweep.               |
 | `ERR_CONSOLE_SESSION_LIMIT_EXCEEDED`     | 429    | The open-session cap (`m3l.console.sessions.open.max`) is reached.                        |
+
+The X13 session-flow-export codes:
+
+| Code                                      | Status | Meaning                                                                           |
+| ----------------------------------------- | ------ | --------------------------------------------------------------------------------- |
+| `ERR_CONSOLE_SESSION_FLOW_EXPORT_INVALID` | 400    | The requested flow name is malformed, or a step's parameters are not all strings. |
+| `ERR_CONSOLE_SESSION_FLOW_EXPORT_SECRET`  | 409    | A parameter key — or an alias of one — is declared secret and cannot be exported. |
+| `ERR_CONSOLE_SESSION_FLOW_EXPORT_EMPTY`   | 409    | The session has no steps to export.                                               |
+| `ERR_CONSOLE_SESSION_FLOW_EXPORT_EXISTS`  | 409    | A flow file already exists at the target path and `overwrite` was not set.        |
 
 `ERR_CONSOLE_SESSION_ARTIFACT_CORRUPT` (500, `origin: "library"`) is a
 server-fault code — a persisted artifact's on-disk bytes no longer match its
@@ -1010,6 +1021,85 @@ raises it (`POST …/decisions/:decisionId` itself only returns
 `ERR_CONSOLE_SESSION_NOT_FOUND` (404) for an unknown session id, same
 :id-scoped distinguishability as the steps route above.
 
+## `POST /api/v1/sessions/:id/flow-export`
+
+Exports a session whose step sequence has proven repeatable as an
+ADR-0056 `m3l flow` definition — steps become flow steps, written to
+`data/config/flows/<name>.yaml` so `m3l flow run <name>` picks it up
+immediately.
+
+```bash
+curl -sS -X POST localhost:8787/api/v1/sessions/$SESSION_ID/flow-export \
+  -H 'content-type: application/json' \
+  -d '{"name":"dlq-reconcile","overwrite":false}'
+```
+
+`201` with the rendered document and per-step provenance:
+
+```json
+{
+  "name": "dlq-reconcile",
+  "yaml": "name: \"dlq-reconcile\"\nmaxStepExecutions: 50\nsteps:\n  - id: \"step-1\"\n    script: \"sqs-etl\"\n    parameters:\n      command: \"list-queues\"\n    onSuccess: \"continue\"\n    onFailure: \"stop\"\n",
+  "steps": [
+    {
+      "stepId": "step-1",
+      "ordinal": 1,
+      "flowStepId": "step-1",
+      "script": "sqs-etl",
+      "outcome": "success",
+      "parameterReferences": { "command": null }
+    }
+  ],
+  "decisionsDropped": 0,
+  "path": "/data/config/flows/dlq-reconcile.yaml"
+}
+```
+
+`overwrite` defaults to `false`, refusing a collision rather than silently
+replacing a hand-edited file; pass `overwrite: true` to replace one
+deliberately. `description` is optional.
+
+**This is a snapshot, not a live reference.** Every step's `parameters` is
+the exact value the session step launched with — not a reference the flow
+engine resolves at run time (the shipped flow engine has no inter-step data
+transport to resolve one against; see ADR-0068's and ADR-0056's 2026-09-11
+Updates). Re-running the exported flow replays the values the session
+happened to see; it will not notice if the source data has since changed.
+`parameterReferences` records, on a best-effort basis, which binding (if
+any) originally supplied each parameter's value — for provenance only, never
+embedded in the written file.
+
+**Every step is exported regardless of its recorded outcome** — a failed or
+never-finished step still becomes a flow step, with `onSuccess: "continue"`
+/ `onFailure: "stop"` on every step (the engine stops naturally when the
+step list runs out). Check each entry's `outcome` in the response before
+trusting the export blindly.
+
+**Session decision points are never carried** — the flow format has nowhere
+to put one. `decisionsDropped` counts how many were dropped; it never
+reports their prompt or answer.
+
+**Every parameter key is screened for secrecy before anything is written** —
+against the target script's declared parameters and their aliases, stricter
+than `m3l flow`'s own validator, which checks canonical names only. A
+session that bound a value to a secret parameter (by its canonical name or
+by any of its aliases) cannot be exported at all.
+
+The flows directory is `m3l.console.flows.root` /
+`M3L_CONSOLE_FLOWS_ROOT` — unlike every other console-owned directory
+setting, it defaults to a **config**, not a data, directory
+(`<configDir>/flows`, matching `packages/m3l-cli/src/flow/load.ts`'s own
+resolution) — because this directory is `m3l flow`'s own committed
+configuration, not console runtime state.
+
+| Code                                      | Status | When                                                                         |
+| ----------------------------------------- | ------ | ---------------------------------------------------------------------------- |
+| `ERR_CONSOLE_SESSION_NOT_FOUND`           | 404    | No such session.                                                             |
+| `ERR_CONSOLE_SESSION_FLOW_EXPORT_INVALID` | 400    | The requested name is malformed, or a step's parameters are not all strings. |
+| `ERR_CONSOLE_SESSION_FLOW_EXPORT_EMPTY`   | 409    | The session has no steps.                                                    |
+| `ERR_CONSOLE_SESSION_FLOW_EXPORT_SECRET`  | 409    | A parameter key, or an alias of one, is declared secret.                     |
+| `ERR_CONSOLE_SESSION_FLOW_EXPORT_EXISTS`  | 409    | A flow file already exists at the target path and `overwrite` was not set.   |
+
 ## Session limits
 
 Four settings, all under `m3l.console.sessions.*`:
@@ -1057,6 +1147,10 @@ settings above.
 "pending"` themselves; the session record itself carries no aggregate flag.
 - Binding audit records have no step linkage — see the Bindings section
   above.
+- **Flow export is a snapshot, not a live reference** — see
+  `POST …/flow-export` above. A reference-carrying variant is tracked as a
+  future, gated tracker row (X13a) until the flow engine gains its own
+  inter-step data transport.
 
 ## `GET /api/v1/telemetry`
 
