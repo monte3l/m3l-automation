@@ -4,6 +4,10 @@ import { describe, expect, test, vi } from "vitest";
 import type { M3LConsoleFetchResult } from "../../src/api/client.js";
 import type { M3LScriptDetail } from "../../src/api/scripts.js";
 import type {
+  M3LSessionFlowExportRequest,
+  M3LSessionFlowWriteResult,
+} from "../../src/api/session-flow-export.js";
+import type {
   M3LSessionAddStepRequest,
   M3LSessionAddStepResult,
   M3LSessionBindingInput,
@@ -1511,6 +1515,52 @@ describe("SessionDetail — SessionStepLauncher wiring", () => {
     expect(fetchDecisionsSpy.mock.calls.length).toBeGreaterThan(
       initialDecisionsCalls,
     );
+  });
+
+  test("renders a SessionFlowExport panel and threads an injected exportSessionAsFlow into it instead of the real one", async () => {
+    const exportResult: M3LSessionFlowWriteResult = {
+      name: "dlq-reconcile",
+      yaml: "name: dlq-reconcile\nsteps: []\n",
+      steps: [],
+      decisionsDropped: 0,
+      path: "/data/config/flows/dlq-reconcile.yaml",
+    };
+    const exportSessionAsFlowSpy = vi.fn(
+      (
+        _sessionId: string,
+        _request: M3LSessionFlowExportRequest,
+      ): Promise<M3LConsoleFetchResult<M3LSessionFlowWriteResult>> =>
+        Promise.resolve({ ok: true, data: exportResult }),
+    );
+
+    render(
+      <SessionDetail
+        id="session-123"
+        fetchSession={okFetchSession(OPEN_SESSION)}
+        fetchSessionSteps={okFetchSessionSteps([])}
+        fetchSessionDecisions={okFetchSessionDecisions([])}
+        exportSessionAsFlow={exportSessionAsFlowSpy}
+      />,
+    );
+
+    const detail = await screen.findByTestId("session-detail");
+    const flowExportPanel = within(detail).getByTestId("session-flow-export");
+    expect(flowExportPanel).toBeInTheDocument();
+
+    fireEvent.change(
+      within(flowExportPanel).getByTestId("session-flow-export-name-input"),
+      { target: { value: "dlq-reconcile" } },
+    );
+    fireEvent.click(
+      within(flowExportPanel).getByTestId("session-flow-export-submit"),
+    );
+
+    await vi.waitFor(() => {
+      expect(exportSessionAsFlowSpy).toHaveBeenCalledWith(
+        "session-123",
+        expect.objectContaining({ name: "dlq-reconcile" }),
+      );
+    });
   });
 
   test("re-fetches session/steps/decisions after a DecisionPrompt's onAnswered fires", async () => {
