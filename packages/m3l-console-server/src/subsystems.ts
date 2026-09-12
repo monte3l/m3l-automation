@@ -37,11 +37,13 @@ import { tryLoadRunsConfig } from "./config/runs.js";
 import type { M3LConsoleSessionsConfig } from "./config/sessions.js";
 import { loadSessionsConfig } from "./config/sessions.js";
 import {
+  resolveFlowsDirectory,
   resolveRunsOutputRoot,
   resolveSessionArtifactRoot,
 } from "./config/paths.js";
 import { createRunSubsystem } from "./runs/composition.js";
 import type { M3LRunSubsystem } from "./runs/composition.js";
+import type { M3LScriptCatalog } from "./runs/descriptors.js";
 import type { M3LRunEventSink } from "./runs/events.js";
 import type { M3LRunRegistry } from "./runs/registry.js";
 import { createSessionSubsystem } from "./sessions/composition.js";
@@ -58,6 +60,9 @@ const SESSIONS_ARTIFACT_ROOT_ENV = "M3L_CONSOLE_SESSIONS_ARTIFACT_ROOT";
 
 /** The env var naming the X7d runs output root; see `config/paths.ts`'s `resolveRunsOutputRoot`. */
 const RUNS_OUTPUT_ROOT_ENV = "M3L_CONSOLE_RUNS_OUTPUT_ROOT";
+
+/** The env var naming the X13 session-flow-export flows directory; see `config/paths.ts`'s `resolveFlowsDirectory`. */
+const FLOWS_ROOT_ENV = "M3L_CONSOLE_FLOWS_ROOT";
 
 /**
  * Constructor options for {@link buildConsoleSubsystems}, mirroring the
@@ -173,9 +178,10 @@ function buildSessionSubsystem(
   options: M3LConsoleSubsystemsOptions,
   logger: Core.M3LLogger,
   launcher: M3LRunSubsystem["orchestrator"] | undefined,
+  catalog: M3LScriptCatalog | undefined,
 ): M3LSessionSubsystem | undefined {
   if (options.sessions === undefined) return undefined;
-  if (launcher === undefined) {
+  if (launcher === undefined || catalog === undefined) {
     logger.warning(
       "session workbench disabled: run orchestration is unavailable",
       { reason: "no run launcher" },
@@ -188,6 +194,9 @@ function buildSessionSubsystem(
   const artifactRoot = resolveSessionArtifactRoot({
     configuredPath: env[SESSIONS_ARTIFACT_ROOT_ENV],
   });
+  const flowsDirectory = resolveFlowsDirectory({
+    configuredPath: env[FLOWS_ROOT_ENV],
+  });
 
   return createSessionSubsystem({
     sessionsRepository: options.sessions,
@@ -198,6 +207,8 @@ function buildSessionSubsystem(
     logger,
     newId: randomUUID,
     nowMs: Date.now,
+    scripts: catalog,
+    flowsDirectory,
   });
 }
 
@@ -246,7 +257,12 @@ export function buildConsoleSubsystems(
   };
 
   const runs = buildRunSubsystem(options, logger, [forwardingSink], telemetry);
-  const sessions = buildSessionSubsystem(options, logger, runs?.orchestrator);
+  const sessions = buildSessionSubsystem(
+    options,
+    logger,
+    runs?.orchestrator,
+    runs?.catalog,
+  );
   forwardingTarget.current = sessions?.eventSink;
 
   return {

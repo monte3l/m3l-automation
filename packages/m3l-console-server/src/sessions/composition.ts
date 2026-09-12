@@ -30,6 +30,7 @@ import type {
   M3LSessionRunEvent,
   M3LSessionRunEventSink,
   M3LSessionRunLauncherPort,
+  M3LSessionScriptCatalogPort,
 } from "./ports.js";
 import { createSessionService } from "./service.js";
 import type { M3LSessionService } from "./service.js";
@@ -81,6 +82,10 @@ export interface M3LSessionSubsystemOptions {
   readonly newId: () => string;
   /** The current time, in epoch milliseconds — injected for determinism. */
   readonly nowMs: () => number;
+  /** The script catalog used to screen an exported flow's parameter keys for secrecy (X13). */
+  readonly scripts: M3LSessionScriptCatalogPort;
+  /** The directory an exported flow document is written into (X13). */
+  readonly flowsDirectory: string;
 }
 
 /**
@@ -170,6 +175,8 @@ export function createSessionSubsystem(
     openSessionsMax: options.openSessionsMax,
     newId: options.newId,
     nowMs: options.nowMs,
+    scripts: options.scripts,
+    flowsDirectory: options.flowsDirectory,
   });
 
   const eventSink: M3LSessionRunEventSink = {

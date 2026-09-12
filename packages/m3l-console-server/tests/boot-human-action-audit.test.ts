@@ -342,6 +342,8 @@ describe("the boot-time reconciliation (X8a)", () => {
     { method: "POST", path: "/api/v1/sessions" },
     { method: "POST", path: "/api/v1/sessions/:id/steps" },
     { method: "POST", path: "/api/v1/sessions/:id/bindings" },
+    // X13 Round B.
+    { method: "POST", path: "/api/v1/sessions/:id/flow-export" },
     { method: "POST", path: "/api/v1/sessions/:id/steps/:stepId/decision" },
     { method: "POST", path: "/api/v1/sessions/:id/decisions/:decisionId" },
     { method: "POST", path: "/api/v1/sessions/:id/close" },
@@ -595,6 +597,16 @@ describe("the boot-time reconciliation (X8a)", () => {
   const fakeReportReader: M3LRunReportPort = {
     read: () => Promise.resolve(undefined),
   };
+  // X13 Round B COORDINATION NOTE: once `SessionRouteWriterPort` gains its
+  // new `exportFlow` method (and `createSessionFlowExportRoutes` is wired
+  // into `buildSessionRoutes` in `http/routes/built-in.ts`), T7 below will
+  // need this fixture to grow an `exportFlow` implementation too — that
+  // cannot be pre-added here now: with the interface as it stands today, an
+  // extra `exportFlow` key on this object literal is an excess-property
+  // TS2353 error unrelated to any not-yet-existing module, which the RED
+  // discipline forbids introducing ahead of time. Whoever lands the
+  // `SessionRouteWriterPort` interface change must add `exportFlow` to this
+  // fixture in the SAME pass, or this file stops compiling.
   const fakeSessionService: SessionRouteReaderPort & SessionRouteWriterPort = {
     getSession: () => undefined,
     listSessions: () => [],
@@ -616,6 +628,14 @@ describe("the boot-time reconciliation (X8a)", () => {
     listBindingsForSession: () => [],
     listStepsForSession: () => [],
     listDecisionsForSession: () => [],
+    exportFlow: () =>
+      Promise.resolve({
+        name: "x",
+        yaml: "",
+        steps: [],
+        decisionsDropped: 0,
+        path: "/x",
+      }),
   };
   const fakeTelemetryReader: M3LTelemetryReaderPort = {
     list: () => [],

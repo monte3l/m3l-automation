@@ -225,6 +225,8 @@ export interface SessionRouteWriterPort {
     sessionId: string,
     binding: M3LSessionStepBindingInput,
   ): Promise<unknown>;
+  /** Composes and writes `sessionId`'s exported flow document (served by `./session-flow-export.js`). */
+  exportFlow(sessionId: string, request: unknown): Promise<unknown>;
 }
 
 /**

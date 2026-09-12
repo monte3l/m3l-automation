@@ -46,6 +46,7 @@ import { M3LConsoleError } from "../src/errors/console-error.js";
 import { encodeArtifactRef } from "../src/sessions/artifact-codec.js";
 import type { M3LSessionArtifactRef } from "../src/sessions/artifact-codec.js";
 import type { M3LSessionArtifactStore } from "../src/sessions/artifacts.js";
+import type { M3LSessionScriptCatalogPort } from "../src/sessions/ports.js";
 import { createSessionService } from "../src/sessions/service.js";
 import type {
   CreateSessionServiceOptions,
@@ -66,6 +67,16 @@ import type {
   M3LSessionStepRecord,
 } from "../src/store/sessions-repository.js";
 import type { RunExecutionMode } from "../src/store/runs-repository.js";
+
+/** No script declares any secret parameter — the default `scripts` fixture. */
+function nonSecretCatalog(): M3LSessionScriptCatalogPort {
+  return {
+    describe: () =>
+      Promise.resolve({
+        parameters: [{ name: "command", aliases: [], secret: false }],
+      }),
+  };
+}
 
 // ---------------------------------------------------------------------------
 // Fake M3LConsoleSessionsRepository — Map-backed, guarded-write semantics
@@ -480,6 +491,11 @@ function buildHarness(
     openSessionsMax: 10,
     newId: () => `id-${String(idCounter++)}`,
     nowMs: () => clock.ms,
+    // Never a real sandbox by default — no test in this file besides the
+    // dedicated `exportFlow()` describe block below ever calls `exportFlow`,
+    // so this path is never actually written to.
+    scripts: nonSecretCatalog(),
+    flowsDirectory: "/dev/null/unused-default-flows-directory",
     ...overrides,
   });
 
@@ -1186,6 +1202,8 @@ describe("M3LSessionService — addStep() propagates collaborator failures uncha
       openSessionsMax: 10,
       newId: () => `id-${String(idCounter++)}`,
       nowMs: () => 1_000,
+      scripts: nonSecretCatalog(),
+      flowsDirectory: "/dev/null/unused-default-flows-directory",
     });
     const sessionId = seedOpenSession(repository);
 

@@ -166,6 +166,7 @@ interface FakeWriter {
     options?: unknown,
   ): FakeDecisionRow;
   answerDecision(id: string, answer: unknown): boolean;
+  exportFlow(sessionId: string, request: unknown): Promise<unknown>;
 }
 
 /**
@@ -257,6 +258,17 @@ function buildWriter(
     // module; these suites never drive it — `routes-session-bindings.test.ts`
     // does.
     selectBinding: () => Promise.resolve({ id: "binding-1" }),
+    // X13's write lives on the SAME port but is served by its own route
+    // module; these suites never drive it — `routes-session-flow-export.test.ts`
+    // does.
+    exportFlow: () =>
+      Promise.resolve({
+        name: "x",
+        yaml: "",
+        steps: [],
+        decisionsDropped: 0,
+        path: "/x",
+      }),
     createSession: vi
       .fn<FakeWriter["createSession"]>()
       .mockReturnValue(overrides.created ?? SESSION_ROW),

@@ -21,6 +21,8 @@ import { describe, expect, test } from "vitest";
 
 import { M3LConsoleError } from "../src/errors/console-error.js";
 import {
+  readOptionalBoolean,
+  readOptionalNonEmptyString,
   readRequiredBoolean,
   readRequiredNonEmptyString,
   rejectBody,
@@ -162,5 +164,105 @@ describe("readRequiredBoolean", () => {
     expect((thrown as M3LConsoleError).message).toContain(
       "'bindings[2].multiSelect'",
     );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// X13 Round B: the two OPTIONAL-field readers `POST …/flow-export` needs
+// (`description`/`overwrite`) — absent means "not supplied", never a
+// rejection; present-but-wrong-type still rejects exactly like the required
+// readers above.
+// ---------------------------------------------------------------------------
+
+describe("readOptionalNonEmptyString", () => {
+  test("returns undefined, without throwing, when the field is absent", () => {
+    expect(readOptionalNonEmptyString({}, "description")).toBeUndefined();
+  });
+
+  test("returns the value when present and non-empty", () => {
+    expect(
+      readOptionalNonEmptyString(
+        { description: "a description" },
+        "description",
+      ),
+    ).toBe("a description");
+  });
+
+  test.each([
+    ["not a string", { description: 7 }, "must be a string"],
+    ["empty", { description: "" }, "must not be empty"],
+  ])("rejects %s with its own reason", (_label, body, reason) => {
+    const thrown = captureThrown(() =>
+      readOptionalNonEmptyString(body, "description"),
+    );
+
+    expect(thrown).toBeInstanceOf(M3LConsoleError);
+    expect((thrown as M3LConsoleError).code).toBe("ERR_CONSOLE_BAD_REQUEST");
+    expect((thrown as M3LConsoleError).message).toContain(reason);
+  });
+
+  // An explicitly-`undefined` key is PRESENT (`Object.hasOwn`) but this is
+  // an OPTIONAL reader — unlike the required readers, "present but
+  // undefined" must still resolve to "absent", not "must be a string".
+  test("treats an explicitly-undefined key as absent, not wrongly typed", () => {
+    expect(
+      readOptionalNonEmptyString({ description: undefined }, "description"),
+    ).toBeUndefined();
+  });
+
+  test("defaults the reported label to the field name", () => {
+    const thrown = captureThrown(() =>
+      readOptionalNonEmptyString({ description: 7 }, "description"),
+    );
+
+    expect((thrown as M3LConsoleError).message).toContain("'description'");
+  });
+
+  test("reports an explicit label instead of the field name when given one", () => {
+    const thrown = captureThrown(() =>
+      readOptionalNonEmptyString(
+        { description: 7 },
+        "description",
+        "flow.description",
+      ),
+    );
+
+    expect((thrown as M3LConsoleError).message).toContain("'flow.description'");
+  });
+});
+
+describe("readOptionalBoolean", () => {
+  test("returns undefined, without throwing, when the field is absent", () => {
+    expect(readOptionalBoolean({}, "overwrite")).toBeUndefined();
+  });
+
+  test.each([true, false])("returns %s verbatim when present", (value) => {
+    expect(readOptionalBoolean({ overwrite: value }, "overwrite")).toBe(value);
+  });
+
+  test("rejects a present but non-boolean value with ERR_CONSOLE_BAD_REQUEST", () => {
+    const thrown = captureThrown(() =>
+      readOptionalBoolean({ overwrite: "yes" }, "overwrite"),
+    );
+
+    expect(thrown).toBeInstanceOf(M3LConsoleError);
+    expect((thrown as M3LConsoleError).code).toBe("ERR_CONSOLE_BAD_REQUEST");
+    expect((thrown as M3LConsoleError).message).toContain("must be a boolean");
+  });
+
+  // Mirrors readOptionalNonEmptyString's own explicitly-undefined case: an
+  // OPTIONAL reader treats "present but undefined" as absent.
+  test("treats an explicitly-undefined key as absent, not wrongly typed", () => {
+    expect(
+      readOptionalBoolean({ overwrite: undefined }, "overwrite"),
+    ).toBeUndefined();
+  });
+
+  test("reports an explicit label instead of the field name when given one", () => {
+    const thrown = captureThrown(() =>
+      readOptionalBoolean({ overwrite: "yes" }, "overwrite", "flow.overwrite"),
+    );
+
+    expect((thrown as M3LConsoleError).message).toContain("'flow.overwrite'");
   });
 });

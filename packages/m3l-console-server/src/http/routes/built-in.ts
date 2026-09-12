@@ -37,6 +37,7 @@ import { createScriptRoutes } from "./scripts.js";
 import type { M3LScriptCatalogPort } from "./scripts.js";
 import { createSessionArtifactRoutes } from "./session-artifacts.js";
 import { createSessionBindingRoutes } from "./session-bindings.js";
+import { createSessionFlowExportRoutes } from "./session-flow-export.js";
 import { createSessionStepsRoutes } from "./session-steps.js";
 import { createSessionRoutes } from "./sessions.js";
 import type {
@@ -347,6 +348,7 @@ function buildSessionRoutes(
       writer: sessions.writer,
     }),
     ...createSessionStepsRoutes({ reader: sessions.reader }),
+    ...createSessionFlowExportRoutes({ writer: sessions.writer }),
   ];
 }
 

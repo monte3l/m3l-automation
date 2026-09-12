@@ -51,7 +51,10 @@ import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import type { M3LConsoleSessionsConfig } from "../../src/config/sessions.js";
 import { createSessionArtifactStore } from "../../src/sessions/artifacts.js";
 import { encodeArtifactRef } from "../../src/sessions/artifact-codec.js";
-import type { M3LSessionRunLauncherPort } from "../../src/sessions/ports.js";
+import type {
+  M3LSessionRunLauncherPort,
+  M3LSessionScriptCatalogPort,
+} from "../../src/sessions/ports.js";
 import { createSessionService } from "../../src/sessions/service.js";
 import type { M3LSessionService } from "../../src/sessions/service.js";
 import { openConsoleStore } from "../../src/store/store.js";
@@ -64,6 +67,13 @@ const SESSIONS_CONFIG: M3LConsoleSessionsConfig = {
   sessionTotalMaxBytes: 100_000,
   openSessionsMax: 10,
 };
+
+/** No script declares any secret parameter — this test never calls `exportFlow`, so this is a minimal, always-empty stand-in for the required `scripts` port. */
+function nonSecretCatalog(): M3LSessionScriptCatalogPort {
+  return {
+    describe: () => Promise.resolve({ parameters: [] }),
+  };
+}
 
 /** A fake run launcher: every launch immediately reports `"running"` — mirrors `sessions-service.test.ts`'s own default `createFakeLauncher`. There is no real script runner in this test. */
 function createFakeLauncher(): M3LSessionRunLauncherPort {
@@ -113,6 +123,10 @@ describe("sessions walk — create, bind, decide, close, reopen through a FRESH 
         openSessionsMax: SESSIONS_CONFIG.openSessionsMax,
         newId: () => `id-${String(idCounter++)}`,
         nowMs: () => clock.ms,
+        // Never exercised in this test — reuses the same real mkdtemp
+        // sandbox already open for `location`/`artifacts` above.
+        scripts: nonSecretCatalog(),
+        flowsDirectory: join(dir, "flows"),
       });
     }
 
