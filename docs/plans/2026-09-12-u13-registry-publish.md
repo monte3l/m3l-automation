@@ -1,6 +1,6 @@
 # U13 — private-registry publishing: scope rename + staged first release (2026-09-12)
 
-- **Status:** in progress — slices 1-2 of 4 landed (PR #1214, #1216), slice 3 in progress
+- **Status:** in progress — slices 1-3 of 4 landed (PR #1214, #1216, #1217); slice 4 is optional hygiene, not required to publish
 - **Owner:** Enrico Lionello (maintainer)
 - **Decisions:** [ADR-0103](../adr/0103-publish-scope-rename-and-staged-first-release.md)
   (partially supersedes [ADR-0057](../adr/0057-private-registry-distribution.md)
@@ -42,5 +42,5 @@ table a submodule's reference page carries, gated by
 | ----- | ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------- |
 | P1    | `feat/u13-registry-publish-adr`       | ADR-0103 amending ADR-0057 + this landing-plan doc (Stage 1)                                                                                                                                                                         | Landed (PR #1214) |
 | P2    | `feat/u13-registry-rename`            | Rename `m3l-common` to `@monte3l/m3l-common` behind a workspace alias (Stage 2)                                                                                                                                                      | Landed (PR #1216) |
-| P3    | `feat/u13-registry-release-workflow`  | `publishConfig`, `release.yml`, `check:publish-version`, consumer install docs, security-prose update (Stage 3)                                                                                                                      | In progress       |
+| P3    | `feat/u13-registry-release-workflow`  | `publishConfig`, `release.yml`, `check:publish-version`, consumer install docs, security-prose update (Stage 3)                                                                                                                      | Landed (PR #1217) |
 | P4    | `feat/u13-registry-specifier-cleanup` | Migrate import specifiers to `@monte3l/m3l-common`, drop the alias; also fix ~671 stale `@m3l-automation/m3l-common` occurrences in `packages/m3l-common/src/**` TSDoc `@example` blocks (Stage 4, optional — PR #1216's Should-fix) | Not started       |

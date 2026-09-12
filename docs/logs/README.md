@@ -193,6 +193,7 @@ target was renamed is repaired via `RENAMED_TARGETS` in
 | 2026-09-02 | U10 — orchestration engine + `m3l flow`                                                | [u10-orchestration-engine](./2026-09-02-u10-orchestration-engine.md)                   |
 | 2026-09-03 | U11 retry/resume/cancellation surfacing                                                | [u11-retry-resume-cancellation](./2026-09-03-u11-retry-resume-cancellation.md)         |
 | 2026-09-10 | `m3l flow run` pre-flight parameter-resolution check — issue #883, ADR-0101 (PR #1164) | [flow-preflight-required-params](./2026-09-10-flow-preflight-required-params.md)       |
+| 2026-09-12 | U13 slice P3 — release workflow + `check:publish-version` gate (PR #1217)              | [u13-registry-release-workflow](./2026-09-12-u13-registry-release-workflow.md)         |
 
 > The first two rows pre-date this section; they were written but never
 > indexed here. Adding them is an index fix, not an edit to shipped history —
