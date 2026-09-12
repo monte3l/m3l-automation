@@ -11,10 +11,17 @@
  * type-only edge from a value one.
  *
  * **Why it declares its own dependency type rather than importing
- * `CreateSessionServiceOptions`.** {@link SessionFlowExportDependencies} is
- * the narrow subset `exportFlow` actually needs; the full options object
+ * `CreateSessionServiceOptions`.** {@link SessionFlowExportServiceDependencies}
+ * is the narrow subset `exportFlow` actually needs; the full options object
  * satisfies it structurally, and `service.ts` passing it straight through is
  * the compile-time proof.
+ *
+ * **Why `SessionFlowExportServiceDependencies`, not
+ * `SessionFlowExportDependencies`.** `sessions/flow-export.ts` already
+ * exports a `SessionFlowExportDependencies` with a different shape
+ * (`sessionsRepository`, `scripts`, `now` — no `flowsDirectory`). Reusing
+ * that name here for a structurally-near-miss type would let a caller who
+ * imports the wrong one by mistake compile against the wrong fields.
  *
  * This is a THIN delegation only: composing the flow document and writing it
  * to disk is entirely `exportSessionFlow`'s job (Round A). This module's own
@@ -36,17 +43,19 @@ import type { M3LConsoleSessionsRepository } from "../store/sessions-repository-
  *
  * @example
  * ```ts
- * declare const dependencies: SessionFlowExportDependencies;
+ * declare const dependencies: SessionFlowExportServiceDependencies;
  * dependencies.sessionsRepository.getSession("session-1");
  * ```
  */
-export interface SessionFlowExportDependencies {
+export interface SessionFlowExportServiceDependencies {
   /** The workbench-sessions repository — read-only from this slice's perspective. */
   readonly sessionsRepository: M3LConsoleSessionsRepository;
   /** The script catalog used to screen exported parameter keys for secrecy. */
   readonly scripts: M3LSessionScriptCatalogPort;
   /** The directory the rendered flow document is written into. */
   readonly flowsDirectory: string;
+  /** The current time, in epoch milliseconds — injected for determinism (mirrors `service.ts`'s `CreateSessionServiceOptions.nowMs`). */
+  readonly nowMs: () => number;
 }
 
 /**
@@ -81,7 +90,7 @@ export interface SessionFlowExportMethods {
 /**
  * Builds the `exportFlow` slice of the session service.
  *
- * @param dependencies - See {@link SessionFlowExportDependencies}.
+ * @param dependencies - See {@link SessionFlowExportServiceDependencies}.
  * @returns The `exportFlow` method, spread into the service by
  *   `createSessionService`.
  *
@@ -95,7 +104,7 @@ export interface SessionFlowExportMethods {
  * ```
  */
 export function buildSessionFlowExportMethods(
-  dependencies: SessionFlowExportDependencies,
+  dependencies: SessionFlowExportServiceDependencies,
 ): SessionFlowExportMethods {
   return {
     exportFlow(
@@ -106,7 +115,7 @@ export function buildSessionFlowExportMethods(
         {
           sessionsRepository: dependencies.sessionsRepository,
           scripts: dependencies.scripts,
-          now: () => new Date(),
+          now: () => new Date(dependencies.nowMs()),
         },
         dependencies.flowsDirectory,
         sessionId,

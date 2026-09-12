@@ -18,17 +18,12 @@
  * backing only the read methods this module needs), plus a real `mkdtemp`
  * sandbox for `flowsDirectory` per this repo's test-I/O policy.
  *
- * **Guessed export name:** the dispatching brief names the module's public
- * interface/factory (`SessionFlowExportMethods`, `buildSessionFlowExportMethods`)
- * but only describes its dependency type's shape, never its name. This file
- * imports `SessionFlowExportDependencies` from the new module — following
- * `sessions/service-reads.ts`'s own `Session<Noun>Dependencies` naming
- * convention for exactly this "narrow, locally-declared, not imported from
- * service.ts" pattern — flagged in case the implementer's choice differs. It
- * is DELIBERATELY the same name as `sessions/flow-export.ts`'s own
- * `SessionFlowExportDependencies` (a different shape — that one also carries
- * `now: () => Date`): both live in different modules and neither type is
- * imported by the other's test file, so the collision is cosmetic only.
+ * **Dependency type name:** this file imports
+ * `SessionFlowExportServiceDependencies` from the module — the implementer's
+ * chosen name, distinct from `sessions/flow-export.ts`'s own
+ * `SessionFlowExportDependencies` (a different shape: `sessionsRepository`,
+ * `scripts`, `now` — no `flowsDirectory`) to avoid the near-miss-shape name
+ * collision the original dispatching brief only guessed at.
  *
  * @packageDocumentation
  */
@@ -41,7 +36,7 @@ import { afterEach, describe, expect, test } from "vitest";
 
 import { isConsoleError } from "../src/errors/console-error.js";
 import { buildSessionFlowExportMethods } from "../src/sessions/service-flow-export.js";
-import type { SessionFlowExportDependencies } from "../src/sessions/service-flow-export.js";
+import type { SessionFlowExportServiceDependencies } from "../src/sessions/service-flow-export.js";
 import type { M3LSessionScriptCatalogPort } from "../src/sessions/ports.js";
 import type {
   M3LConsoleSessionsRepository,
@@ -54,6 +49,14 @@ import type {
 // ---------------------------------------------------------------------------
 // Temp sandbox lifecycle
 // ---------------------------------------------------------------------------
+
+/**
+ * Fixed clock value for `nowMs`, matching `sessions-flow-export.test.ts`'s
+ * own `FIXED_NOW_ISO` convention (same instant, epoch-ms form) — this
+ * module doesn't assert on the timestamp itself, but a fixed value keeps
+ * the fixture deterministic rather than reaching for `Date.now()`.
+ */
+const FIXED_NOW_MS = Date.parse("2026-09-12T00:00:00.000Z");
 
 const createdRoots: string[] = [];
 
@@ -168,7 +171,7 @@ function nonSecretCatalog(): M3LSessionScriptCatalogPort {
 /** One valid session with one successful step — the common non-empty fixture. */
 function buildNonEmptyDependencies(
   flowsDirectory: string,
-): SessionFlowExportDependencies {
+): SessionFlowExportServiceDependencies {
   const session = sessionRecord();
   const steps = [
     stepRecord({
@@ -183,6 +186,7 @@ function buildNonEmptyDependencies(
     sessionsRepository: createFakeRepository({ session, steps }),
     scripts: nonSecretCatalog(),
     flowsDirectory,
+    nowMs: () => FIXED_NOW_MS,
   };
 }
 
@@ -229,10 +233,11 @@ describe("buildSessionFlowExportMethods(dependencies).exportFlow — error propa
   test("an empty session's ERR_CONSOLE_SESSION_FLOW_EXPORT_EMPTY propagates unchanged", async () => {
     const flowsDirectory = createSandbox();
     const session = sessionRecord();
-    const dependencies: SessionFlowExportDependencies = {
+    const dependencies: SessionFlowExportServiceDependencies = {
       sessionsRepository: createFakeRepository({ session, steps: [] }),
       scripts: nonSecretCatalog(),
       flowsDirectory,
+      nowMs: () => FIXED_NOW_MS,
     };
 
     const error = await captureFailure(() =>
