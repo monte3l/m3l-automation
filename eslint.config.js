@@ -137,13 +137,16 @@ export default tseslint.config(
 
       // Workspace packages resolve via dist/, which doesn't exist pre-build.
       // TypeScript (pnpm typecheck) is the authoritative resolver for these
-      // imports, so suppressing the ESLint check here is safe. `@monte3l/`
-      // covers m3l-common's ADR-0103 renamed specifier (used directly in
-      // scripts/*/src as of the P4a slice) alongside every other package's
-      // pre-existing `@m3l-automation/` scope.
+      // imports, so suppressing the ESLint check here is safe.
+      // `^@monte3l/m3l-common` covers m3l-common's ADR-0103 renamed
+      // specifier (used directly in scripts/*/src as of the P4a slice)
+      // alongside every other package's pre-existing `@m3l-automation/`
+      // scope — bounded to the one renamed package rather than the whole
+      // `@monte3l/` scope, so an unresolved import of some future,
+      // different `@monte3l/*` package would still surface as a real error.
       "import-x/no-unresolved": [
         "error",
-        { ignore: ["^@m3l-automation/", "^@monte3l/"] },
+        { ignore: ["^@m3l-automation/", "^@monte3l/m3l-common"] },
       ],
     },
   },
