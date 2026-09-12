@@ -228,7 +228,7 @@ export const COMMAND_CATALOG = [
   {
     name: "check:script-deps",
     description:
-      "Verifies every scripts/*/package.json declares exactly the ADR-0029 dependency boundary (@m3l-automation/m3l-common via workspace:*, no devDependencies). Run after editing a consumer script's package.json.",
+      "Verifies every scripts/*/package.json declares exactly the ADR-0029 dependency boundary (@m3l-automation/m3l-common via a workspace:@monte3l/m3l-common@* alias, no devDependencies). Run after editing a consumer script's package.json.",
   },
   {
     name: "check:cli-scaffold",

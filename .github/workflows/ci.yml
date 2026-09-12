@@ -637,7 +637,8 @@ jobs:
         run: pnpm check:script-docs
 
       # Every scripts/*/package.json must declare exactly the ADR-0029
-      # dependency boundary — @m3l-automation/m3l-common via workspace:* and
+      # dependency boundary — @m3l-automation/m3l-common via a
+      # workspace:@monte3l/m3l-common@* alias (ADR-0103's scope rename) and
       # no devDependencies. The @aws-sdk/* import ban (eslint.config.js) is
       # the source-level half of this same rule.
       - name: Check script dependency boundary
