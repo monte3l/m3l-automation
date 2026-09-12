@@ -7,8 +7,11 @@ package, this is not the document you want.
 `@m3l-automation/m3l-common` is a TypeScript 6.x library, **ESM-only**,
 targeting **Node.js 24 LTS+** (developed and CI-tested on exactly the
 `.node-version` major), managed with `pnpm`, built with `tsc`, and
-tested with `vitest`. It is an internal package, not published to npm. The
-public contract is the `exports` map; treat changes to it with care.
+tested with `vitest`. Published as `@monte3l/m3l-common` to a private GitHub
+Packages registry (ADR-0057/ADR-0103, U13) — `@m3l-automation/m3l-common`
+remains the workspace's own internal dependency specifier, aliased to the
+real name. The public contract is the `exports` map; treat changes to it
+with care.
 
 ## Environment Setup
 
@@ -231,8 +234,9 @@ survives, and `check:commit-trailers` is the `pre-push` backstop for a
 - Branch from `main`: `feat/<slug>` (or `fix/<slug>` for a bug fix; `docs/<slug>`,
   `chore/<slug>`, `refactor/<slug>`, `ci/<slug>` are also mintable via
   `pnpm worktree:new <slug> --kind <kind>`, ADR-0014).
-- The package is internal and not published to npm; `version` in
-  `package.json` is hand-managed (see ADR-0020).
+- `version` in `package.json` is hand-managed (see ADR-0020) — no
+  semantic-release, no version computation from commits — including for
+  releases published via `release.yml` (ADR-0057/ADR-0103).
 - Never `git push --force` to a shared branch.
 - When branch B is stacked on unmerged branch A and A lands via **squash
   merge**, a plain `git rebase main` replays A's already-merged commits and

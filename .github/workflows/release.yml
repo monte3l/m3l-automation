@@ -1,0 +1,90 @@
+# Publishes @monte3l/m3l-common to GitHub Packages (ADR-0057/ADR-0103, U13).
+# workflow_dispatch ONLY — never pull_request, never push. Auth is the
+# workflow's own ephemeral per-job GITHUB_TOKEN, scoped to packages: write —
+# no durable publish secret lives in this repo. This is the one place in the
+# repo that reaches for actions/setup-node's registry-url input directly
+# instead of ./.github/actions/setup (that composite has no registry-url of
+# its own, and NODE_AUTH_TOKEN-based publish auth needs it).
+name: Release
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-m3l-common
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Publish @monte3l/m3l-common
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      # workflow_dispatch accepts any branch/tag from the UI; GitHub Packages
+      # versions are immutable, so publishing an unreviewed ref by mistake
+      # cannot be undone by re-publishing. A job-level `if:` would silently
+      # skip the whole job on a non-main dispatch — reporting green with
+      # nothing published and no explanation, exactly the silently-swallowed
+      # failure this repo's error-handling rule forbids. Fail loudly instead:
+      # the one ref this restricts to is the one that already passed the
+      # required `verify`/`review` checks before it could land on main.
+      - name: Refuse to publish from a non-main ref
+        if: github.ref != 'refs/heads/main'
+        run: |
+          echo "::error::release.yml only publishes from main — dispatched ref was '${{ github.ref }}'. Re-dispatch this workflow from main." >&2
+          exit 1
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+
+      # registry-url + scope write ~/.npmrc so every later step that reads
+      # NODE_AUTH_TOKEN (pnpm publish included) authenticates against GitHub
+      # Packages without this workflow hand-writing any .npmrc line itself.
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+          registry-url: https://npm.pkg.github.com
+          scope: "@monte3l"
+
+      - name: Install (frozen lockfile)
+        run: pnpm install --frozen-lockfile --prefer-offline
+
+      # Re-runs the ref-scoped gates (build, lint, typecheck, tests, exports
+      # shape) before a manually-dispatched, high-consequence, infrequent
+      # publish, rather than trusting a stale prior CI run. The PR-diff-scoped
+      # gates (check:exports-semver's label check, check:review-size) are not
+      # meaningfully re-validated here — the guard step above already
+      # restricts this dispatch to main, not a PR range, and main's branch
+      # protection already required them to pass, with a signed commit,
+      # before this ref could exist.
+      - name: Verify
+        run: pnpm verify
+
+      # GitHub Packages versions are immutable; this turns a would-be raw
+      # registry rejection into a clear, early failure.
+      - name: Check publish version
+        run: pnpm check:publish-version
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # --no-git-checks disables BOTH of pnpm's default publish git-checks:
+      # the current-branch check (which a detached-HEAD, fetch-depth:1
+      # checkout with no local branch would always fail) and the
+      # clean-working-tree check. The latter is harmless here — a fresh clone
+      # right before this step has nothing uncommitted to hide — but is
+      # disabled by the same flag, not by choice; `pnpm verify` above, plus
+      # the main-only guard step at the top of this job, are this job's
+      # actual safety net.
+      - name: Publish
+        run: pnpm --filter @monte3l/m3l-common publish --no-git-checks
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

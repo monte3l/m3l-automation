@@ -196,6 +196,11 @@ export const COMMAND_CATALOG = [
       "Runs publint + are-the-types-wrong against the built package to validate the exports map's shape (ESM-only, types resolution). Run after `pnpm build`, before publishing/reviewing an API change.",
   },
   {
+    name: "check:publish-version",
+    description:
+      "Refuses to publish a version already present on the registry (GitHub Packages versions are immutable). Needs network + a read:packages-scoped token (NODE_AUTH_TOKEN/GITHUB_TOKEN) — release-workflow only, not part of `pnpm verify`.",
+  },
+  {
     name: "check:dts-deps",
     description:
       "Verifies every module specifier surviving into packages/m3l-common/dist/**/*.d.ts is declared in `dependencies`/`peerDependencies` with types reachable — a `@types/*` counterpart left in `devDependencies` breaks every consumer's typecheck. Run after `pnpm build`, whenever a public type aliases a third-party type.",

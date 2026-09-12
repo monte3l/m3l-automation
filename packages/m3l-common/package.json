@@ -28,6 +28,9 @@
   "files": [
     "dist"
   ],
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com"
+  },
   "sideEffects": false,
   "scripts": {
     "build": "tsc -b tsconfig.build.json",
