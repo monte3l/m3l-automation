@@ -1,0 +1,485 @@
+/**
+ * `internal/storage/append-only-sealer` — the append-only stream's writer-side
+ * half of the sealed-segment manifest: WHEN a segment is sealed, and what
+ * happens when sealing fails (ADR-0102, X8b slice 5).
+ *
+ * Library-internal; never re-exported through a public barrel. It owns no I/O
+ * primitive of its own — not one `open`, `readdir`, `stat` or `appendFile`
+ * call is issued here. The measurement is `./append-only-digest.js`'s, the
+ * manifest read and both record appends are `./append-only-manifest.js`'s, and
+ * the inventory is `./append-only-segments.js`'s. That is deliberate: every
+ * refusal those modules apply (`O_NOFOLLOW`, the post-open `nlink`/`isFile`
+ * check, the bounded chunked read, the torn-tail policy) is inherited rather
+ * than re-implemented, and a proof path with weaker guarantees than the read
+ * path it vouches for would prove nothing.
+ *
+ * **The central claim: this module NEVER throws.** ADR-0061's loud-write rule
+ * governs an ENTRY; a seal is metadata about bytes that are already durably
+ * appended. Failing the append to protect a proof about older bytes would
+ * discard a new auditable record in order to defend an old one, so every
+ * failure — a digest that cannot run, a manifest that cannot be read, an
+ * append that cannot be written, a `buildError` port or an `onSealFailed`
+ * handler that itself throws — is REPORTED and never propagated. Loudness
+ * relocates rather than disappearing: bounded in-process retry, the
+ * {@link AppendOnlySealerOptions.onSealFailed} handler, and (later) the
+ * `unsealed` verdict `verify()` returns.
+ *
+ * That claim is held by ONE total guard in
+ * {@link AppendOnlySealer.sealAfterAppend} rather than by a `catch` at each
+ * call site, because the paths a test can construct are never all the paths
+ * there are: a synchronous `TypeError` from a name no writer renders, an
+ * errno class unique to another filesystem, a throw after the last `await`
+ * under concurrency. A guard scoped to the calls someone thought of leaves
+ * exactly those bare. The sealer's private reporting step carries a `try` of
+ * its own, subordinate to that guard, covering one further case — the failure
+ * PORT and the caller's handler are themselves caller code, so neither may
+ * break the sealer.
+ *
+ * **Two date rules, and they genuinely differ.** A ROTATION seal ignores the
+ * at-or-before-baseline filter; the cold-start SWEEP obeys it. The baseline
+ * says nothing at or before it was verified *when written*; a seal says what
+ * the bytes were *at seal time*. Both are true together, and the pair is
+ * strictly more precise than either alone — after sealing, later tampering
+ * with that segment is detectable even though its original contents never
+ * were. Under the other reading, the first rotation after an upgrade produces
+ * no seal at all and the feature reads as broken to the operator who upgraded
+ * to get it.
+ *
+ * @packageDocumentation
+ */
+
+import path from "node:path";
+
+import { M3LError } from "../../core/errors/index.js";
+import type { M3LAppendOnlySegment } from "../../core/storage/append-only-read-types.js";
+import { digestSegmentFile } from "./append-only-digest.js";
+import type { AppendOnlyReadFailure } from "./append-only-lines.js";
+import type { ManifestContents } from "./append-only-manifest.js";
+import {
+  appendSeal,
+  loadOrInitializeManifest,
+} from "./append-only-manifest.js";
+import {
+  currentDatePrefix,
+  listSegmentFiles,
+  parseSegmentName,
+} from "./append-only-segments.js";
+
+/**
+ * How many segments one instance's cold-start sweep may seal. A pathological
+ * directory — a crashed process's whole backlog, or a trail nobody has run
+ * the sealer against since an upgrade — must not turn one cold start into an
+ * unbounded read on the append path.
+ */
+const DEFAULT_MAX_SWEEP_SEALS = 64;
+
+/**
+ * How many times one segment's seal is attempted before it is reported. More
+ * than one because a transient `EIO`/`EAGAIN` on a single read should not cost
+ * a proof; bounded because the append path is not the place to wait out a
+ * filesystem that is genuinely down.
+ */
+const DEFAULT_MAX_SEAL_ATTEMPTS = 3;
+
+/**
+ * The zero-padded width a sequence number is rendered at when two segment
+ * names are ORDERED as strings. Wide enough that the padding, not the digit
+ * count, decides the comparison — `padStart(4)` would order `9999` after
+ * `10000`, which is the ordering `./append-only-segments.js`'s numeric sort
+ * already rejects.
+ */
+const SEQUENCE_KEY_WIDTH = 12;
+
+/** Reported when a segment's directory inventory cannot be taken. */
+const LISTING_FAILURE_MESSAGE =
+  "append-only stream: failed to list segments while sealing";
+
+/** Reported when a rotation names something this writer would not render. */
+const FOREIGN_NAME_MESSAGE =
+  "append-only stream: refused to seal a name this writer would not produce";
+
+/**
+ * Reported for a failure that reached {@link AppendOnlySealer} as something
+ * other than the caller's own typed error — a raw throw from the failure port
+ * itself, or a defect on a path no `node:fs` call classified.
+ */
+const SEAL_FAILURE_MESSAGE = "append-only stream: failed to seal a segment";
+
+/** One seal that could not be written, as reported to the owner. */
+export interface AppendOnlySealFailure {
+  /**
+   * The segment that could not be sealed, or `undefined` for a MANIFEST-level
+   * failure — one that stopped the whole operation before (or instead of) any
+   * one segment, such as a manifest that cannot be read.
+   *
+   * A segment NAME is sanctioned here where a directory path is not: it
+   * derives from the writer's own clock and counter, carries zero caller
+   * bytes, and is already public through `listSegments()`.
+   */
+  readonly segment: string | undefined;
+  /**
+   * The failure, built through {@link AppendOnlySealerOptions.buildError} so
+   * the owner sees its own error vocabulary rather than a class this module
+   * does not own. Raw filesystem detail survives on `cause`.
+   */
+  readonly error: M3LError;
+}
+
+/** Everything {@link AppendOnlySealer} needs; it holds no defaults of its own. */
+export interface AppendOnlySealerOptions {
+  /** The stream directory holding the segments and the manifest. */
+  readonly directory: string;
+  /**
+   * The writer's segment ceiling. Half of the digest bound — see
+   * {@link AppendOnlySealer} for why the sum, and never this alone, is it.
+   */
+  readonly maxSegmentBytes: number;
+  /** The writer's line ceiling, the other half of the digest bound. */
+  readonly maxLineBytes: number;
+  /** The ceiling the manifest is read under, enforced on bytes read. */
+  readonly maxManifestBytes: number;
+  /** The owner's error vocabulary for every failure raised while sealing. */
+  readonly buildError: AppendOnlyReadFailure;
+  /**
+   * Told about every seal that could not be written. Optional: the sealer
+   * never depends on a handler being there to absorb a failure, and a handler
+   * that throws cannot break it either.
+   */
+  readonly onSealFailed?: (failure: AppendOnlySealFailure) => void;
+  /** Overrides {@link DEFAULT_MAX_SWEEP_SEALS}. */
+  readonly maxSweepSeals?: number;
+  /** Overrides {@link DEFAULT_MAX_SEAL_ATTEMPTS}. */
+  readonly maxSealAttempts?: number;
+}
+
+/**
+ * Renders one segment's `(datePrefix, sequence)` as a string that sorts the
+ * way `./append-only-segments.js` sorts the inventory.
+ *
+ * A single comparable key rather than a two-field tuple comparison on
+ * purpose: one `<=` states "at or before" in one place, where the tuple form
+ * spreads the same rule across three conditions that must agree.
+ */
+function segmentOrderKey(datePrefix: string, sequence: number): string {
+  return `${datePrefix}-${String(sequence).padStart(SEQUENCE_KEY_WIDTH, "0")}`;
+}
+
+/**
+ * The sweep's legacy boundary as an order key, or `undefined` when the
+ * manifest states none.
+ *
+ * `?? ""` folds three states into that one answer, and each is the same
+ * answer for the same reason: no baseline record at all, a baseline stating
+ * `upTo: null` (sealing has been in force since the stream's first segment),
+ * and a baseline naming something {@link parseSegmentName} declines — a name
+ * no writer here renders is not a boundary this trail can state anything
+ * about, exactly as `./append-only-manifest.js`'s `highestSegmentName`
+ * refuses to derive one from a foreign file. The empty string is not a
+ * segment name, so it parses as `undefined` like any other foreign name.
+ */
+function baselineBoundaryKey(contents: ManifestContents): string | undefined {
+  const parsed = parseSegmentName(contents.baseline?.upTo ?? "");
+  return parsed === undefined
+    ? undefined
+    : segmentOrderKey(parsed.datePrefix, parsed.sequence);
+}
+
+/**
+ * `true` when `segment` falls at or before the baseline, and so is `legacy`:
+ * bytes written before sealing was in force, which a digest taken NOW cannot
+ * vouch for. Retro-digesting one would state a proof nobody can honour.
+ */
+function isAtOrBeforeBaseline(
+  segment: M3LAppendOnlySegment,
+  boundaryKey: string | undefined,
+): boolean {
+  return (
+    boundaryKey !== undefined &&
+    segmentOrderKey(segment.datePrefix, segment.sequence) <= boundaryKey
+  );
+}
+
+/**
+ * Seals segments on the writer's behalf: the one the writer just rotated away
+ * from, plus — once per instance — the backlog a crashed predecessor left
+ * behind.
+ *
+ * **The digest bound is `maxSegmentBytes + maxLineBytes`, not
+ * `maxSegmentBytes`.** `shouldRotate` tests `segment.size >= maxSegmentBytes`
+ * BEFORE the append, so the line that crosses the ceiling lands in the
+ * OUTGOING segment. A sealer sized at `maxSegmentBytes` would therefore
+ * truncate its read of exactly the segments that rotated on size — the common
+ * case — and refuse to seal them (ADR-0102).
+ *
+ * **The sweep admits only a STRICTLY OLDER date prefix than
+ * {@link "./append-only-segments.js".currentDatePrefix}.** The looser-looking
+ * rule "today's segments below the highest sequence" is rejected outright:
+ * writer A can sit at sequence 3 while writer B creates sequence 4, so B's
+ * sweep would digest a prefix of a file A is still appending to — a false
+ * positive on a tamper guard, the worst failure this design can have. The
+ * strict rule is airtight instead, because `shouldRotate`'s date check forces
+ * any conforming writer off a non-today segment on its next write and
+ * `discoverActiveSegment` only ever adopts today's prefix.
+ *
+ * The sweep set is the on-disk inventory minus manifest-named, minus
+ * at-or-before-baseline, minus today's date, oldest first and capped by
+ * {@link AppendOnlySealerOptions.maxSweepSeals}. On a healthy trail that is
+ * one manifest read and ZERO segment bytes re-read — a performance contract
+ * the writer depends on, since this runs on the append path.
+ *
+ * Sealing NEVER throws; see this module's header for why, and
+ * {@link AppendOnlySealer.sealAfterAppend} for the guard that holds it.
+ *
+ * @example
+ * ```ts
+ * import { M3LError } from "@m3l-automation/m3l-common/core";
+ *
+ * const sealer = new AppendOnlySealer({
+ *   directory,
+ *   maxSegmentBytes,
+ *   maxLineBytes,
+ *   maxManifestBytes,
+ *   buildError: (message, options) =>
+ *     new M3LError(message, { code: "ERR_STORAGE_WRITE", ...options }),
+ *   onSealFailed: ({ segment }) => {
+ *     unsealed.add(segment);
+ *   },
+ * });
+ * await sealer.sealAfterAppend(rotatedFrom);
+ * ```
+ */
+export class AppendOnlySealer {
+  /** The stream directory; never named in a message or a `context`. */
+  readonly #directory: string;
+
+  /** `maxSegmentBytes + maxLineBytes` — see this class's TSDoc. */
+  readonly #maxDigestBytes: number;
+
+  /** The ceiling the manifest is read under. */
+  readonly #maxManifestBytes: number;
+
+  /** The owner's error vocabulary. Caller code: may itself throw. */
+  readonly #buildError: AppendOnlyReadFailure;
+
+  /** The owner's failure handler, if any. Caller code: may itself throw. */
+  readonly #onSealFailed:
+    ((failure: AppendOnlySealFailure) => void) | undefined;
+
+  /** The cold-start sweep's per-instance ceiling. */
+  readonly #maxSweepSeals: number;
+
+  /** Attempts per segment before its failure is reported once. */
+  readonly #maxSealAttempts: number;
+
+  /**
+   * Whether this instance has already swept.
+   *
+   * Per-INSTANCE state, deliberately not a latch written into the directory:
+   * a crashed process's successor must sweep the backlog it left, and it can
+   * only know to do so by being a new instance. Set before the sweep runs, so
+   * a sweep that fails costs the append path one attempt rather than one per
+   * append forever.
+   */
+  #swept: boolean = false;
+
+  /**
+   * @param options - The directory, the two ceilings, the error vocabulary,
+   *   and the optional reporting handler and bounds.
+   */
+  constructor(options: AppendOnlySealerOptions) {
+    this.#directory = options.directory;
+    this.#maxDigestBytes = options.maxSegmentBytes + options.maxLineBytes;
+    this.#maxManifestBytes = options.maxManifestBytes;
+    this.#buildError = options.buildError;
+    this.#onSealFailed = options.onSealFailed;
+    this.#maxSweepSeals = Math.max(
+      0,
+      options.maxSweepSeals ?? DEFAULT_MAX_SWEEP_SEALS,
+    );
+    this.#maxSealAttempts = Math.max(
+      1,
+      options.maxSealAttempts ?? DEFAULT_MAX_SEAL_ATTEMPTS,
+    );
+  }
+
+  /**
+   * Seals what this append made sealable, and sweeps once per instance.
+   *
+   * **This promise never rejects.** The whole operation sits under one total
+   * guard — the manifest load, the rotation seal, the inventory, every swept
+   * segment, and the reporting of all of them — because the failures anyone
+   * can enumerate are never all the failures there are. Deleting the guard is
+   * the mutation that must turn the sealer's failure suite red.
+   *
+   * An append that did not rotate, on an instance that has already swept,
+   * returns without touching the filesystem at all: the common case on the
+   * append path is that there is nothing whatsoever to do.
+   *
+   * @param rotatedFrom - The segment the append rotated away from, or
+   *   `undefined` when it did not rotate. A rotation seal ignores the
+   *   at-or-before-baseline filter the sweep obeys — see this module's header.
+   */
+  async sealAfterAppend(rotatedFrom: string | undefined): Promise<void> {
+    if (rotatedFrom === undefined && this.#swept) {
+      return;
+    }
+    try {
+      await this.#sealAndSweep(rotatedFrom);
+    } catch (cause) {
+      // Manifest-level: nothing that reaches here is attributable to one
+      // segment, and a single fault must not fan out into one report per
+      // candidate.
+      this.#report(undefined, cause);
+    }
+  }
+
+  /**
+   * The operation the total guard wraps: read (or initialize) the manifest,
+   * seal the rotated segment, then sweep.
+   *
+   * Ordered so the rotation seal — about bytes this process itself just
+   * wrote — is attempted before any backlog work that could fail, and so the
+   * sweep's per-instance budget can never be consumed by it.
+   */
+  async #sealAndSweep(rotatedFrom: string | undefined): Promise<void> {
+    const contents = await loadOrInitializeManifest(
+      this.#directory,
+      this.#maxManifestBytes,
+      this.#buildError,
+    );
+    // Mutable, and seeded from the manifest just read: a segment sealed by
+    // this call is a segment the sweep must not seal again — which is also
+    // how a rotation across UTC midnight avoids being swept a second time.
+    const sealed = new Set(contents.seals.keys());
+    if (rotatedFrom !== undefined) {
+      await this.#sealSegment(rotatedFrom, sealed);
+    }
+    if (this.#swept) {
+      return;
+    }
+    this.#swept = true;
+    await this.#sweep(contents, sealed);
+  }
+
+  /**
+   * Seals every segment a crashed predecessor left behind, oldest first and
+   * capped at {@link AppendOnlySealerOptions.maxSweepSeals}.
+   *
+   * The cap bounds the READS and not merely the manifest lines written, which
+   * is what actually stops a pathological directory from turning one cold
+   * start into an unbounded read: candidates are cut to the budget before any
+   * of them is opened.
+   *
+   * The inventory is `./append-only-segments.js`'s, whose per-entry `lstat`
+   * refusals already exclude a symlink or a hardlink planted at a segment
+   * name, and whose failures propagate raw — wrapped here into the owner's
+   * vocabulary, then out to the total guard, since a directory that cannot be
+   * listed is not attributable to any one segment.
+   */
+  async #sweep(contents: ManifestContents, sealed: Set<string>): Promise<void> {
+    let segments: readonly M3LAppendOnlySegment[];
+    try {
+      ({ segments } = await listSegmentFiles(this.#directory));
+    } catch (cause) {
+      throw this.#buildError(LISTING_FAILURE_MESSAGE, { cause });
+    }
+    const today = currentDatePrefix();
+    const boundaryKey = baselineBoundaryKey(contents);
+    const candidates = segments
+      .filter(
+        (segment) =>
+          segment.datePrefix < today &&
+          !sealed.has(segment.name) &&
+          !isAtOrBeforeBaseline(segment, boundaryKey),
+      )
+      .slice(0, this.#maxSweepSeals);
+    for (const candidate of candidates) {
+      // Serially, and each one self-contained: one segment nobody can digest
+      // is reported and skipped, never a reason to abandon the backlog.
+      await this.#sealSegment(candidate.name, sealed);
+    }
+  }
+
+  /**
+   * Measures one segment and appends its seal, retrying a bounded number of
+   * times before reporting the LAST failure exactly once.
+   *
+   * Retry is in-process and immediate: the failure worth surviving here is a
+   * transient read error on an otherwise healthy file, and waiting is not
+   * something an append path may do. A segment the manifest already names is
+   * not re-sealed — an agreeing duplicate is tolerated at read time, but
+   * measuring a file again to write a line that says what is already said is
+   * work the append path should not pay for.
+   *
+   * A name {@link parseSegmentName} declines is refused rather than digested.
+   * Whatever such a name reached the writer by, joining it onto the stream
+   * directory and hashing whatever comes back would seal bytes that are not
+   * this trail's, under a name no reader will ever look for.
+   */
+  async #sealSegment(segment: string, sealed: Set<string>): Promise<void> {
+    if (sealed.has(segment)) {
+      return;
+    }
+    if (parseSegmentName(segment) === undefined) {
+      this.#report(segment, this.#buildError(FOREIGN_NAME_MESSAGE));
+      return;
+    }
+    let lastFailure: unknown;
+    for (let attempt = 0; attempt < this.#maxSealAttempts; attempt += 1) {
+      try {
+        await this.#writeSeal(segment);
+        sealed.add(segment);
+        return;
+      } catch (cause) {
+        lastFailure = cause;
+      }
+    }
+    this.#report(segment, lastFailure);
+  }
+
+  /**
+   * One attempt: measure the segment's raw bytes, then append the claim.
+   *
+   * Both halves go through the shipped modules, so this module issues no
+   * filesystem call of its own and inherits every refusal they apply. The
+   * measurement is deliberately a re-read of what is ON DISK rather than an
+   * incremental hash maintained while appending: the latter could not cover
+   * an adopted segment, a crashed process's segment, or two interleaved
+   * writers, and would prove "what I wrote" rather than "what is there" —
+   * inverting the point of a tamper proof (ADR-0102).
+   */
+  async #writeSeal(segment: string): Promise<void> {
+    const digest = await digestSegmentFile(
+      path.join(this.#directory, segment),
+      this.#maxDigestBytes,
+      this.#buildError,
+    );
+    await appendSeal(this.#directory, { segment, ...digest }, this.#buildError);
+  }
+
+  /**
+   * Hands one failure to the owner, in the owner's own vocabulary.
+   *
+   * A failure that is already an {@link M3LError} came out of the port
+   * already and is passed through unchanged rather than double-wrapped, so
+   * `cause` still carries the raw filesystem error underneath it.
+   *
+   * Subordinate to {@link AppendOnlySealer.sealAfterAppend}'s total guard,
+   * and needed even so: the port and the handler are the OWNER's code, called
+   * from inside the sealer, so a port that cannot build an error or a handler
+   * that cannot handle one would otherwise abandon a backlog the sealer could
+   * still have worked through. Nothing is left to report a reporting failure
+   * to, which is precisely why it ends here.
+   */
+  #report(segment: string | undefined, cause: unknown): void {
+    try {
+      const error =
+        cause instanceof M3LError
+          ? cause
+          : this.#buildError(SEAL_FAILURE_MESSAGE, { cause });
+      this.#onSealFailed?.({ segment, error });
+    } catch {
+      // Best-effort by construction: see this method's TSDoc.
+    }
+  }
+}
