@@ -13,9 +13,7 @@ import type {
 import { exportSessionAsFlow } from "../../src/api/session-flow-export.js";
 
 // `exportSessionAsFlow` — X13 PR 6/6 (issue #561), the web client for
-// `POST /api/v1/sessions/:id/flow-export`. Neither the module nor its
-// exported symbols exist yet — every case in this file is RED until the
-// sibling implementation slice lands.
+// `POST /api/v1/sessions/:id/flow-export`.
 
 vi.mock("../../src/api/client.js", () => ({
   fetchConsoleJson: vi.fn(),

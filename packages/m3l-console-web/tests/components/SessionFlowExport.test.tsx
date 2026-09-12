@@ -11,9 +11,7 @@ import { SessionFlowExport } from "../../src/components/SessionFlowExport.js";
 /**
  * `SessionFlowExport` — new X13 component (issue #561, PR 6/6) letting an
  * operator export a session's recorded steps as a flow document via the
- * injected `exportSessionAsFlow`. Neither the component module nor its
- * exported symbols exist yet — every case in this file is RED until the
- * sibling implementation slice lands.
+ * injected `exportSessionAsFlow`.
  */
 
 const SESSION_ID = "session-1";
@@ -412,38 +410,28 @@ describe("SessionFlowExport — failure surfaces", () => {
 
 // --- Regression test: a second submit cannot overlap a pending one --------
 //
-// A code-review Should-fix asked for a test proving `submitExport`'s
-// `currentRequestIdRef` guard (both `.then` and `.catch` returning early
-// once a later submit is current) by forcing two submissions to be in
-// flight at once and resolving the OLDER one second, mirroring
-// DecisionPrompt.test.tsx's own "stale in-flight submit request-identity
-// guard" describe block.
-//
-// That literal recipe — fill the name, click Export, change the name, click
-// Export again before the first settles — was traced against the real
-// component and does NOT reach the guard: `SessionFlowExportFields` disables
-// the Export button whenever `state.kind === "loading"`, and that state
-// transition happens synchronously inside the SAME click's React flush,
-// before `writer(...)` is even invoked. React's own event delegation
+// A code-review Should-fix asked for a test proving that clicking Export a
+// second time while a submission is already in flight can never trigger a
+// second `writer` call. `submitExport` tracks no per-request identity of
+// its own — there is no request-id guard in this component to exercise.
+// The actual mechanism is `SessionFlowExportFields` disabling the Export
+// button whenever `state.kind === "loading"`, and that state transition
+// happens synchronously inside the SAME click's React flush, before
+// `writer(...)` is even invoked. React's own event delegation
 // (`getListener` in react-dom-client.development.js, the `onClick` case)
 // explicitly withholds the click listener from a `button`/`input`/`select`/
 // `textarea` whose `disabled` prop is true — confirmed both by reading that
 // source and by an isolated repro (a bare disabled `<button>` whose second
 // `fireEvent.click` never re-invoked `onClick`). So a second click while a
-// submission is pending is not a race that resolves in the guard's favor —
-// it never reaches `handleSubmit`, and therefore never reaches `writer`, at
-// all. `submitExport`'s per-request-id discard is consequently unreachable
-// dead code from this component's own UI: no sequence of DOM interactions
-// on one mounted instance can ever create two overlapping in-flight
-// submissions for it to discriminate between (flagged to the hub — see the
-// spoke's final report for the two remediation options this implies).
+// submission is pending never reaches `handleSubmit`, and therefore never
+// reaches `writer`, at all: no sequence of DOM interactions on one mounted
+// instance can create two overlapping in-flight submissions in the first
+// place.
 //
-// What IS real, and worth locking down, is the mechanism that makes the
-// race impossible in the first place: the disabled-during-loading gate.
-// This test proves that mechanism directly — a second submit attempt while
-// the first is still unresolved calls `exportSessionAsFlow` zero additional
-// times, and the pending submission still completes normally once its own
-// promise settles.
+// This test locks down that disabled-while-submitting mechanism directly —
+// a second submit attempt while the first is still unresolved calls
+// `exportSessionAsFlow` zero additional times, and the pending submission
+// still completes normally once its own promise settles.
 describe("SessionFlowExport — a submit while one is already pending is a no-op", () => {
   test("clicking Export again while the first submission is still unresolved does not call exportSessionAsFlow a second time, and the pending submission still renders once it resolves", async () => {
     const deferred =
