@@ -27,6 +27,7 @@ import {
   CLI_BIN_NAME,
   CLI_EXPECTED_SCRIPTS,
   CLI_LIBRARY_DEPENDENCY,
+  CLI_LIBRARY_DEPENDENCY_VALUE,
   CLI_PACKAGE_DIR,
   CLI_PACKAGE_NAME,
   CLI_REQUIRED_EXACT_FILES,
@@ -53,7 +54,7 @@ function conformantCliManifest(): Record<string, unknown> {
     engines: { node: ">=24" },
     bin: { [CLI_BIN_NAME]: `./bin/${CLI_BIN_ENTRY_FILE}` },
     scripts: { ...CLI_EXPECTED_SCRIPTS },
-    dependencies: { [CLI_LIBRARY_DEPENDENCY]: "workspace:*" },
+    dependencies: { [CLI_LIBRARY_DEPENDENCY]: CLI_LIBRARY_DEPENDENCY_VALUE },
   };
 }
 
@@ -238,19 +239,32 @@ describe("cliPackageManifestErrors — synthetic fixtures", () => {
     expect(errors[0]).toContain(CLI_LIBRARY_DEPENDENCY);
   });
 
-  test("flags the library pinned to a version range instead of workspace:*", () => {
+  test("flags the library pinned to a version range instead of its workspace alias", () => {
     const errors = cliPackageManifestErrors(
       manifestWith({ dependencies: { [CLI_LIBRARY_DEPENDENCY]: "^2.0.0" } }),
     );
     expect(errors).toHaveLength(1);
-    expect(errors[0]).toContain("workspace:*");
+    expect(errors[0]).toContain(JSON.stringify(CLI_LIBRARY_DEPENDENCY_VALUE));
+  });
+
+  test("flags the pre-rename plain workspace:* value for the library dependency", () => {
+    // ADR-0103: the library's workspace alias now targets @monte3l/m3l-common,
+    // so the bare "workspace:*" this key used before the rename no longer
+    // satisfies the pin.
+    const errors = cliPackageManifestErrors(
+      manifestWith({
+        dependencies: { [CLI_LIBRARY_DEPENDENCY]: "workspace:*" },
+      }),
+    );
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain(JSON.stringify(CLI_LIBRARY_DEPENDENCY_VALUE));
   });
 
   test("flags a third-party runtime dependency", () => {
     const errors = cliPackageManifestErrors(
       manifestWith({
         dependencies: {
-          [CLI_LIBRARY_DEPENDENCY]: "workspace:*",
+          [CLI_LIBRARY_DEPENDENCY]: CLI_LIBRARY_DEPENDENCY_VALUE,
           commander: "12.0.0",
         },
       }),
@@ -261,12 +275,14 @@ describe("cliPackageManifestErrors — synthetic fixtures", () => {
 
   // The two U7 forward-compatibility cases: "CLI declares script packages as
   // dependencies" must keep passing, while the zero-third-party guarantee and
-  // the workspace pin still bite.
+  // the workspace pin still bite. The library dependency keeps its own
+  // ADR-0103 alias value; only the scripts/* entry uses the plain
+  // "workspace:*" pin — that part of the contract is unchanged.
   test("accepts an additional @m3l-automation/* workspace dependency (U7)", () => {
     const errors = cliPackageManifestErrors(
       manifestWith({
         dependencies: {
-          [CLI_LIBRARY_DEPENDENCY]: "workspace:*",
+          [CLI_LIBRARY_DEPENDENCY]: CLI_LIBRARY_DEPENDENCY_VALUE,
           [`${WORKSPACE_SCOPE}json-etl`]: "workspace:*",
         },
       }),
@@ -278,7 +294,7 @@ describe("cliPackageManifestErrors — synthetic fixtures", () => {
     const errors = cliPackageManifestErrors(
       manifestWith({
         dependencies: {
-          [CLI_LIBRARY_DEPENDENCY]: "workspace:*",
+          [CLI_LIBRARY_DEPENDENCY]: CLI_LIBRARY_DEPENDENCY_VALUE,
           [`${WORKSPACE_SCOPE}json-etl`]: "^1.0.0",
         },
       }),
@@ -539,7 +555,7 @@ describe("scriptsDependingOnCliErrors", () => {
       if (String(path).endsWith("package.json")) {
         return JSON.stringify({
           dependencies: {
-            "@m3l-automation/m3l-common": "workspace:*",
+            [CLI_LIBRARY_DEPENDENCY]: CLI_LIBRARY_DEPENDENCY_VALUE,
             [CLI_PACKAGE_NAME]: "workspace:*",
           },
         });

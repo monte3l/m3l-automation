@@ -336,7 +336,7 @@ jobs:
       # Vite/Rolldown fails to resolve "@m3l-automation/m3l-common/core/errors"
       # because packages/m3l-common/dist/ doesn't exist yet on a fresh runner.
       - name: Build m3l-common
-        run: pnpm --filter @m3l-automation/m3l-common build
+        run: pnpm --filter @monte3l/m3l-common build
 
       # Keyed on the lockfile the same way the turbo cache is — a Playwright
       # version bump changes the lockfile hash and correctly invalidates the
