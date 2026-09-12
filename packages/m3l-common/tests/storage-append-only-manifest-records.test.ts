@@ -577,6 +577,29 @@ describe("manifest integrity", () => {
         upTo: false,
       },
     ],
+    [
+      "a forged `upTo` that is not a segment name at all",
+      {
+        kind: "baseline",
+        formatVersion: MANIFEST_FORMAT_VERSION,
+        at: "2026-09-11T00:00:00.000Z",
+        upTo: "archive-2026-09.tar",
+      },
+    ],
+    [
+      "a shape-valid but calendar-invalid `upTo`",
+      // `9999-99-99` matches the segment pattern's digit shape but names no
+      // real Gregorian date. `parseSegmentName` was tightened in this same
+      // slice to refuse it, so this row is the join between that fix and
+      // this one: `upTo` must name a segment `parseSegmentName` itself would
+      // accept, not merely a string of the right length and punctuation.
+      {
+        kind: "baseline",
+        formatVersion: MANIFEST_FORMAT_VERSION,
+        at: "2026-09-11T00:00:00.000Z",
+        upTo: "9999-99-99-9999.jsonl",
+      },
+    ],
   ])(
     "is fatal on a baseline with %s",
     async (_shape, record: Readonly<Record<string, unknown>>) => {
@@ -611,6 +634,18 @@ describe("manifest integrity", () => {
     const contents = await readManifest(sandbox, AMPLE_MAX_BYTES, port.build);
 
     expect(definedOrThrow(contents.baseline, "the baseline").upTo).toBeNull();
+    expect(port.calls).toHaveLength(0);
+  });
+
+  test("accepts a baseline whose upTo names a genuine segment, the positive control for the forged-string and calendar-invalid rows above", async () => {
+    await writeManifestBytes(baselineLine(SEGMENT_OLD));
+    const port = createFailurePort();
+
+    const contents = await readManifest(sandbox, AMPLE_MAX_BYTES, port.build);
+
+    expect(definedOrThrow(contents.baseline, "the baseline").upTo).toBe(
+      SEGMENT_OLD,
+    );
     expect(port.calls).toHaveLength(0);
   });
 });

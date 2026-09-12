@@ -21,7 +21,7 @@
  * append that cannot be written, a `buildError` port or an `onSealFailed`
  * handler that itself throws — is REPORTED and never propagated. Loudness
  * relocates rather than disappearing: bounded in-process retry, the
- * {@link AppendOnlySealerOptions.onSealFailed} handler, and (later) the
+ * {@link "./append-only-sealer-types.js".AppendOnlySealerOptions.onSealFailed} handler, and (later) the
  * `unsealed` verdict `verify()` returns.
  *
  * That claim is held by ONE total guard in
@@ -53,7 +53,15 @@ import type { M3LAppendOnlySegment } from "../../core/storage/append-only-read-t
 import type { AppendOnlyReadFailure } from "./append-only-lines.js";
 import type { ManifestContents } from "./append-only-manifest.js";
 import { loadOrInitializeManifest } from "./append-only-manifest.js";
-import { appendClaim, measureSegment } from "./append-only-seal-attempt.js";
+import {
+  appendClaim,
+  corroborateClaim,
+  measureSegment,
+} from "./append-only-seal-attempt.js";
+import type {
+  AppendOnlySealFailure,
+  AppendOnlySealerOptions,
+} from "./append-only-sealer-types.js";
 import {
   currentDatePrefix,
   listSegmentFiles,
@@ -95,62 +103,12 @@ const FOREIGN_NAME_MESSAGE =
  */
 const SEAL_FAILURE_MESSAGE = "append-only stream: failed to seal a segment";
 
-/** One seal that could not be written, as reported to the owner. */
-export interface AppendOnlySealFailure {
-  /**
-   * The segment that could not be sealed, or `undefined` for a MANIFEST-level
-   * failure — one that stopped the whole operation before (or instead of) any
-   * one segment, such as a manifest that cannot be read.
-   *
-   * A segment NAME is sanctioned here where a directory path is not: it
-   * derives from the writer's own clock and counter, carries zero caller
-   * bytes, and is already public through `listSegments()`. The one exception
-   * is a name {@link parseSegmentName} declines: see
-   * {@link AppendOnlySealer.#sealSegment} for why that name is exactly the
-   * one this carve-out's reasoning does not cover, and reports `undefined`.
-   */
-  readonly segment: string | undefined;
-  /**
-   * The failure, built through {@link AppendOnlySealerOptions.buildError} so
-   * the owner sees its own error vocabulary rather than a class this module
-   * does not own. Raw filesystem detail survives on `cause`.
-   */
-  readonly error: M3LError;
-}
-
-/** Everything {@link AppendOnlySealer} needs; it holds no defaults of its own. */
-export interface AppendOnlySealerOptions {
-  /** The stream directory holding the segments and the manifest. */
-  readonly directory: string;
-  /**
-   * The writer's segment ceiling. Half of the digest bound — see
-   * {@link AppendOnlySealer} for why the sum, and never this alone, is it.
-   */
-  readonly maxSegmentBytes: number;
-  /** The writer's line ceiling, the other half of the digest bound. */
-  readonly maxLineBytes: number;
-  /** The ceiling the manifest is read under, enforced on bytes read. */
-  readonly maxManifestBytes: number;
-  /** The owner's error vocabulary for every failure raised while sealing. */
-  readonly buildError: AppendOnlyReadFailure;
-  /**
-   * Told about every seal that could not be written. Optional: the sealer
-   * never depends on a handler being there to absorb a failure, and a handler
-   * that throws cannot break it either.
-   */
-  readonly onSealFailed?: (failure: AppendOnlySealFailure) => void;
-  /**
-   * Overrides {@link DEFAULT_MAX_SWEEP_SEALS}. A non-finite value (`NaN`,
-   * `±Infinity`) falls back to the default instead — see
-   * {@link resolveSealerBound}.
-   */
-  readonly maxSweepSeals?: number;
-  /**
-   * Overrides {@link DEFAULT_MAX_SEAL_ATTEMPTS}. Same non-finite fallback as
-   * {@link maxSweepSeals} — see {@link resolveSealerBound}.
-   */
-  readonly maxSealAttempts?: number;
-}
+/**
+ * Re-exported so every existing importer of this module keeps working
+ * unchanged — see `./append-only-sealer-types.js` for the definitions and
+ * their full TSDoc.
+ */
+export type { AppendOnlySealFailure, AppendOnlySealerOptions };
 
 /**
  * Resolves one of the sealer's caller-overridable bounds: `override` when
@@ -199,7 +157,7 @@ function resolveSealerBound(
  *
  * The sweep set is the on-disk inventory minus manifest-named, minus
  * at-or-before-baseline, minus today's date, oldest first and capped by
- * {@link AppendOnlySealerOptions.maxSweepSeals}. On a healthy trail that is
+ * {@link "./append-only-sealer-types.js".AppendOnlySealerOptions.maxSweepSeals}. On a healthy trail that is
  * one manifest read and ZERO segment bytes re-read — a performance contract
  * the writer depends on, since this runs on the append path.
  *
@@ -355,7 +313,7 @@ export class AppendOnlySealer {
     // how a rotation across UTC midnight avoids being swept a second time.
     const sealed = new Set(contents.seals.keys());
     if (rotatedFrom !== undefined) {
-      await this.#sealSegment(rotatedFrom, sealed);
+      await this.#sealRotatedSegment(rotatedFrom, contents, sealed);
     }
     if (alreadySwept) {
       return;
@@ -365,7 +323,7 @@ export class AppendOnlySealer {
 
   /**
    * Seals every segment a crashed predecessor left behind, oldest first and
-   * capped at {@link AppendOnlySealerOptions.maxSweepSeals}.
+   * capped at {@link "./append-only-sealer-types.js".AppendOnlySealerOptions.maxSweepSeals}.
    *
    * The cap bounds the READS and not merely the manifest lines written, which
    * is what actually stops a pathological directory from turning one cold
@@ -417,6 +375,45 @@ export class AppendOnlySealer {
   }
 
   /**
+   * Seals the just-rotated segment by CORROBORATING any manifest claim
+   * already on record for it, via
+   * {@link "./append-only-seal-attempt.js".corroborateClaim}, rather than
+   * trusting membership: a claim forged before any genuine seal exists is
+   * otherwise never contradicted. Both outcomes write nothing; disagreement
+   * is reported, since two seals per segment are fatal to read. Delegates
+   * to {@link AppendOnlySealer.#sealSegment} when nothing is recorded yet.
+   * The sweep stays membership-only (corroborating its backlog would make
+   * cold start unbounded), so a forgery on a SWEPT segment stays
+   * undetected until `verify()`.
+   */
+  async #sealRotatedSegment(
+    segment: string,
+    contents: ManifestContents,
+    sealed: Set<string>,
+  ): Promise<void> {
+    const existing = contents.seals.get(segment);
+    if (existing === undefined) {
+      await this.#sealSegment(segment, sealed);
+      return;
+    }
+    if (parseSegmentName(segment) === undefined) {
+      this.#report(undefined, this.#buildError(FOREIGN_NAME_MESSAGE));
+      return;
+    }
+    const outcome = await corroborateClaim({
+      directory: this.#directory,
+      segment,
+      existing,
+      maxDigestBytes: this.#maxDigestBytes,
+      maxSealAttempts: this.#maxSealAttempts,
+      buildError: this.#buildError,
+    });
+    if (!outcome.ok) {
+      this.#report(segment, outcome.failure);
+    }
+  }
+
+  /**
    * Measures one segment and appends its seal, retrying each half a bounded
    * number of times before reporting the LAST failure exactly once.
    *
@@ -446,7 +443,7 @@ export class AppendOnlySealer {
    * directory and hashing whatever comes back would seal bytes that are not
    * this trail's, under a name no reader will ever look for. It is also
    * reported with `segment: undefined`, not the rejected name — see
-   * {@link AppendOnlySealFailure.segment} for the general carve-out and why
+   * {@link "./append-only-sealer-types.js".AppendOnlySealFailure.segment} for the general carve-out and why
    * THIS path is its one exception. Every other caller of `#sealSegment`
    * passes a name the inventory already accepted or the writer's own
    * rotation counter produced; a name this check declines can only have

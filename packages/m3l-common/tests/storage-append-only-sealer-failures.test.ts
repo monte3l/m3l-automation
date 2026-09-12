@@ -697,6 +697,112 @@ describe("reporting a failed seal", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Corroborating a rotated segment against a pre-planted manifest claim
+// ---------------------------------------------------------------------------
+//
+// A security review defeated the manifest's anti-forgery design by planting a
+// seal BEFORE any genuine one existed: `#sealSegment`'s `sealed.has(segment)`
+// membership check trusted the manifest rather than corroborating it, so a
+// claim written first was never contradicted -- the genuine seal was then
+// never written at all. The fix corroborates a manifest-named segment on the
+// ROTATION path via `corroborateClaim` rather than trusting membership; the
+// cold-start SWEEP deliberately keeps the membership-only shortcut (see the
+// last test in this block for why).
+
+describe("corroborating a rotated segment against the manifest", () => {
+  test("catches a forged seal whose claim disagrees with the rotated segment's real bytes", async () => {
+    await seedBaseline(null);
+    // Pre-planted BEFORE any genuine seal exists: entryCount and byteLength
+    // happen to match the real fixture, but its sha256 (SHA_A) does not.
+    await seedSeal(ROTATED);
+    await writeSegment(ROTATED);
+
+    await createSealer().sealAfterAppend(ROTATED);
+
+    expect(reported.map((failure) => failure.segment)).toEqual([ROTATED]);
+  });
+
+  test("appends nothing when the rotation corroboration disagrees", async () => {
+    // A separate assertion from "a failure was reported" above: this is the
+    // half that keeps a best-effort path from making the manifest fatal to
+    // read -- appending a contradicting seal, not merely reporting the
+    // disagreement, is what a naive fix could still get wrong.
+    await seedBaseline(null);
+    await seedSeal(ROTATED);
+    await writeSegment(ROTATED);
+
+    await createSealer().sealAfterAppend(ROTATED);
+
+    const contents = await readManifest(
+      sandbox,
+      AMPLE_MAX_BYTES,
+      failurePort(),
+    );
+    expect(contents.seals.size).toBe(1);
+    // Still the FORGED claim -- reading it did not throw the "two seals
+    // disagree" error a second, contradicting line would have produced.
+    expect(contents.seals.get(ROTATED)).toMatchObject({ sha256: SHA_A });
+  });
+
+  test("a second rotation over an already-agreeing segment is silent and writes nothing", async () => {
+    await seedBaseline(null);
+    await writeSegment(ROTATED);
+    const sealer = createSealer();
+    await sealer.sealAfterAppend(ROTATED);
+    expect(reported).toEqual([]);
+    const afterFirst = await readManifest(
+      sandbox,
+      AMPLE_MAX_BYTES,
+      failurePort(),
+    );
+    expect(afterFirst.seals.size).toBe(1);
+
+    // A second rotation "away from" the very segment just sealed -- the
+    // manifest now names it for real, so this exercises corroboration's
+    // AGREEMENT branch rather than the "nothing recorded yet" delegation.
+    await sealer.sealAfterAppend(ROTATED);
+
+    expect(reported).toEqual([]);
+    const afterSecond = await readManifest(
+      sandbox,
+      AMPLE_MAX_BYTES,
+      failurePort(),
+    );
+    expect(afterSecond.seals.size).toBe(1);
+  });
+
+  // [KNOWN BOUNDARY, not a bug] The cold-start sweep stays membership-only on
+  // purpose: corroborating a whole backlog on every cold start would turn one
+  // startup into an unbounded read (this module's header, and
+  // `#sealRotatedSegment`'s own TSDoc). A forged seal for a segment that only
+  // the SWEEP would reach is therefore never contradicted, because the sweep
+  // excludes anything already in `sealed` -- membership by construction --
+  // before a single one of its candidates is even measured. This test pins
+  // that limit as a deliberate, documented boundary rather than an oversight;
+  // it is expected to keep passing after the fix, not to flip once one lands.
+  test("a forged seal reachable only through the sweep stays undetected (sweep is membership-only, by design)", async () => {
+    await seedBaseline(null);
+    // STALE is yesterday-dated, so it is a SWEEP candidate, never a rotation
+    // target in this scenario -- `ROTATED` below is the segment actually
+    // rotated away from.
+    await seedSeal(STALE);
+    await writeSegment(STALE);
+    await writeSegment(ROTATED);
+
+    await createSealer().sealAfterAppend(ROTATED);
+
+    expect(reported.map((failure) => failure.segment)).not.toContain(STALE);
+    const contents = await readManifest(
+      sandbox,
+      AMPLE_MAX_BYTES,
+      failurePort(),
+    );
+    // Still the forged claim, untouched -- the sweep never re-measured it.
+    expect(contents.seals.get(STALE)).toMatchObject({ sha256: SHA_A });
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Bounded in-process retry
 // ---------------------------------------------------------------------------
 

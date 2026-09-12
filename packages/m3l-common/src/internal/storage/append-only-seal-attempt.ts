@@ -35,6 +35,15 @@ import { digestSegmentFile } from "./append-only-digest.js";
 import type { AppendOnlyReadFailure } from "./append-only-lines.js";
 import { appendSeal } from "./append-only-manifest.js";
 import type { SegmentSealClaim } from "./append-only-manifest.js";
+import type { ManifestSealRecord } from "./append-only-manifest-records.js";
+
+/**
+ * Reported when a rotated segment's fresh measurement disagrees with the
+ * claim the manifest already records for it. Never written to the manifest —
+ * see {@link corroborateClaim}.
+ */
+const SEAL_DISAGREEMENT_MESSAGE =
+  "append-only stream: a rotated segment's measurement disagrees with its recorded seal";
 
 /**
  * A bounded retry loop's outcome: success, or the last failure once every
@@ -95,6 +104,70 @@ export async function measureSegment(
     }
   }
   return { ok: false, failure: lastFailure };
+}
+
+/** Everything {@link corroborateClaim} needs to corroborate one segment. */
+export interface CorroborateClaimOptions {
+  /** The stream directory holding the segment. */
+  readonly directory: string;
+  /** The segment's file name, already accepted by the caller. */
+  readonly segment: string;
+  /** The claim the manifest already records for `segment`. */
+  readonly existing: ManifestSealRecord;
+  /** The digest ceiling: `maxSegmentBytes + maxLineBytes`. */
+  readonly maxDigestBytes: number;
+  /** How many times this segment's measurement is attempted. */
+  readonly maxSealAttempts: number;
+  /** The owner's error vocabulary for a digest that cannot be taken. */
+  readonly buildError: AppendOnlyReadFailure;
+}
+
+/**
+ * Re-measures `options.segment` and compares the result against
+ * `options.existing`, the claim the manifest already records for it.
+ *
+ * Success means "agrees" (nothing further to write); failure carries either
+ * the measurement's own failure or a freshly built disagreement error — the
+ * caller reports either the same way and writes neither to the manifest, so
+ * a rotated segment a forged claim was planted for gets contradicted instead
+ * of silently trusted by membership.
+ *
+ * **Compares `(entryCount, byteLength, sha256)` only — never `at`, and never
+ * the whole record.** `at` is a timestamp the writer stamps fresh each time
+ * and differs by construction between any two measurements, so folding it
+ * into the comparison (or comparing serialized whole records) would make
+ * every corroboration report a disagreement, an automatic false positive —
+ * exactly the trap `./append-only-manifest.js` already documents for the
+ * duplicate-seal rule on the read side.
+ */
+export async function corroborateClaim(
+  options: CorroborateClaimOptions,
+): Promise<SealAttemptOutcome<void>> {
+  const {
+    directory,
+    segment,
+    existing,
+    maxDigestBytes,
+    maxSealAttempts,
+    buildError,
+  } = options;
+  const measurement = await measureSegment({
+    directory,
+    segment,
+    maxDigestBytes,
+    maxSealAttempts,
+    buildError,
+  });
+  if (!measurement.ok) {
+    return { ok: false, failure: measurement.failure };
+  }
+  const agrees =
+    existing.entryCount === measurement.value.entryCount &&
+    existing.byteLength === measurement.value.byteLength &&
+    existing.sha256 === measurement.value.sha256;
+  return agrees
+    ? { ok: true, value: undefined }
+    : { ok: false, failure: buildError(SEAL_DISAGREEMENT_MESSAGE) };
 }
 
 /** Everything {@link appendClaim} needs to append one claim. */

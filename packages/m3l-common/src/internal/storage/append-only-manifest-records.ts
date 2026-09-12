@@ -41,6 +41,7 @@
 
 import type { SegmentDigestResult } from "./append-only-digest.js";
 import type { AppendOnlyReadFailure } from "./append-only-lines.js";
+import { parseSegmentName } from "./append-only-segments.js";
 
 /**
  * The manifest format this reader understands, and the one it stamps on every
@@ -289,9 +290,10 @@ function requireFormatVersion(
  * and both counts must be non-negative ({@link ownMeasurement}). A value
  * outside those shapes is reported through {@link MALFORMED_RECORD_MESSAGE},
  * the same fatal path a missing field takes — exactly as
- * {@link parseBaselineRecord} treats a wrongly-typed `upTo`, and on the same
- * grounds: a measurement `./append-only-digest.js` could not have produced is
- * not a measurement, so the record states nothing rather than states it badly.
+ * {@link parseBaselineRecord} treats a wrongly-shaped `upTo` (see
+ * {@link ownBaselineUpTo}), and on the same grounds: a measurement
+ * `./append-only-digest.js` could not have produced is not a measurement, so
+ * the record states nothing rather than states it badly.
  */
 function parseSealRecord(
   record: object,
@@ -323,18 +325,50 @@ function parseSealRecord(
   };
 }
 
-/** Parses one `baseline` record, or fails if it is incomplete or too new. */
+/**
+ * The own `upTo` of `record` when it is `null` or a name
+ * {@link "./append-only-segments.js".parseSegmentName} accepts, else
+ * `undefined`.
+ *
+ * `null` is admitted unchanged — the positive assertion "sealed since the
+ * first segment". A string is admitted only when it is a name this writer's
+ * own segment layer could have produced; this module already refuses a
+ * `sha256` of the wrong shape ({@link ownDigest}) and a count outside its
+ * possible range ({@link ownMeasurement}) on exactly this reasoning, and
+ * `upTo` is no different: a string of some other shape is not a segment name,
+ * so a forged boundary such as `"archive-2026-09.tar"` — or a name dated after
+ * this trail could have written it — is refused here rather than accepted and
+ * left to reshape which segments classify `legacy` downstream. Checked on the
+ * local {@link ownProperty} already read, never by reading the property
+ * again.
+ */
+function ownBaselineUpTo(record: object): string | null | undefined {
+  const value = ownProperty(record, "upTo");
+  if (value === null) {
+    return null;
+  }
+  return typeof value === "string" && parseSegmentName(value) !== undefined
+    ? value
+    : undefined;
+}
+
+/**
+ * Parses one `baseline` record, or fails if it is incomplete, out of shape,
+ * or too new.
+ */
 function parseBaselineRecord(
   record: object,
   buildError: AppendOnlyReadFailure,
 ): ManifestBaselineRecord {
   const formatVersion = requireFormatVersion(record, buildError);
   const at = ownString(record, "at");
-  const upTo = ownProperty(record, "upTo");
-  if (at === undefined || (upTo !== null && typeof upTo !== "string")) {
+  const upTo = ownBaselineUpTo(record);
+  if (at === undefined || upTo === undefined) {
     // `upTo` is required and explicitly nullable: `null` is the positive
-    // assertion "sealed since the first segment", while an absent field is a
-    // boundary nobody ever stated.
+    // assertion "sealed since the first segment", an absent field is a
+    // boundary nobody ever stated, and a string that is not a segment name
+    // `parseSegmentName` accepts is not a segment this trail could have
+    // written — see `ownBaselineUpTo`.
     throw buildError(MALFORMED_RECORD_MESSAGE);
   }
   return { kind: "baseline", formatVersion, at, upTo };

@@ -60,6 +60,52 @@ const DATE_PREFIX_LENGTH = 10;
 /** The zero-padded width of a segment's sequence number in its file name. */
 const SEQUENCE_WIDTH = 4;
 
+/**
+ * `true` when `datePrefix` (already shaped `YYYY-MM-DD` by
+ * {@link SEGMENT_NAME_PATTERN}) names a real Gregorian calendar date —
+ * `0000-00-00` and `9999-99-99` both match the pattern's digit shape but are
+ * not dates anything can have written on, and `2026-02-30` names a February
+ * that never reaches the 30th, while `2024-02-29` (a real leap day) and
+ * `2026-02-29` (not one) must be told apart.
+ *
+ * This IS a `Date` round-trip, but a careful one — `new Date(...)`/
+ * `Date.UTC(...)` never refuse an out-of-range component, they overflow it
+ * (`Date.UTC(2026, 1, 30)` silently becomes March 2nd), so accepting
+ * whenever construction "succeeds" would accept exactly the malformed
+ * prefixes this check exists to catch. Every parsed component is instead
+ * compared against what `candidate` reports back for it; a mismatch on any
+ * one of them means the input overflowed and the prefix is refused.
+ *
+ * Built via `setUTCFullYear` rather than `Date.UTC` or the `Date`
+ * constructor: both of the latter special-case a `year` between `0` and
+ * `99` as `1900 + year` (a legacy `Date` quirk), which would make
+ * `0099-01-01` compare against `1999` instead of `99` and reject a prefix
+ * that is otherwise perfectly valid. `setUTCFullYear` carries no such
+ * special case, so `year` round-trips exactly as parsed for every
+ * four-digit value the pattern admits — including `0000`, which still
+ * correctly fails the month/day check below.
+ */
+function isRealCalendarDate(datePrefix: string): boolean {
+  const [yearText, monthText, dayText] = datePrefix.split("-");
+  if (
+    yearText === undefined ||
+    monthText === undefined ||
+    dayText === undefined
+  ) {
+    return false;
+  }
+  const year = Number(yearText);
+  const month = Number(monthText);
+  const day = Number(dayText);
+  const candidate = new Date(0);
+  candidate.setUTCFullYear(year, month - 1, day);
+  return (
+    candidate.getUTCFullYear() === year &&
+    candidate.getUTCMonth() === month - 1 &&
+    candidate.getUTCDate() === day
+  );
+}
+
 /** The writer's in-memory record of the currently active segment. */
 export interface ActiveSegment {
   /** The absolute path of the segment file. */
@@ -94,6 +140,43 @@ function segmentFileName(datePrefix: string, sequence: number): string {
  * or decline it), declining is chosen: a name this writer cannot itself
  * render was written by something else, and adopting another producer's
  * file as our active segment is the more surprising of the two.
+ *
+ * The date prefix is also checked against the real calendar (see
+ * {@link isRealCalendarDate}), not just its `\d{4}-\d{2}-\d{2}` shape:
+ * {@link currentDatePrefix} only ever renders a real date, so a shape-valid
+ * but calendar-invalid prefix — `9999-99-99`, `0000-00-00`, `2026-02-30` —
+ * is not a name this writer would produce either, exactly like a sequence
+ * that fails to round-trip above. The check lives HERE, in the one parser
+ * every consumer shares, rather than in each of them: this function is the
+ * single stated definition of "a name this writer would produce", and every
+ * caller below trusts that definition. Pushing the same rule out to each
+ * consumer instead would mean re-deriving it three times, and one of the
+ * three eventually not — the exact failure mode a shared parser exists to
+ * close off.
+ *
+ * This is a shared parser, so tightening it changes what every caller
+ * considers a segment at all, and each caller was audited against that:
+ * - {@link discoverActiveSegment} and {@link nextSegment} only ever compare a
+ *   parsed name against {@link currentDatePrefix}'s real, valid date, so a
+ *   calendar-invalid name was never going to match `today` regardless of
+ *   this check — those two callers are unaffected in the common case, and
+ *   only lose their previous mistaken willingness to treat a planted
+ *   `9999-99-99-*` name as "today" if the clock itself were ever that date.
+ * - {@link listSegmentFiles}: a name this rejects is dropped in the same
+ *   `parsed === undefined` branch as any other shape mismatch, *before* the
+ *   `skipped` counter is touched — a calendar-invalid name was never a
+ *   segment in the first place, so, like a foreign extension or a stray
+ *   file, it is silently excluded rather than counted as `skipped`. See that
+ *   function's own doc for the exact three cases `skipped` does count.
+ * - the reader's `discoverSegmentsInOrder` (`./append-only-reader.js`) builds
+ *   its gap check only from names this function accepts, so a rejected name
+ *   simply never enters that list — it is not removed from a run that
+ *   otherwise contained it. For any trail this writer alone produced, every
+ *   real segment name is already a valid calendar date (it can only ever
+ *   have come from {@link currentDatePrefix}), so tightening this check
+ *   cannot open a gap between two genuine segments. It only changes the
+ *   outcome for a foreign or planted name, which was never part of that
+ *   writer's own contiguous sequence to begin with.
  */
 export function parseSegmentName(name: string): ParsedSegmentName | undefined {
   const match = SEGMENT_NAME_PATTERN.exec(name);
@@ -102,6 +185,9 @@ export function parseSegmentName(name: string): ParsedSegmentName | undefined {
   }
   const [, datePrefix, sequenceText] = match;
   if (datePrefix === undefined || sequenceText === undefined) {
+    return undefined;
+  }
+  if (!isRealCalendarDate(datePrefix)) {
     return undefined;
   }
   const sequence = Number.parseInt(sequenceText, 10);
@@ -260,7 +346,12 @@ export async function nextSegment(
 /**
  * Lists every segment file actually on disk under `directory`, oldest
  * `(datePrefix, sequence)` first — `readdir` order is filesystem-dependent,
- * so this sort is load-bearing, not cosmetic.
+ * so this sort is load-bearing, not cosmetic. This sorts `datePrefix` with
+ * `localeCompare` while `./append-only-sweep-policy.js`'s order key compares
+ * the same shape with plain `<`; the two only ever agree because
+ * {@link SEGMENT_NAME_PATTERN} (transitively, {@link isRealCalendarDate})
+ * admits nothing but ASCII digits and hyphens, over which both comparisons
+ * are identical — this is the dependency that makes that so.
  *
  * Only names {@link parseSegmentName} accepts (this writer's own naming
  * convention) are candidates; a foreign file, a foreign extension, or a name
