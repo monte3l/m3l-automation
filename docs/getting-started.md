@@ -38,12 +38,37 @@ inside this monorepo and depend on it via a pnpm workspace alias
 The dependency key stays this pre-rename specifier so no import site changes;
 the real package underneath it is `@monte3l/m3l-common`
 ([ADR-0103](adr/0103-publish-scope-rename-and-staged-first-release.md)) — the
-name GitHub Packages requires it to publish under. External installation
-from that private registry is in progress
-([ADR-0057](adr/0057-private-registry-distribution.md), roadmap U13) but not
-yet available. That single dependency brings in the whole framework — there is
-nothing else to configure to start, no scaffolding step and no generated
-files.
+name GitHub Packages requires it to publish under. That single dependency
+brings in the whole framework — there is nothing else to configure to start,
+no scaffolding step and no generated files.
+
+### Installing outside the monorepo
+
+External installation from GitHub Packages (private,
+[ADR-0057](adr/0057-private-registry-distribution.md)/
+[ADR-0103](adr/0103-publish-scope-rename-and-staged-first-release.md),
+roadmap U13) is set up but has not had its first release dispatched yet —
+once it has, install it directly under its real name. GitHub Packages'
+npm registry authenticates with a **classic** personal access token only (no
+fine-grained PAT, no GitHub App token); the token needs `read:packages` and
+must belong to an account that can see this private repository:
+
+```ini
+# .npmrc
+@monte3l:registry=https://npm.pkg.github.com
+//npm.pkg.github.com/:_authToken=${GITHUB_PACKAGES_TOKEN}
+```
+
+```jsonc
+{
+  "dependencies": {
+    "@monte3l/m3l-common": "^4.7.0",
+  },
+}
+```
+
+`GITHUB_PACKAGES_TOKEN` is whatever environment variable holds the token —
+`.npmrc` never stores the value itself, only a reference to it.
 
 ## 3. The two namespaces
 

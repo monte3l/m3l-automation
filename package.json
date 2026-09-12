@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "Monorepo root for @m3l-automation/m3l-common and the automation scripts that consume it.",
+  "description": "Monorepo root for @monte3l/m3l-common (workspace-internal specifier @m3l-automation/m3l-common) and the automation scripts that consume it.",
   "author": "Enrico Lionello",
   "keywords": [
     "automation",
@@ -57,6 +57,7 @@
     "sync:hub": "node bin/sync-hub.mjs",
     "check:doc-exports": "node bin/check-doc-exports.mjs",
     "check:exports": "node bin/check-exports.mjs",
+    "check:publish-version": "node bin/check-publish-version.mjs",
     "check:dts-deps": "node bin/check-dts-deps.mjs",
     "check:scaffold": "node bin/check-scaffold.mjs",
     "check:scaffold-seam": "node bin/check-scaffold-seam.mjs",

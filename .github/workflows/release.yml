@@ -1,0 +1,70 @@
+# Publishes @monte3l/m3l-common to GitHub Packages (ADR-0057/ADR-0103, U13).
+# workflow_dispatch ONLY — never pull_request, never push. Auth is the
+# workflow's own ephemeral per-job GITHUB_TOKEN, scoped to packages: write —
+# no durable publish secret lives in this repo. This is the one place in the
+# repo that reaches for actions/setup-node's registry-url input directly
+# instead of ./.github/actions/setup (that composite has no registry-url of
+# its own, and NODE_AUTH_TOKEN-based publish auth needs it).
+name: Release
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-m3l-common
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Publish @monte3l/m3l-common
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+
+      # registry-url + scope write ~/.npmrc so every later step that reads
+      # NODE_AUTH_TOKEN (pnpm publish included) authenticates against GitHub
+      # Packages without this workflow hand-writing any .npmrc line itself.
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+          registry-url: https://npm.pkg.github.com
+          scope: "@monte3l"
+
+      - name: Install (frozen lockfile)
+        run: pnpm install --frozen-lockfile --prefer-offline
+
+      # Full local gate suite (lint, typecheck, tests, build, exports
+      # shape, ...) before a manually-dispatched, high-consequence,
+      # infrequent publish — this job never runs otherwise, so it pays this
+      # cost itself rather than trusting a stale prior CI run against the
+      # dispatched ref.
+      - name: Verify
+        run: pnpm verify
+
+      # GitHub Packages versions are immutable; this turns a would-be raw
+      # registry rejection into a clear, early failure.
+      - name: Check publish version
+        run: pnpm check:publish-version
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # --no-git-checks: pnpm's default publish git-checks (clean tree, on
+      # the configured publish branch) assume a normal local clone; a
+      # workflow_dispatch checkout is a detached-HEAD, fetch-depth:1 clone
+      # with no local branch at all, which trips the branch check every
+      # time. `pnpm verify` above is this job's actual safety net.
+      - name: Publish
+        run: pnpm --filter @monte3l/m3l-common publish --no-git-checks
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
