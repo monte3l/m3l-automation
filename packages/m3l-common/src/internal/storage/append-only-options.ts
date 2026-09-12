@@ -28,6 +28,7 @@ import {
   M3L_APPEND_ONLY_MAX_SEGMENT_AGE_MS,
   M3L_APPEND_ONLY_MAX_SEGMENT_BYTES,
 } from "../../core/storage/append-only-read-types.js";
+import type { M3LAppendOnlySealFailure } from "../../core/storage/append-only-manifest-types.js";
 
 /** The only own keys {@link M3LAppendOnlyStreamOptions} may carry. */
 const STREAM_OPTIONS_KEYS: ReadonlySet<string> = new Set([
@@ -35,6 +36,7 @@ const STREAM_OPTIONS_KEYS: ReadonlySet<string> = new Set([
   "maxSegmentBytes",
   "maxSegmentAgeMs",
   "maxLineBytes",
+  "onSealFailed",
 ]);
 
 /**
@@ -133,6 +135,8 @@ export interface ResolvedStreamOptions {
   readonly maxSegmentBytes: number;
   readonly maxSegmentAgeMs: number;
   readonly maxLineBytes: number;
+  readonly onSealFailed:
+    ((failure: M3LAppendOnlySealFailure) => void) | undefined;
 }
 
 /**
@@ -152,6 +156,41 @@ function readLineCeiling(bag: Readonly<Record<string, unknown>>): number {
     throw invalidArgument("maxLineBytes", "above-the-maximum-line-size");
   }
   return value;
+}
+
+/**
+ * Reads the optional `onSealFailed` handler: rejects a truthy non-function,
+ * degrades any falsy value to `undefined` — "no handler".
+ *
+ * `onSealFailed` is currently the ONLY channel a caller has for a best-effort
+ * manifest seal that could not be written (a `verify()` surface ships in a
+ * later slice); `options` is typed, but a JS caller — or one bypassing the
+ * type — can still hand the constructor a truthy non-function there. Left
+ * unchecked, that value would silently disable the reporting channel at the
+ * one call site that would have used it, which is too close to the failure
+ * it exists to report to fail any way but loudly and immediately at
+ * construction. A FALSY value is deliberately refused the throw: it degrades
+ * to the same "no handler" state as omitting the key entirely, which is the
+ * safe direction — the seal failure is merely unreported, exactly as if the
+ * caller had never supplied the option.
+ *
+ * Reads `bag["onSealFailed"]` into a local exactly once and validates that
+ * local: re-reading the property to decide, then again to return, would let
+ * an accessor answer the check and the use differently. Do not "tighten"
+ * the guard to `onSealFailed !== undefined && !isFunction(onSealFailed)` —
+ * that would reject `null`, `0`, `""` and `false` too, which the documented
+ * polarity above forbids.
+ */
+function readOnSealFailed(
+  bag: Readonly<Record<string, unknown>>,
+): ((failure: M3LAppendOnlySealFailure) => void) | undefined {
+  const value = Object.hasOwn(bag, "onSealFailed")
+    ? bag["onSealFailed"]
+    : undefined;
+  if (value && !isFunction(value)) {
+    throw invalidArgument("onSealFailed", "not-a-function");
+  }
+  return isFunction(value) ? value : undefined;
 }
 
 /**
@@ -182,6 +221,7 @@ export function validateStreamOptions(options: unknown): ResolvedStreamOptions {
       M3L_APPEND_ONLY_MAX_SEGMENT_AGE_MS,
     ),
     maxLineBytes: readLineCeiling(options),
+    onSealFailed: readOnSealFailed(options),
   };
 }
 

@@ -68,6 +68,7 @@ vi.mock("node:fs/promises", async () => {
 });
 
 import { M3LError } from "../src/core/errors/index.js";
+import type { M3LAppendOnlySealFailure } from "../src/core/storage/index.js";
 import { M3LPaths } from "../src/core/utils/index.js";
 import {
   agentDecisionLogEntry,
@@ -84,6 +85,11 @@ import type {
   M3LAgentDecisionLogOptions,
   M3LAgentIdentity,
 } from "../src/core/agent/index.js";
+// Internal-only: the manifest sidecar's file name is not on the public
+// `core/storage` barrel, so it is imported directly from its module (see
+// REPAIR 2 in this file's owning task — the sidecar must be filtered out of
+// "which segments are on disk", not treated as one).
+import { M3L_APPEND_ONLY_MANIFEST_NAME } from "../src/internal/storage/append-only-manifest.js";
 
 // ---------------------------------------------------------------------------
 // Fixture helpers
@@ -131,10 +137,20 @@ function makeEntry(
   });
 }
 
-/** Lists segment file names, sorted so "highest-numbered" ordering holds. */
+/**
+ * Lists segment file names, sorted so "highest-numbered" ordering holds.
+ *
+ * Filters out the directory-wide `manifest.jsonl` sidecar: this helper
+ * answers "which SEGMENTS are on disk", and the manifest is deliberately not
+ * a segment — it does not match the segment-name pattern and is invisible to
+ * the library's own discovery, so a test asking about segments must not see
+ * it either.
+ */
 async function listSegments(dir: string): Promise<string[]> {
   const names = await readdir(dir);
-  return [...names].sort();
+  return [...names]
+    .filter((name) => name !== M3L_APPEND_ONLY_MANIFEST_NAME)
+    .sort();
 }
 
 /** Reads a segment file and splits it into its non-empty JSONL lines. */
@@ -228,6 +244,32 @@ async function writeUnchecked(
   await log.write(entry as M3LAgentDecisionLogEntry);
 }
 
+/**
+ * Every writer instance constructed via {@link makeLog} in the running test,
+ * so `afterEach` can flush each one's writer chain before the sandbox
+ * directory is removed.
+ */
+let activeLogs: M3LAgentDecisionLog[] = [];
+
+/**
+ * Constructs an `M3LAgentDecisionLog` and registers it for teardown flushing.
+ *
+ * The manifest seal runs on the writer's own internal chain rather than
+ * inside the promise `write()` awaits, so the directory is not guaranteed
+ * quiescent the instant the last `write()` call resolves — flushing every
+ * tracked instance in `afterEach` (rather than retrying past `ENOTEMPTY` on
+ * removal) is what makes teardown deterministic. Every call site in this
+ * file that constructs a writable instance goes through here; the
+ * `construct()` helper above is deliberately excluded, since it is only ever
+ * used where the constructor is expected to throw and no instance survives
+ * to flush.
+ */
+function makeLog(options?: M3LAgentDecisionLogOptions): M3LAgentDecisionLog {
+  const log = new M3LAgentDecisionLog(options);
+  activeLogs.push(log);
+  return log;
+}
+
 /** Asserts the directory holds no file with any content. */
 async function expectNothingWritten(dir: string): Promise<void> {
   let names: string[];
@@ -246,9 +288,17 @@ let workDir: string;
 
 beforeEach(async () => {
   workDir = await mkdtemp(path.join(tmpdir(), "m3l-agent-decision-log-"));
+  activeLogs = [];
 });
 
 afterEach(async () => {
+  // Drain every tracked writer's chain before removing the sandbox: the
+  // manifest seal runs on the writer's own internal chain rather than inside
+  // the promise `write()` awaits, so a still-in-flight seal can otherwise
+  // recreate `manifest.jsonl` partway through this recursive remove and
+  // surface as `ENOTEMPTY` (which `fs.rm`'s built-in retry list never
+  // covers). `flush()` never rejects, so this cannot itself throw.
+  await Promise.all(activeLogs.map(async (log) => log.flush()));
   vi.restoreAllMocks();
   vi.useRealTimers();
   vi.unstubAllEnvs();
@@ -260,11 +310,12 @@ afterEach(async () => {
 // ---------------------------------------------------------------------------
 
 describe("type contracts", () => {
-  test("M3LAgentDecisionLogOptions is an options bag with an optional directory and both rotation ceilings", () => {
+  test("M3LAgentDecisionLogOptions is an options bag with an optional directory, both rotation ceilings, and a seal-failure handler", () => {
     expectTypeOf<M3LAgentDecisionLogOptions>().toMatchObjectType<{
       readonly directory?: string;
       readonly maxSegmentBytes?: number;
       readonly maxSegmentAgeMs?: number;
+      readonly onSealFailed?: (failure: M3LAppendOnlySealFailure) => void;
     }>();
   });
 
@@ -327,7 +378,7 @@ describe("rotation ceiling constants", () => {
 describe("round-trip", () => {
   test("appends several entries as one JSON object per line, equal to what was written", async () => {
     const dir = path.join(workDir, "agent-log");
-    const log = new M3LAgentDecisionLog({ directory: dir });
+    const log = makeLog({ directory: dir });
 
     const entryA = makeEntry(BASE_NOW, {
       parameterNames: ["table", "item"],
@@ -386,7 +437,7 @@ describe("round-trip", () => {
 describe("directory creation", () => {
   test("creates the (nested, absent) target directory on first write", async () => {
     const dir = path.join(workDir, "nested", "agent-log");
-    const log = new M3LAgentDecisionLog({ directory: dir });
+    const log = makeLog({ directory: dir });
 
     await log.write(makeEntry(BASE_NOW));
 
@@ -398,7 +449,7 @@ describe("directory creation", () => {
     vi.stubEnv("M3L_DATA_DIR", workDir);
     const expectedDir = path.join(new M3LPaths().getDataDir(), "agent-log");
 
-    const log = new M3LAgentDecisionLog();
+    const log = makeLog();
     await log.write(makeEntry(BASE_NOW));
 
     const segments = await listSegments(expectedDir);
@@ -419,7 +470,7 @@ describe("every verdict is recorded", () => {
     "a %s verdict is appended, not filtered",
     async (verdict, rule) => {
       const dir = path.join(workDir, "agent-log");
-      const log = new M3LAgentDecisionLog({ directory: dir });
+      const log = makeLog({ directory: dir });
 
       await log.write(makeEntry(BASE_NOW, { verdict, rule }));
 
@@ -456,7 +507,7 @@ describe("rotation by bytes", () => {
     // Ceiling sits just above one line: A alone fits, A+B (plus separating
     // newline) does not, so B is the entry whose write crosses the ceiling.
     const maxSegmentBytes = byteA + 10;
-    const log = new M3LAgentDecisionLog({ directory: dir, maxSegmentBytes });
+    const log = makeLog({ directory: dir, maxSegmentBytes });
 
     await log.write(entryA);
     await log.write(entryB);
@@ -505,7 +556,7 @@ describe("rotation by age", () => {
   test("crossing the age ceiling seals the active segment and opens a new one", async () => {
     const dir = path.join(workDir, "agent-log");
     const maxSegmentAgeMs = 1000;
-    const log = new M3LAgentDecisionLog({ directory: dir, maxSegmentAgeMs });
+    const log = makeLog({ directory: dir, maxSegmentAgeMs });
 
     const realStart = Date.now();
     vi.useFakeTimers();
@@ -552,8 +603,9 @@ describe("rotation by age", () => {
 });
 
 // ---------------------------------------------------------------------------
-// 6. Cold-start segment discovery — a fresh instance, no index file, no
-//    carried in-memory state
+// 6. Cold-start segment discovery — a fresh instance, no carried in-memory
+//    state: the manifest is never consulted to decide where to append, and
+//    is not itself a segment
 // ---------------------------------------------------------------------------
 
 describe("cold-start segment discovery", () => {
@@ -561,7 +613,7 @@ describe("cold-start segment discovery", () => {
     const dir = path.join(workDir, "agent-log");
     const options: M3LAgentDecisionLogOptions = { directory: dir };
 
-    const firstProcess = new M3LAgentDecisionLog(options);
+    const firstProcess = makeLog(options);
     await firstProcess.write(makeEntry(BASE_NOW));
 
     const segmentsAfterFirst = await listSegments(dir);
@@ -569,7 +621,7 @@ describe("cold-start segment discovery", () => {
 
     // A brand new instance — nothing shared with `firstProcess` — pointed at
     // the same directory, simulating a second, freshly spawned process.
-    const secondProcess = new M3LAgentDecisionLog(options);
+    const secondProcess = makeLog(options);
     await secondProcess.write(makeEntry(BASE_NOW + 1));
 
     const segmentsAfterSecond = await listSegments(dir);
@@ -599,7 +651,7 @@ describe("cold-start segment discovery", () => {
       maxSegmentBytes: byteA - 1,
     };
 
-    const firstProcess = new M3LAgentDecisionLog(options);
+    const firstProcess = makeLog(options);
     await firstProcess.write(entryA);
     const segmentsAfterFirst = await listSegments(dir);
     expect(segmentsAfterFirst).toHaveLength(1);
@@ -609,7 +661,7 @@ describe("cold-start segment discovery", () => {
     );
     const contentAfterFirst = await readFile(firstSegmentPath, "utf8");
 
-    const secondProcess = new M3LAgentDecisionLog(options);
+    const secondProcess = makeLog(options);
     await secondProcess.write(makeEntry(BASE_NOW + 1));
 
     const segmentsAfterSecond = await listSegments(dir);
@@ -626,7 +678,7 @@ describe("cold-start segment discovery", () => {
 describe("write failure is loud", () => {
   test("a failed append throws M3LAgentDecisionLogWriteError, chaining the cause, never swallowed, and leaks no caller data", async () => {
     const dir = path.join(workDir, "agent-log");
-    const log = new M3LAgentDecisionLog({ directory: dir });
+    const log = makeLog({ directory: dir });
 
     const injectedError = new Error("simulated fs failure");
     // Defensively cover every plausible append primitive: only whichever
@@ -670,7 +722,7 @@ describe("write failure is loud", () => {
 describe("entry-size ceiling", () => {
   test("an entry whose serialized line exceeds M3L_AGENT_MAX_LOG_ENTRY_BYTES throws rather than tearing a write", async () => {
     const dir = path.join(workDir, "agent-log");
-    const log = new M3LAgentDecisionLog({ directory: dir });
+    const log = makeLog({ directory: dir });
 
     // `agentDecisionLogEntry`'s own structural validator enforces no length
     // cap on `reason` (only `M3L_AGENT_MAX_PARAMETER_NAMES` gates the
@@ -715,7 +767,7 @@ describe("stray, non-segment directory entries are ignored", () => {
     await writeFile(path.join(dir, ".DS_Store"), "");
 
     const today = pinClock();
-    const log = new M3LAgentDecisionLog({ directory: dir });
+    const log = makeLog({ directory: dir });
     const entry = makeEntry(Date.now());
     await log.write(entry);
 
@@ -745,7 +797,7 @@ describe("stray, non-segment directory entries are ignored", () => {
 describe("an already-typed error is re-thrown unchanged", () => {
   test("an M3LError surfacing from inside the write is thrown as the exact same instance, not double-wrapped", async () => {
     const dir = path.join(workDir, "agent-log");
-    const log = new M3LAgentDecisionLog({ directory: dir });
+    const log = makeLog({ directory: dir });
 
     const alreadyTyped = new M3LAgentDecisionLogWriteError(
       "already typed from a lower layer",
@@ -783,7 +835,7 @@ describe("segment selection across dates and out-of-order sequences", () => {
     await writeFile(path.join(dir, `${today}-0001.jsonl`), "");
     await writeFile(path.join(dir, `${today}-0005.jsonl`), "");
 
-    const log = new M3LAgentDecisionLog({ directory: dir });
+    const log = makeLog({ directory: dir });
     const entry = makeEntry(Date.now());
     await log.write(entry);
 
@@ -834,7 +886,7 @@ describe("segment age falls back to mtimeMs when the filesystem reports no birth
       mtimeMs: staleMtimeMs,
     });
 
-    const log = new M3LAgentDecisionLog({ directory: dir, maxSegmentAgeMs });
+    const log = makeLog({ directory: dir, maxSegmentAgeMs });
     await log.write(makeEntry(Date.now()));
 
     // Age-based rotation fired off the mtimeMs fallback: a new segment was
@@ -861,7 +913,7 @@ describe("a date rollover across a rotation resets the sequence to 1", () => {
     // A ceiling below even one line's size: every single write already
     // crosses it, forcing the very next write to rotate.
     const maxSegmentBytes = byteA - 1;
-    const log = new M3LAgentDecisionLog({ directory: dir, maxSegmentBytes });
+    const log = makeLog({ directory: dir, maxSegmentBytes });
 
     await log.write(entryA); // day-one, sequence 1
 
@@ -995,27 +1047,24 @@ describe("constructor options validation", () => {
   test("accepts an omitted options bag and an empty one", () => {
     vi.stubEnv("M3L_DATA_DIR", workDir);
 
-    expect(() => new M3LAgentDecisionLog()).not.toThrow();
-    expect(() => new M3LAgentDecisionLog({})).not.toThrow();
+    expect(() => makeLog()).not.toThrow();
+    expect(() => makeLog({})).not.toThrow();
   });
 
   test("accepts each field supplied with a valid value", () => {
-    expect(() => new M3LAgentDecisionLog({ directory: workDir })).not.toThrow();
-    expect(
-      () =>
-        new M3LAgentDecisionLog({ directory: workDir, maxSegmentBytes: 1024 }),
+    expect(() => makeLog({ directory: workDir })).not.toThrow();
+    expect(() =>
+      makeLog({ directory: workDir, maxSegmentBytes: 1024 }),
     ).not.toThrow();
-    expect(
-      () =>
-        new M3LAgentDecisionLog({ directory: workDir, maxSegmentAgeMs: 1000 }),
+    expect(() =>
+      makeLog({ directory: workDir, maxSegmentAgeMs: 1000 }),
     ).not.toThrow();
-    expect(
-      () =>
-        new M3LAgentDecisionLog({
-          directory: workDir,
-          maxSegmentBytes: M3L_AGENT_LOG_MAX_SEGMENT_BYTES,
-          maxSegmentAgeMs: M3L_AGENT_LOG_MAX_SEGMENT_AGE_MS,
-        }),
+    expect(() =>
+      makeLog({
+        directory: workDir,
+        maxSegmentBytes: M3L_AGENT_LOG_MAX_SEGMENT_BYTES,
+        maxSegmentAgeMs: M3L_AGENT_LOG_MAX_SEGMENT_AGE_MS,
+      }),
     ).not.toThrow();
   });
 });
@@ -1034,7 +1083,7 @@ describe("write() argument validation", () => {
     "rejects an entry given as %s without creating a file",
     async (_label, entry) => {
       const dir = path.join(workDir, "agent-log");
-      const log = new M3LAgentDecisionLog({ directory: dir });
+      const log = makeLog({ directory: dir });
 
       const thrown = await catchRejected(() => writeUnchecked(log, entry));
 
@@ -1063,7 +1112,7 @@ describe("write() argument validation", () => {
     "rejects an unserializable entry carrying %s rather than letting a raw TypeError escape",
     async (_label, build) => {
       const dir = path.join(workDir, "agent-log");
-      const log = new M3LAgentDecisionLog({ directory: dir });
+      const log = makeLog({ directory: dir });
 
       const thrown = await catchRejected(() => writeUnchecked(log, build()));
 
@@ -1102,7 +1151,7 @@ describe("entry-size ceiling, both sides of the boundary", () => {
 
   test("an entry serializing to exactly the ceiling is rejected: the appended line is json + a newline, one byte over", async () => {
     const dir = path.join(workDir, "agent-log");
-    const log = new M3LAgentDecisionLog({ directory: dir });
+    const log = makeLog({ directory: dir });
     const entry = entryOfExactSerializedBytes(M3L_AGENT_MAX_LOG_ENTRY_BYTES);
 
     // The ceiling exists because a single oversized write() is where a
@@ -1118,7 +1167,7 @@ describe("entry-size ceiling, both sides of the boundary", () => {
 
   test("an entry one byte under the ceiling is still accepted, and the written line is exactly the ceiling's worth of bytes", async () => {
     const dir = path.join(workDir, "agent-log");
-    const log = new M3LAgentDecisionLog({ directory: dir });
+    const log = makeLog({ directory: dir });
     const entry = entryOfExactSerializedBytes(
       M3L_AGENT_MAX_LOG_ENTRY_BYTES - 1,
     );
@@ -1155,7 +1204,7 @@ describe("date rollover under both ceilings", () => {
     // may rotate. (The existing rollover test forces a byte rotation first,
     // so it never exercises this path.)
     const dayOnePrefix = pinClock(dayOneAt);
-    const log = new M3LAgentDecisionLog({ directory: dir });
+    const log = makeLog({ directory: dir });
     await log.write(makeEntry(dayOneAt, { reason: "written on day one" }));
 
     const dayTwoPrefix = pinClock(dayTwoAt);
@@ -1171,7 +1220,7 @@ describe("date rollover under both ceilings", () => {
 
     // ... and a process freshly spawned at the same instant agrees, finding
     // and appending to that same day-two segment rather than a rival one.
-    const freshProcess = new M3LAgentDecisionLog({ directory: dir });
+    const freshProcess = makeLog({ directory: dir });
     await freshProcess.write(
       makeEntry(dayTwoAt + 1, { reason: "written by a fresh process" }),
     );
@@ -1208,7 +1257,7 @@ describe("concurrent write() calls on one instance", () => {
     }
 
     const maxSegmentBytes = lineBytes * 2;
-    const log = new M3LAgentDecisionLog({ directory: dir, maxSegmentBytes });
+    const log = makeLog({ directory: dir, maxSegmentBytes });
 
     await Promise.all(
       entries.map(async (entry) => {
@@ -1261,7 +1310,7 @@ describe("foreign segment names in the target directory", () => {
     // above four digits.
     await writeFile(path.join(dir, `${today}-00005.jsonl`), "");
 
-    const log = new M3LAgentDecisionLog({ directory: dir });
+    const log = makeLog({ directory: dir });
     const entry = makeEntry(FIXED_CLOCK);
 
     await expect(log.write(entry)).resolves.toBeUndefined();

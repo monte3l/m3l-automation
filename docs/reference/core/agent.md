@@ -119,9 +119,11 @@ more from V7 slice 1, and five more from V7 slice 2.
 
 **Writing the log** — the one impure surface (V7 slice 2):
 
-- `M3LAgentDecisionLog` — the append-only segmented writer.
-- `M3LAgentDecisionLogOptions` — its options bag: the directory override and
-  both rotation ceilings.
+- `M3LAgentDecisionLog` — the append-only segmented writer. Its `flush()`
+  drains the appends and manifest seals in flight at the moment of the call,
+  so the log directory is safe to remove, archive or measure.
+- `M3LAgentDecisionLogOptions` — its options bag: the directory override, both
+  rotation ceilings, and the optional `onSealFailed` handler.
 - `M3L_AGENT_LOG_MAX_SEGMENT_BYTES` (8 MiB) /
   `M3L_AGENT_LOG_MAX_SEGMENT_AGE_MS` (24 h) — the default rotation ceilings,
   both caller-overridable.
@@ -1677,10 +1679,34 @@ On first write the writer lists `data/agent-log/`, picks the highest-numbered
 segment for the current date prefix, and `stat`s it to decide seal-vs-append
 against both ceilings.
 
-There is **no index file and no in-memory state carried across processes** —
-the directory listing is the state. A freshly spawned process and a long-lived
-one therefore agree about which segment is active, which is the only way the
-concurrency stance above survives a restart.
+There is **no in-memory state carried across processes** — the directory
+listing is the state. A freshly spawned process and a long-lived one therefore
+agree about which segment is active, which is the only way the concurrency
+stance above survives a restart.
+
+The directory does hold one `manifest.jsonl` sidecar, which the writer seals
+each rotated-away segment into (entry count, byte length, plain sha256), so a
+whole archived date can be re-verified with `sha256sum` alone. It is
+deliberately **not** an index: it is never consulted to decide where to append,
+it carries no state across processes, and it is not a segment, so segment
+discovery never sees it. Sealing is best-effort — a seal that cannot be written
+never fails the `write()` it follows, because a seal is metadata about bytes
+already durably appended, and failing a new append to protect a proof about an
+older record would discard a new auditable one. The optional `onSealFailed`
+handler is where that failure surfaces instead. **ADR-0061's loud-write rule is
+untouched:** a failed append still throws `M3LAgentDecisionLogWriteError` with
+its cause chained, never downgraded to a warning.
+
+Because the seal runs on the writer's internal chain rather than inside the
+promise `write()` awaits, an entry is durable when `write()` resolves but a
+`manifest.jsonl` write may still be in flight — so removing or archiving the
+log directory at that moment can race it (`ENOTEMPTY` on a recursive remove).
+`flush()` drains what was in flight when it was called. It is a point-in-time
+drain rather than a barrier, so a concurrent `write()` is not covered, and it
+never rejects: write failures reach their own caller and seal failures reach
+`onSealFailed`. Calling it is never required for the log's correctness — a
+process that exits without flushing loses at most a seal, which the sealer's
+cold-start sweep recovers.
 
 One limitation is worth stating in the same register as the NFS caveat: a
 segment's age is taken from `birthtimeMs`, falling back to `mtimeMs` on a

@@ -24,8 +24,8 @@
  * broken stream directory, it is Node's error rather than one composed here, and
  * it is reached only by code that walks `error.cause` explicitly.
  *
- * Two limitations are accepted rather than fixed, in the same register as the
- * `O_APPEND`/NFS caveat on {@link AppendOnlyWriter.append} and the
+ * Five limitations are accepted rather than fixed, in the same register as
+ * the `O_APPEND`/NFS caveat on {@link AppendOnlyWriter.append} and the
  * `birthtimeMs` one in `./append-only-segments.js`:
  *
  * - a `maxSegmentBytes` below `maxLineBytes` yields one entry per segment —
@@ -45,6 +45,13 @@
  *   back up without that line. An owner that needs crash durability has to
  *   flush at its own artifact boundary; per-append `fsync` is deliberately
  *   not paid on a path a shipped consumer already writes on every decision.
+ * - the seal is best-effort: a seal that cannot be written never fails the
+ *   append it follows, because a seal is metadata about bytes already
+ *   durably appended and failing the append would discard a new auditable
+ *   record to protect a proof about an older one. It is reported through the
+ *   owner's failure handler instead.
+ * - the manifest grows O(segments) — roughly 200 bytes per sealed segment —
+ *   and is not itself rotated. Nothing in this design prunes it.
  */
 
 import type { FileHandle } from "node:fs/promises";
@@ -61,54 +68,27 @@ import {
   currentDatePrefix,
   discoverActiveSegment,
   nextSegment,
+  segmentFileName,
 } from "./append-only-segments.js";
+import type { AppendOnlyRotatedSegment } from "./append-only-sealer-types.js";
+import type {
+  AppendOnlyRenderEntry,
+  AppendOnlySealPort,
+  AppendOnlyWriterErrors,
+  AppendOnlyWriterOptions,
+} from "./append-only-writer-types.js";
 
 /**
- * How a writer turns one entry into the JSON text of its line.
- *
- * The text carries **no** trailing newline: {@link AppendOnlyWriter} appends
- * it, so the line ceiling is measured over exactly the bytes one atomic
- * `write()` must carry. A renderer is also where an owner's structural proof
- * and detached projection belong — it runs before any filesystem call, so an
- * entry it rejects leaves nothing behind.
+ * Re-exported so every existing importer of this module keeps working
+ * unchanged — see `./append-only-writer-types.js` for the definitions and
+ * their full TSDoc.
  */
-export type AppendOnlyRenderEntry<TEntry> = (entry: TEntry) => string;
-
-/**
- * The two failure vocabularies a writer must raise in its owner's terms.
- *
- * Each method builds — and does not throw — the error the owner's public
- * surface documents, so this module never has to name a domain it does not
- * know. Neither may carry a value read out of the caller's input; the byte
- * counts and the chained `cause` handed in here are all the detail there is.
- *
- * Both return an {@link M3LError}, not a bare `Error`: this writer's own
- * recovery path keys on `instanceof M3LError` to re-throw an already-typed
- * failure unchanged, so an owner satisfying the port with a plain `Error`
- * would silently fall out of it and have its error wrapped a second time.
- */
-export interface AppendOnlyWriterErrors {
-  /** The rendered line is larger than one atomic write may carry. */
-  oversize(lineBytes: number, maxLineBytes: number): M3LError;
-  /** The append itself failed (ELOOP, EACCES, ENOSPC, a planted link, ...). */
-  appendFailed(cause: unknown): M3LError;
-}
-
-/** The fully resolved settings one {@link AppendOnlyWriter} runs under. */
-export interface AppendOnlyWriterOptions<TEntry> {
-  /** The directory the segments live in; created on a cold start. */
-  readonly directory: string;
-  /** Rotate once the active segment has reached this many bytes. */
-  readonly maxSegmentBytes: number;
-  /** Rotate once the active segment has been open this many milliseconds. */
-  readonly maxSegmentAgeMs: number;
-  /** The largest line, newline included, one append may carry. */
-  readonly maxLineBytes: number;
-  /** Turns one entry into its JSON text, without a trailing newline. */
-  readonly renderEntry: AppendOnlyRenderEntry<TEntry>;
-  /** The owner's error vocabulary for the two failures this writer raises. */
-  readonly errors: AppendOnlyWriterErrors;
-}
+export type {
+  AppendOnlyRenderEntry,
+  AppendOnlySealPort,
+  AppendOnlyWriterErrors,
+  AppendOnlyWriterOptions,
+};
 
 /**
  * The `cause` chained under the owner's `appendFailed(...)` when a segment
@@ -135,12 +115,18 @@ function plantedLinkCause(linkCount: number): Error {
  * decision and one guarded `open`-`fstat`-`write`-`close` per entry, over the
  * stateless segment layer in `./append-only-segments.js`.
  *
- * No index file is kept and no state is carried across processes — a fresh
- * instance always re-derives the active segment from a directory listing
- * plus one `stat`, so a long-lived process and a freshly spawned one agree.
- * Rotation only ever seals the active segment (by simply no longer writing
- * to it) and opens a new one; it never prunes or truncates a segment in
- * place.
+ * A directory-wide `manifest.jsonl` sidecar now exists alongside the
+ * segments (written through the
+ * {@link "./append-only-writer-types.js".AppendOnlySealPort}, by
+ * {@link "./append-only-sealer.js".AppendOnlySealer}), so "no index file is
+ * kept" no longer holds without qualification. What stays true: the manifest
+ * is never consulted to decide where to append — a fresh instance still
+ * re-derives the active segment from a directory listing plus one `stat`, so
+ * a long-lived process and a freshly spawned one still agree; the manifest
+ * carries no in-memory state across processes either; and the manifest is
+ * not a segment, so it is invisible to segment discovery. Rotation only ever
+ * seals the active segment (by simply no longer writing to it) and opens a
+ * new one; it never prunes or truncates a segment in place.
  *
  * Concurrent `write()` calls on one instance are serialized onto a tail
  * promise: each append awaits the previous one's completion. Without that,
@@ -155,6 +141,7 @@ export class AppendOnlyWriter<TEntry> {
   private readonly maxLineBytes: number;
   private readonly renderEntry: AppendOnlyRenderEntry<TEntry>;
   private readonly errors: AppendOnlyWriterErrors;
+  private readonly sealer: AppendOnlySealPort;
   private active: ActiveSegment | undefined;
   /**
    * The tail of the serialized append chain. Always settles fulfilled — a
@@ -170,6 +157,7 @@ export class AppendOnlyWriter<TEntry> {
     this.maxLineBytes = options.maxLineBytes;
     this.renderEntry = options.renderEntry;
     this.errors = options.errors;
+    this.sealer = options.sealer;
   }
 
   /**
@@ -192,16 +180,57 @@ export class AppendOnlyWriter<TEntry> {
    */
   async write(entry: TEntry): Promise<void> {
     const line = this.renderLine(entry);
-    const appended = this.tail.then(async () => {
-      await this.append(line);
-    });
-    // Swallow only for the chain's own bookkeeping: `appended` is awaited
-    // below, so the rejection is still reported to this caller.
+    const appended = this.tail.then(async () => await this.append(line));
+    // Chained onto `this.tail`, not the promise below: lands before the next
+    // append but never delays this one — that latency/ordering guarantee
+    // comes from THIS placement. A seal failure never reporting through
+    // `errors.appendFailed` is a separate, independent guarantee, held by
+    // `sealAfterAppend`'s own `try`/`catch` rather than by this placement —
+    // see its TSDoc for both guards and the mutation evidence that they are
+    // distinct.
     this.tail = appended.then(
-      () => undefined,
+      async (rotatedFrom) => {
+        await this.sealAfterAppend(rotatedFrom);
+      },
       () => undefined,
     );
     await appended;
+  }
+
+  /**
+   * Drains the append chain as it stands at the moment of the call: a single
+   * point-in-time wait on `this.tail`, not a loop that re-reads it until it
+   * stops changing.
+   *
+   * **Guarantees:** every `write()` call, and every manifest seal via
+   * {@link "./append-only-sealer.js".AppendOnlySealer}, that was already
+   * in flight when `flush()` was called has settled by the time it resolves.
+   *
+   * **Does not guarantee:** anything about a `write()` started concurrently
+   * with, or after, this call — those are not covered, and this is a
+   * point-in-time drain, not a barrier or a close. A caller who reads it as
+   * "the writer is now idle forever" is wrong.
+   *
+   * **Never rejects.** `this.tail` always settles fulfilled by construction:
+   * a rejected append is reported to its own caller only, and a seal failure
+   * is swallowed by `sealAfterAppend`'s own guard. `flush()` therefore
+   * reports nothing and is not an error channel — a caller wanting append
+   * failures gets them from `write()`, and a caller wanting seal failures
+   * supplies the owner's own failure handler. Do not "improve" this into
+   * rethrowing something.
+   *
+   * **What it is for:** making the directory safe to remove, archive, or
+   * measure — it closes the window where an in-flight seal recreates
+   * `manifest.jsonl` partway through a recursive remove, which otherwise
+   * surfaces as `ENOTEMPTY`.
+   *
+   * **Never required for correctness of the trail itself.** A process that
+   * exits without calling this loses at most one seal, and that is exactly
+   * what {@link "./append-only-sealer.js".AppendOnlySealer}'s cold-start
+   * sweep recovers on the next writer instance.
+   */
+  async flush(): Promise<void> {
+    await this.tail;
   }
 
   /**
@@ -271,6 +300,18 @@ export class AppendOnlyWriter<TEntry> {
    * Resolves the target segment, rotating if needed, proves the file the
    * write will land in is one this writer owns, and appends `line` to it.
    *
+   * Returns the segment this append rotated away from — its on-disk name,
+   * rendered by {@link "./append-only-segments.js".segmentFileName}, the
+   * single renderer of a segment's name, never string-concatenated or taken
+   * as a path basename, paired with this writer's own believed byte count
+   * for it (`current.size`, untouched by this append since the bytes just
+   * written land on the NEW segment) — or `undefined` when it did not
+   * rotate, and only on the path where the append actually succeeded;
+   * `write()` threads it to `sealAfterAppend`. The byte count travels with
+   * the name because the sealer re-measures the segment at seal time and
+   * defers rather than seals when the two disagree — see
+   * {@link "./append-only-sealer-types.js".AppendOnlyRotatedSegment} for why.
+   *
    * The whole lifecycle — `open`, `fstat`, `write`, `close` — sits under one
    * guard, so a failure at any step is reported in the owner's vocabulary
    * rather than leaking a raw Node error from the middle of it.
@@ -303,11 +344,14 @@ export class AppendOnlyWriter<TEntry> {
    * (each append opens afresh, so that one is caught on the next write, not
    * mid-write).
    */
-  private async append(line: string): Promise<void> {
+  private async append(
+    line: string,
+  ): Promise<AppendOnlyRotatedSegment | undefined> {
     let handle: FileHandle | undefined;
     try {
       const current = await this.resolveActiveSegment();
-      const segment = this.shouldRotate(current)
+      const rotated = this.shouldRotate(current);
+      const segment = rotated
         ? await nextSegment(this.directory, current)
         : current;
 
@@ -330,6 +374,12 @@ export class AppendOnlyWriter<TEntry> {
       await appendFile(handle, line, { encoding: "utf8" });
       segment.size += Buffer.byteLength(line, "utf8");
       this.active = segment;
+      return rotated
+        ? {
+            name: segmentFileName(current.datePrefix, current.sequence),
+            byteLength: current.size,
+          }
+        : undefined;
     } catch (cause) {
       // Drop the cached segment. `this.active` is assigned before an append
       // is known to have succeeded, and `mkdir` runs only on the
@@ -359,6 +409,71 @@ export class AppendOnlyWriter<TEntry> {
       } catch {
         /* ignore — the append outcome above is what matters */
       }
+    }
+  }
+
+  /**
+   * Calls the sealer's port for the append that just landed, swallowing
+   * everything it throws or rejects with. Four properties matter here:
+   *
+   * 1. **Not inside the promise `write()` awaits.** `write()` resolves once
+   *    the entry is durable; this runs on `this.tail` instead, landing before
+   *    the next append but never delaying this one. A seal is metadata about
+   *    bytes already durably appended, so waiting on up to eight bounded
+   *    segment reads on the first write would invert the design — and a
+   *    process exiting before a seal runs is exactly what
+   *    {@link "./append-only-sealer.js".AppendOnlySealer}'s cold-start sweep
+   *    recovers.
+   * 2. **Being a link in `this.tail` is what makes `this.active` trustworthy
+   *    here.** The next append cannot start until this method finishes, so
+   *    `this.active` cannot move under the sealer between append and seal —
+   *    which is why reading it below, at seal time, is safe.
+   * 3. **This method's own `try`/`catch` — not where it is called from — is
+   *    what keeps a seal failure from ever being reported as an append
+   *    failure through `errors.appendFailed`, and what keeps `this.tail`
+   *    settling fulfilled so a later append is not poisoned.** It is defence
+   *    in depth, not redundant with the sealer's documented never-rejects
+   *    guarantee: the chain invariant belongs to THIS module, and this module
+   *    must not depend on another module keeping its promise.
+   * 4. **Called from outside `append()`'s own `try`/`finally`, on
+   *    `this.tail` rather than inside the promise `write()` awaits.** This
+   *    placement is what property 1 above actually depends on — the latency
+   *    and ordering guarantee — and it is also what keeps `append()`'s own
+   *    documented contract intact, namely that everything inside its guard is
+   *    a filesystem failure reportable as `errors.appendFailed`. It is a
+   *    **separate** guard from property 3: removing it would still leave a
+   *    seal failure unreportable as an append failure (property 3 does not
+   *    depend on call site), but `write()` would then wait on the seal before
+   *    resolving.
+   *
+   * Properties 3 and 4 are independent, each holding a different guarantee —
+   * shown by mutating this call site two ways. Moving this wrapper's own call
+   * to inside `append()`'s `try` broke only the resolve-early test (property
+   * 4); the `appendFailed`-routing test (property 3) stayed green, because
+   * this method's own `catch` still swallowed the failure regardless of where
+   * it was called from. Only inlining the raw `this.sealer.sealAfterAppend`
+   * call inside `append()`'s `try` — bypassing this method's `catch` —
+   * additionally broke the routing test. Do not remove either guard on the
+   * strength of the other still being present.
+   *
+   * `this.active` is `undefined` when the append this call follows threw and
+   * cleared it — nothing to seal against, so this returns early.
+   */
+  private async sealAfterAppend(
+    rotatedFrom: AppendOnlyRotatedSegment | undefined,
+  ): Promise<void> {
+    if (this.active === undefined) {
+      return;
+    }
+    const active = segmentFileName(
+      this.active.datePrefix,
+      this.active.sequence,
+    );
+    try {
+      await this.sealer.sealAfterAppend({ rotatedFrom, active });
+    } catch {
+      // Defence in depth — see this method's TSDoc point 3. The sealer
+      // documents that it never rejects; this module does not rely on that.
     }
   }
 

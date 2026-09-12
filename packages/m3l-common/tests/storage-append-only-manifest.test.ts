@@ -215,6 +215,14 @@ const SEGMENT_MID = "2026-09-10-0002.jsonl";
 const SEGMENT_NEW = "2026-09-11-0001.jsonl";
 
 /**
+ * The active segment for a call whose test says nothing about the writer's
+ * active segment. A far-future date prefix is never the highest ELIGIBLE
+ * segment (the baseline only considers prefixes at or before today), so
+ * excluding it changes no baseline any existing test asserts.
+ */
+const IDLE_ACTIVE = "2999-12-31-9999.jsonl";
+
+/**
  * A string no library-computed fact could ever contain, held in
  * {@link expectPortFailure}'s no-caller-data check.
  *
@@ -510,6 +518,7 @@ describe("loadOrInitializeManifest", () => {
       sandbox,
       AMPLE_MAX_BYTES,
       port.build,
+      IDLE_ACTIVE,
     );
 
     const baseline = definedOrThrow(contents.baseline, "the written baseline");
@@ -530,6 +539,7 @@ describe("loadOrInitializeManifest", () => {
       sandbox,
       AMPLE_MAX_BYTES,
       port.build,
+      IDLE_ACTIVE,
     );
 
     expect(definedOrThrow(contents.baseline, "the baseline").upTo).toBeNull();
@@ -553,6 +563,7 @@ describe("loadOrInitializeManifest", () => {
       sandbox,
       AMPLE_MAX_BYTES,
       port.build,
+      IDLE_ACTIVE,
     );
 
     expect(definedOrThrow(contents.baseline, "the baseline").upTo).toBe(
@@ -569,6 +580,7 @@ describe("loadOrInitializeManifest", () => {
       sandbox,
       AMPLE_MAX_BYTES,
       port.build,
+      IDLE_ACTIVE,
     );
 
     expect(definedOrThrow(contents.baseline, "the baseline").upTo).toBeNull();
@@ -586,6 +598,7 @@ describe("loadOrInitializeManifest", () => {
       sandbox,
       AMPLE_MAX_BYTES,
       port.build,
+      IDLE_ACTIVE,
     );
 
     expect(definedOrThrow(contents.baseline, "the baseline").upTo).toBe(
@@ -602,6 +615,7 @@ describe("loadOrInitializeManifest", () => {
       sandbox,
       AMPLE_MAX_BYTES,
       port.build,
+      IDLE_ACTIVE,
     );
 
     expect(definedOrThrow(contents.baseline, "the baseline").upTo).toBeNull();
@@ -614,6 +628,7 @@ describe("loadOrInitializeManifest", () => {
       sandbox,
       AMPLE_MAX_BYTES,
       port.build,
+      IDLE_ACTIVE,
     );
 
     const { at } = definedOrThrow(contents.baseline, "the baseline");
@@ -630,6 +645,7 @@ describe("loadOrInitializeManifest", () => {
       sandbox,
       AMPLE_MAX_BYTES,
       port.build,
+      IDLE_ACTIVE,
     );
 
     expect(definedOrThrow(contents.baseline, "the baseline").upTo).toBe(
@@ -648,6 +664,7 @@ describe("loadOrInitializeManifest", () => {
       sandbox,
       AMPLE_MAX_BYTES,
       port.build,
+      IDLE_ACTIVE,
     );
 
     expect(contents.baseline).toBeUndefined();
@@ -667,7 +684,12 @@ describe("loadOrInitializeManifest", () => {
     const port = createFailurePort();
 
     const thrown = await catchRejected(() =>
-      loadOrInitializeManifest(sandbox, AMPLE_MAX_BYTES, port.build),
+      loadOrInitializeManifest(
+        sandbox,
+        AMPLE_MAX_BYTES,
+        port.build,
+        IDLE_ACTIVE,
+      ),
     );
 
     expect(thrown).toBeInstanceOf(M3LError);
@@ -677,11 +699,118 @@ describe("loadOrInitializeManifest", () => {
   test("is idempotent across repeated calls", async () => {
     const port = createFailurePort();
 
-    await loadOrInitializeManifest(sandbox, AMPLE_MAX_BYTES, port.build);
+    await loadOrInitializeManifest(
+      sandbox,
+      AMPLE_MAX_BYTES,
+      port.build,
+      IDLE_ACTIVE,
+    );
     const first = await readManifestBytes();
-    await loadOrInitializeManifest(sandbox, AMPLE_MAX_BYTES, port.build);
+    await loadOrInitializeManifest(
+      sandbox,
+      AMPLE_MAX_BYTES,
+      port.build,
+      IDLE_ACTIVE,
+    );
 
     expect(await readManifestBytes()).toBe(first);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// activeSegment exclusion — the defect this parameter exists to fix
+// ---------------------------------------------------------------------------
+
+describe("loadOrInitializeManifest excludes the writer's active segment", () => {
+  test("[REGRESSION PIN] a fresh trail excludes the writer's own just-created segment, writing upTo: null", async () => {
+    // The direct pin for the bug `activeSegment` exists to fix: the writer
+    // seals AFTER it appends, so on the very first append into a fresh
+    // directory the segment it just created is already on disk by the time
+    // the baseline is computed. Before this parameter existed, that segment
+    // had no way to be told apart from a genuinely pre-existing one, so the
+    // baseline was written as `upTo: "<that segment>"` instead of `upTo:
+    // null` — permanently excluding this trail's very first segment from the
+    // cold-start sweep via `isAtOrBeforeBaseline`'s `<=`, since
+    // `discoverActiveSegment` only ever adopts TODAY's date prefix and the
+    // date would already have passed by the time anyone noticed.
+    //
+    // The mutation this test catches: dropping the
+    // `segment.name !== activeSegment` term from `highestSegmentName`.
+    const active = SEGMENT_NEW;
+    await touchSegment(active, '{"a":1}\n');
+    const port = createFailurePort();
+
+    const contents = await loadOrInitializeManifest(
+      sandbox,
+      AMPLE_MAX_BYTES,
+      port.build,
+      active,
+    );
+
+    expect(definedOrThrow(contents.baseline, "the baseline").upTo).toBeNull();
+    expect(contents.seals.size).toBe(0);
+  });
+
+  test("a pre-upgrade trail still classifies its existing segments as legacy by NAME, not by always writing upTo: null", async () => {
+    // Proves the exclusion added above is keyed on the SEGMENT NAME the
+    // caller hands in, not a simplification that treats every call as a
+    // fresh trail: an implementation that collapsed to "always upTo: null"
+    // would pass the fresh-trail pin above but would also retro-digest every
+    // pre-upgrade segment as provable, which the design deliberately refuses
+    // — a digest taken now cannot vouch for bytes an earlier process wrote.
+    const preUpgrade = [
+      "2026-09-01-0001.jsonl",
+      "2026-09-01-0002.jsonl",
+      "2026-09-01-0003.jsonl",
+      "2026-09-01-0004.jsonl",
+      "2026-09-01-0005.jsonl",
+    ] as const;
+    for (const segment of preUpgrade) {
+      await touchSegment(segment, "{}\n");
+    }
+    const active = definedOrThrow(preUpgrade.at(-1), "the highest segment");
+    const port = createFailurePort();
+
+    const contents = await loadOrInitializeManifest(
+      sandbox,
+      AMPLE_MAX_BYTES,
+      port.build,
+      active,
+    );
+
+    const { upTo } = definedOrThrow(contents.baseline, "the baseline");
+    expect(upTo).toBe("2026-09-01-0004.jsonl");
+    expect(upTo).not.toBeNull();
+    expect(upTo).not.toBe(active);
+  });
+
+  test("neither the date filter nor the active-name filter alone yields the right baseline", async () => {
+    // Constructed so the two terms in `highestSegmentName`'s filter —
+    // `segment.datePrefix <= today` and `segment.name !== activeSegment` —
+    // are each independently load-bearing, and a mutation to EITHER one
+    // moves this test:
+    //   - drop the active-name term: `SEGMENT_MID` (the active segment, and
+    //     the highest one that still passes the date filter) becomes upTo.
+    //   - drop the date term: `futureSegment` (lexicographically highest of
+    //     all three, but dated after today) becomes upTo.
+    // Only with both terms present does the true answer, `SEGMENT_OLD`,
+    // surface.
+    const futureSegment = "2099-01-01-0001.jsonl";
+    await touchSegment(SEGMENT_OLD, "{}\n");
+    await touchSegment(SEGMENT_MID, "{}\n");
+    await touchSegment(futureSegment, "{}\n");
+    const port = createFailurePort();
+
+    const contents = await loadOrInitializeManifest(
+      sandbox,
+      AMPLE_MAX_BYTES,
+      port.build,
+      SEGMENT_MID,
+    );
+
+    expect(definedOrThrow(contents.baseline, "the baseline").upTo).toBe(
+      SEGMENT_OLD,
+    );
   });
 });
 
@@ -698,7 +827,12 @@ describe("loadOrInitializeManifest when the directory cannot be listed", () => {
     const port = createFailurePort();
 
     const thrown = await catchRejected(() =>
-      loadOrInitializeManifest(sandbox, AMPLE_MAX_BYTES, port.build),
+      loadOrInitializeManifest(
+        sandbox,
+        AMPLE_MAX_BYTES,
+        port.build,
+        IDLE_ACTIVE,
+      ),
     );
 
     expect(thrown).toBeInstanceOf(M3LError);
@@ -726,6 +860,7 @@ describe("loadOrInitializeManifest when the directory cannot be listed", () => {
       sandbox,
       AMPLE_MAX_BYTES,
       port.build,
+      IDLE_ACTIVE,
     );
 
     expect(definedOrThrow(contents.baseline, "the baseline").upTo).toBe(
@@ -1132,7 +1267,12 @@ describe("bounded, guarded reads", () => {
 describe("appendSeal", () => {
   test("appends one terminated record carrying exactly the claim's measurement", async () => {
     const port = createFailurePort();
-    await loadOrInitializeManifest(sandbox, AMPLE_MAX_BYTES, port.build);
+    await loadOrInitializeManifest(
+      sandbox,
+      AMPLE_MAX_BYTES,
+      port.build,
+      IDLE_ACTIVE,
+    );
 
     await appendSeal(sandbox, sealClaim(), port.build);
 
@@ -1163,7 +1303,12 @@ describe("appendSeal", () => {
 
   test("round-trips through readManifest", async () => {
     const port = createFailurePort();
-    await loadOrInitializeManifest(sandbox, AMPLE_MAX_BYTES, port.build);
+    await loadOrInitializeManifest(
+      sandbox,
+      AMPLE_MAX_BYTES,
+      port.build,
+      IDLE_ACTIVE,
+    );
 
     await appendSeal(sandbox, sealClaim({ segment: SEGMENT_OLD }), port.build);
     await appendSeal(

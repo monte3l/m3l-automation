@@ -274,17 +274,31 @@ async function segmentByteLength(name: string): Promise<number> {
 }
 
 /**
+ * The active segment for a call whose test says nothing about the writer's
+ * active segment. A far-future date prefix can never satisfy the sweep's
+ * strictly-older-than-today admission rule, so naming it changes no
+ * candidate set any existing test asserts.
+ */
+const IDLE_ACTIVE = "2999-12-31-9999.jsonl";
+
+/**
  * A rotation request naming `name`, with `byteLength` read from its real
  * current size on disk. Callers that need to snapshot the size BEFORE a test
  * mutates or deletes the file read it via {@link segmentByteLength} directly,
  * before the mutation, instead of calling this helper.
  */
 async function rotationRequest(name: string): Promise<AppendOnlySealRequest> {
-  return { rotatedFrom: { name, byteLength: await segmentByteLength(name) } };
+  return {
+    rotatedFrom: { name, byteLength: await segmentByteLength(name) },
+    active: IDLE_ACTIVE,
+  };
 }
 
 /** No rotation happened on this append. */
-const NO_ROTATION: AppendOnlySealRequest = { rotatedFrom: undefined };
+const NO_ROTATION: AppendOnlySealRequest = {
+  rotatedFrom: undefined,
+  active: IDLE_ACTIVE,
+};
 
 /** A real failure port building a genuine `M3LError`, as an owner would. */
 function failurePort(): AppendOnlyReadFailure {
@@ -550,6 +564,7 @@ describe("the sealer never throws", () => {
           name: fault.rotatedFrom ?? ROTATED,
           byteLength: believedBytes,
         },
+        active: IDLE_ACTIVE,
       }),
     ).resolves.toBeUndefined();
   });
@@ -585,6 +600,7 @@ describe("reporting a failed seal", () => {
 
     await createSealer().sealAfterAppend({
       rotatedFrom: { name: ROTATED, byteLength: believedBytes },
+      active: IDLE_ACTIVE,
     });
 
     const failure = definedOrThrow(reported.at(0), "a reported failure");
@@ -598,6 +614,7 @@ describe("reporting a failed seal", () => {
 
     await createSealer().sealAfterAppend({
       rotatedFrom: { name: ROTATED, byteLength: believedBytes },
+      active: IDLE_ACTIVE,
     });
 
     const failure = definedOrThrow(reported.at(0), "a reported failure");
@@ -615,6 +632,7 @@ describe("reporting a failed seal", () => {
 
     await createSealer().sealAfterAppend({
       rotatedFrom: { name: ROTATED, byteLength: believedBytes },
+      active: IDLE_ACTIVE,
     });
 
     const failure = definedOrThrow(reported.at(0), "a reported failure");
@@ -664,6 +682,7 @@ describe("reporting a failed seal", () => {
     await expect(
       sealer.sealAfterAppend({
         rotatedFrom: { name: ROTATED, byteLength: believedBytes },
+        active: IDLE_ACTIVE,
       }),
     ).resolves.toBeUndefined();
   });
@@ -706,6 +725,7 @@ describe("reporting a failed seal", () => {
     // a real file.
     await createSealer().sealAfterAppend({
       rotatedFrom: { name: foreignName, byteLength: 0 },
+      active: IDLE_ACTIVE,
     });
 
     const failure = definedOrThrow(reported.at(0), "a reported failure");
@@ -789,6 +809,7 @@ describe("reporting a failed seal", () => {
 
     await createSealer().sealAfterAppend({
       rotatedFrom: { name: rotated, byteLength: believedBytes },
+      active: IDLE_ACTIVE,
     });
 
     const failure = definedOrThrow(reported.at(0), "a reported failure");
@@ -824,6 +845,7 @@ describe("reporting a failed seal", () => {
 
     await createSealer().sealAfterAppend({
       rotatedFrom: { name: rotated, byteLength: realBytes + 1 },
+      active: IDLE_ACTIVE,
     });
 
     const failure = definedOrThrow(reported.at(0), "a reported failure");

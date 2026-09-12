@@ -77,9 +77,11 @@ import {
 } from "../src/core/storage/index.js";
 import type {
   M3LAppendOnlyEntry,
+  M3LAppendOnlySealFailure,
   M3LAppendOnlyStreamOptions,
   M3LAppendOnlyValue,
 } from "../src/core/storage/index.js";
+import { M3L_APPEND_ONLY_MANIFEST_NAME } from "../src/internal/storage/append-only-manifest.js";
 
 // ---------------------------------------------------------------------------
 // The one seam where a real filesystem cannot reach
@@ -147,10 +149,20 @@ function segmentName(datePrefix: string, sequence: number): string {
   return `${datePrefix}-${String(sequence).padStart(4, "0")}.jsonl`;
 }
 
-/** Lists directory entries, sorted so "highest-numbered" ordering holds. */
+/**
+ * Lists directory entries, sorted so "highest-numbered" ordering holds.
+ *
+ * Filters out the directory-wide `manifest.jsonl` sidecar: this helper
+ * answers "which SEGMENTS are on disk", and the manifest is deliberately not
+ * a segment — it does not match the segment-name pattern and is invisible to
+ * the library's own discovery, so a test asking about segments must not see
+ * it either.
+ */
 async function listSegments(dir: string): Promise<string[]> {
   const names = await readdir(dir);
-  return [...names].sort();
+  return [...names]
+    .filter((name) => name !== M3L_APPEND_ONLY_MANIFEST_NAME)
+    .sort();
 }
 
 /** Reads a file and splits it into its non-empty JSONL lines. */
@@ -217,6 +229,32 @@ async function appendUnchecked(
 }
 
 /**
+ * Every stream instance constructed via {@link makeStream} in the running
+ * test, so `afterEach` can flush each one's writer chain before the sandbox
+ * directory is removed.
+ */
+let activeStreams: M3LAppendOnlyStream[] = [];
+
+/**
+ * Constructs an `M3LAppendOnlyStream` and registers it for teardown flushing.
+ *
+ * The manifest seal runs on the writer's own internal chain rather than
+ * inside the promise `append()` awaits, so the directory is not guaranteed
+ * quiescent the instant the last `append()` call resolves — flushing every
+ * tracked instance in `afterEach` (rather than tolerating `ENOTEMPTY` on
+ * removal) is what makes teardown deterministic. Every call site in this
+ * file that constructs a stream used to persist data goes through here; the
+ * `construct()` helper above is deliberately excluded, since it is only ever
+ * used where the constructor is expected to throw and no instance survives
+ * to flush.
+ */
+function makeStream(options: M3LAppendOnlyStreamOptions): M3LAppendOnlyStream {
+  const stream = new M3LAppendOnlyStream(options);
+  activeStreams.push(stream);
+  return stream;
+}
+
+/**
  * Asserts a caller-side boundary violation: a BARE {@link M3LError} carrying
  * `code: "ERR_INVALID_ARGUMENT"`, matching the house pattern.
  *
@@ -276,7 +314,7 @@ function paddedEntry(sequence: number, padding = 100): M3LAppendOnlyEntry {
 async function measureLineBytes(entry: M3LAppendOnlyEntry): Promise<number> {
   probeCounter += 1;
   const probeDir = path.join(workDir, `probe-${String(probeCounter)}`);
-  const probe = new M3LAppendOnlyStream({ directory: probeDir });
+  const probe = makeStream({ directory: probeDir });
   await probe.append(entry);
   const names = await readdir(probeDir);
   const only = definedOrThrow(names[0], "the probe segment");
@@ -286,9 +324,17 @@ async function measureLineBytes(entry: M3LAppendOnlyEntry): Promise<number> {
 
 beforeEach(async () => {
   workDir = await mkdtemp(path.join(tmpdir(), "m3l-append-only-stream-"));
+  activeStreams = [];
 });
 
 afterEach(async () => {
+  // Drain every tracked stream's writer chain before removing the sandbox:
+  // the manifest seal runs on the writer's own internal chain rather than
+  // inside the promise `append()` awaits, so a still-in-flight seal can
+  // otherwise recreate `manifest.jsonl` partway through this recursive
+  // remove and surface as `ENOTEMPTY` (which `fs.rm`'s built-in retry list
+  // never covers). `flush()` never rejects, so this cannot itself throw.
+  await Promise.all(activeStreams.map(async (stream) => stream.flush()));
   vi.useRealTimers();
   fsProbe.statFailure = undefined;
   await rm(workDir, { recursive: true, force: true });
@@ -359,6 +405,7 @@ describe("type contracts", () => {
       readonly maxSegmentBytes?: number;
       readonly maxSegmentAgeMs?: number;
       readonly maxLineBytes?: number;
+      readonly onSealFailed?: (failure: M3LAppendOnlySealFailure) => void;
     }>();
     expectTypeOf<
       M3LAppendOnlyStreamOptions["directory"]
@@ -447,7 +494,7 @@ describe("documented ceilings", () => {
 describe("round trip", () => {
   test("appends each entry as exactly one JSON line, in call order", async () => {
     const dir = path.join(workDir, "audit");
-    const stream = new M3LAppendOnlyStream({ directory: dir });
+    const stream = makeStream({ directory: dir });
 
     await stream.append({ event: "first", index: 1 });
     await stream.append({ event: "second", index: 2, nested: { ok: true } });
@@ -476,7 +523,7 @@ describe("round trip", () => {
 
   test("exposes the configured directory unchanged", () => {
     const dir = path.join(workDir, "audit");
-    const stream = new M3LAppendOnlyStream({ directory: dir });
+    const stream = makeStream({ directory: dir });
     expect(stream.directory).toBe(dir);
   });
 });
@@ -493,8 +540,8 @@ describe("atomic line appends", () => {
     const padding = 4096;
     const perStream = 25;
     const optionsBag = { directory: dir, maxSegmentBytes: 8_388_608 };
-    const streamA = new M3LAppendOnlyStream(optionsBag);
-    const streamB = new M3LAppendOnlyStream(optionsBag);
+    const streamA = makeStream(optionsBag);
+    const streamB = makeStream(optionsBag);
 
     const appends: Promise<void>[] = [];
     for (let index = 0; index < perStream; index += 1) {
@@ -570,7 +617,7 @@ describe("symlink refusal", () => {
     // refusal — not merely "the target is intact" — is the assertion.
     await symlink(target, path.join(dir, segmentName(today, 1)));
 
-    const stream = new M3LAppendOnlyStream({ directory: dir });
+    const stream = makeStream({ directory: dir });
     const thrown = await catchRejected(() =>
       stream.append({ event: "must-not-follow" }),
     );
@@ -617,7 +664,7 @@ describe("cold-start segment discovery", () => {
     // real 500 bytes) the second append would NOT rotate. That is what makes
     // this test discriminate real-size discovery from a zero-size assumption.
     const maxSegmentBytes = seedBytes + Math.floor(lineBytes / 2);
-    const stream = new M3LAppendOnlyStream({ directory: dir, maxSegmentBytes });
+    const stream = makeStream({ directory: dir, maxSegmentBytes });
 
     await stream.append(entry);
 
@@ -659,7 +706,7 @@ describe("cold-start segment discovery", () => {
     await writeFile(foreignPath, "not a segment", "utf8");
     await writeFile(yesterdayPath, '{"from":"yesterday"}\n', "utf8");
 
-    const stream = new M3LAppendOnlyStream({ directory: dir });
+    const stream = makeStream({ directory: dir });
     await stream.append({ event: "today" });
 
     // A brand-new segment for today was opened rather than yesterday's file
@@ -707,7 +754,7 @@ describe("non-ENOENT stat failures", () => {
     );
     fsProbe.statFailure = failure;
 
-    const stream = new M3LAppendOnlyStream({ directory: dir });
+    const stream = makeStream({ directory: dir });
     const thrown = await catchRejected(() =>
       stream.append({ event: "must-not-land" }),
     );
@@ -739,7 +786,7 @@ describe("rotation by bytes", () => {
     // A ceiling just above one line: line 1 fits; the segment is over the
     // ceiling only AFTER line 2, so line 3 is the one that rotates.
     const maxSegmentBytes = lineBytes + 10;
-    const stream = new M3LAppendOnlyStream({ directory: dir, maxSegmentBytes });
+    const stream = makeStream({ directory: dir, maxSegmentBytes });
 
     await stream.append(paddedEntry(1));
     await stream.append(paddedEntry(2));
@@ -778,7 +825,7 @@ describe("rotation by age", () => {
   test("crossing the age ceiling seals the active segment and opens a new one", async () => {
     const dir = path.join(workDir, "audit");
     const maxSegmentAgeMs = 1000;
-    const stream = new M3LAppendOnlyStream({ directory: dir, maxSegmentAgeMs });
+    const stream = makeStream({ directory: dir, maxSegmentAgeMs });
 
     const start = Date.now();
     vi.useFakeTimers();
@@ -829,7 +876,7 @@ describe("rotation by UTC date rollover", () => {
     // freshly spawned process and a long-lived one always agree" guarantee
     // true — cold-start discovery only ever considers today's prefix.
     const dayOnePrefix = pinClock(dayOneAt);
-    const stream = new M3LAppendOnlyStream({ directory: dir });
+    const stream = makeStream({ directory: dir });
     await stream.append({ event: "written on day one" });
 
     const dayTwoPrefix = pinClock(dayTwoAt);
@@ -853,7 +900,7 @@ describe("rotation by UTC date rollover", () => {
 
     // ... and a process freshly spawned at the same instant agrees, finding
     // and appending to that same day-two segment rather than a rival one.
-    const freshProcess = new M3LAppendOnlyStream({ directory: dir });
+    const freshProcess = makeStream({ directory: dir });
     await freshProcess.append({ event: "written by a fresh process" });
     expect(await readLines(dayTwoPath)).toHaveLength(2);
     expect(await readLines(dayOnePath)).toHaveLength(1);
@@ -867,7 +914,7 @@ describe("rotation by UTC date rollover", () => {
 describe("entry re-projection", () => {
   test("an inherited Object.prototype.toJSON cannot forge the persisted bytes", async () => {
     const dir = path.join(workDir, "audit");
-    const stream = new M3LAppendOnlyStream({ directory: dir });
+    const stream = makeStream({ directory: dir });
     const entry: M3LAppendOnlyEntry = {
       event: "audit",
       index: 7,
@@ -918,7 +965,7 @@ describe("line ceiling", () => {
   test("rejects an oversized entry before creating or growing any segment", async () => {
     const dir = path.join(workDir, "audit");
     const maxLineBytes = 256;
-    const stream = new M3LAppendOnlyStream({ directory: dir, maxLineBytes });
+    const stream = makeStream({ directory: dir, maxLineBytes });
     const oversized: M3LAppendOnlyEntry = { pad: "x".repeat(5000) };
 
     const thrown = await catchRejected(() => stream.append(oversized));
@@ -956,8 +1003,16 @@ async function provokeAppendFailure(
   dir: string,
   entry: M3LAppendOnlyEntry,
 ): Promise<{ stream: M3LAppendOnlyStream; thrown: unknown }> {
-  const stream = new M3LAppendOnlyStream({ directory: dir });
+  const stream = makeStream({ directory: dir });
   await stream.append({ event: "warm-up" });
+  // Drain the warm-up append's own background manifest seal before this
+  // helper's OWN removal below — same rationale as the sandbox-wide
+  // `afterEach` flush, but here it also protects the removal this helper
+  // performs itself, not just the one in teardown. It does not change what
+  // is provoked: the stream's cached active-segment path is untouched by
+  // `flush()`, so the very next append still hits a genuine `ENOENT` once
+  // the directory is gone underneath it.
+  await stream.flush();
   await rm(dir, { recursive: true, force: true });
   const thrown = await catchRejected(() => stream.append(entry));
   return { stream, thrown };
@@ -1017,7 +1072,7 @@ describe("serialized concurrent appends", () => {
     // three. A stream that resolved rotation once for the whole batch (or
     // reused a stale size) would leave every line in one segment.
     const maxSegmentBytes = linesPerSegment * lineBytes - 1;
-    const stream = new M3LAppendOnlyStream({ directory: dir, maxSegmentBytes });
+    const stream = makeStream({ directory: dir, maxSegmentBytes });
 
     await Promise.all(
       Array.from({ length: total }, (_unused, index) =>
@@ -1168,7 +1223,7 @@ describe("constructor validation", () => {
 
   test("accepts exactly the documented maximum as maxLineBytes", () => {
     const dir = path.join(workDir, "audit");
-    const stream = new M3LAppendOnlyStream({
+    const stream = makeStream({
       directory: dir,
       maxLineBytes: M3L_APPEND_ONLY_MAX_LINE_BYTES,
     });
@@ -1177,7 +1232,7 @@ describe("constructor validation", () => {
 
   test("accepts a directory plus every ceiling and exposes the directory", () => {
     const dir = path.join(workDir, "audit");
-    const stream = new M3LAppendOnlyStream({
+    const stream = makeStream({
       directory: dir,
       maxSegmentBytes: 1024,
       maxSegmentAgeMs: 1000,
@@ -1247,7 +1302,7 @@ describe("entry projection rejects values it cannot faithfully persist", () => {
     "rejects $label as ERR_INVALID_ARGUMENT and writes nothing",
     async ({ build }) => {
       const dir = path.join(workDir, "audit");
-      const stream = new M3LAppendOnlyStream({ directory: dir });
+      const stream = makeStream({ directory: dir });
 
       const thrown = await catchRejected(() =>
         appendUnchecked(stream, build()),
@@ -1266,7 +1321,7 @@ describe("entry projection rejects values it cannot faithfully persist", () => {
     { label: "undefined", entry: undefined },
   ])("rejects $label in place of an entry object", async ({ entry }) => {
     const dir = path.join(workDir, "audit");
-    const stream = new M3LAppendOnlyStream({ directory: dir });
+    const stream = makeStream({ directory: dir });
 
     const thrown = await catchRejected(() => appendUnchecked(stream, entry));
 
@@ -1276,7 +1331,7 @@ describe("entry projection rejects values it cannot faithfully persist", () => {
 
   test("projects nested arrays and objects onto the persisted line unchanged", async () => {
     const dir = path.join(workDir, "audit");
-    const stream = new M3LAppendOnlyStream({ directory: dir });
+    const stream = makeStream({ directory: dir });
     const entry: M3LAppendOnlyEntry = {
       event: "audit",
       actor: { id: "u-1", roles: ["reader", "writer"] },
@@ -1333,7 +1388,7 @@ describe("interface-typed entries", () => {
     // assertion; the round trip is here so the test also proves the entry
     // reaches the segment intact.
     const dir = path.join(workDir, "audit");
-    const stream = new M3LAppendOnlyStream({ directory: dir });
+    const stream = makeStream({ directory: dir });
     const record: HumanActionRecordShape = {
       at: "2026-06-15T12:00:00.000Z",
       event: "approval.granted",
@@ -1360,7 +1415,7 @@ describe("interface-typed entries", () => {
     // compile-time error — and a runtime rejection, for a caller who reaches
     // the method through `any`.
     const dir = path.join(workDir, "audit");
-    const stream = new M3LAppendOnlyStream({ directory: dir });
+    const stream = makeStream({ directory: dir });
     const record: RecordCarryingADate = {
       at: new Date(FIXED_CLOCK),
       event: "approval.granted",

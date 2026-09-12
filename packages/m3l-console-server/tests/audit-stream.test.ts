@@ -55,6 +55,21 @@ import { createHumanActionAuditStream } from "../src/audit/stream.js";
 /** A recognisable secret planted in a parameter VALUE; it must never reach disk. */
 const SECRET_VALUE = "shibboleth-9f2c-parameter-value-must-not-leak";
 
+/**
+ * The directory-wide manifest sidecar `Core.M3LAppendOnlyStream` writes
+ * alongside its `<YYYY-MM-DD>-<NNNN>.jsonl` segments (one baseline line, then
+ * one seal line per rotated-away segment). It is not a segment — the library
+ * never surfaces it through `read()`/`listSegments()` — but it IS a real file
+ * in the stream directory, so a raw `readdirSync`-based fixture here must
+ * exclude it explicitly or its own JSONL lines get counted as recorded
+ * actions. This package consumes the library through its built `exports`,
+ * not `src/` by relative path, so the name is duplicated here rather than
+ * imported; the canonical definition is
+ * `packages/m3l-common/src/internal/storage/append-only-manifest.ts`'s
+ * `M3L_APPEND_ONLY_MANIFEST_NAME`.
+ */
+const APPEND_ONLY_MANIFEST_NAME = "manifest.jsonl";
+
 /** A declared operator email — `identity.ts:29` promises it is never logged. */
 const OPERATOR_EMAIL = "ada@example.invalid";
 
@@ -127,6 +142,7 @@ function readAllSegmentBytes(): string {
     throw error;
   }
   return entries
+    .filter((name) => name !== APPEND_ONLY_MANIFEST_NAME)
     .sort((left, right) => left.localeCompare(right))
     .map((name) => readFileSync(join(auditDirectory, name), "utf8"))
     .join("");

@@ -278,6 +278,13 @@ function asRecord(value: unknown): Record<string, unknown> {
   return value as Record<string, unknown>;
 }
 
+// Name of the append-only manifest sidecar `M3LAgentDecisionLog` writes
+// alongside its date-stamped segments. Not importable here: it's defined in
+// `@monte3l/m3l-common`'s `src/internal/storage/append-only-manifest.ts`
+// (`M3L_APPEND_ONLY_MANIFEST_NAME`), and `internal/` is not part of the
+// package's public exports.
+const MANIFEST_NAME = "manifest.jsonl";
+
 /**
  * Reads every decision-log entry the real writer appended, in file then line
  * order — mirrors `run-etl-preset.test.ts`'s/`run-health-check.test.ts`'s own
@@ -294,6 +301,12 @@ async function readEntries(
   }
   const entries: Record<string, unknown>[] = [];
   for (const name of [...names].sort()) {
+    // The manifest sidecar (`M3L_APPEND_ONLY_MANIFEST_NAME` in
+    // `@monte3l/m3l-common`'s `internal/storage/append-only-manifest.ts`,
+    // not re-exported through the package's public barrels) records
+    // baseline/seal bookkeeping, not decision-log entries — skip it so this
+    // helper answers "which decision-log ENTRIES were written".
+    if (name === MANIFEST_NAME) continue;
     const text = await readFile(path.join(directory, name), "utf8");
     for (const line of text.split("\n")) {
       if (line.trim() === "") continue;

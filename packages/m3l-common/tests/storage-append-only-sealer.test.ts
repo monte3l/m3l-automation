@@ -268,17 +268,31 @@ async function segmentByteLength(name: string): Promise<number> {
 }
 
 /**
+ * The active segment for a call whose test says nothing about the writer's
+ * active segment. A far-future date prefix can never satisfy the sweep's
+ * strictly-older-than-today admission rule, so naming it changes no
+ * candidate set any existing test asserts.
+ */
+const IDLE_ACTIVE = "2999-12-31-9999.jsonl";
+
+/**
  * A rotation request naming `name`, with `byteLength` read from its real
  * current size on disk — what a rotating writer would believe an untampered
  * segment holds. Callers that need to snapshot the size BEFORE a test
  * mutates the file read it via {@link segmentByteLength} directly instead.
  */
 async function rotationRequest(name: string): Promise<AppendOnlySealRequest> {
-  return { rotatedFrom: { name, byteLength: await segmentByteLength(name) } };
+  return {
+    rotatedFrom: { name, byteLength: await segmentByteLength(name) },
+    active: IDLE_ACTIVE,
+  };
 }
 
 /** No rotation happened on this append. */
-const NO_ROTATION: AppendOnlySealRequest = { rotatedFrom: undefined };
+const NO_ROTATION: AppendOnlySealRequest = {
+  rotatedFrom: undefined,
+  active: IDLE_ACTIVE,
+};
 
 /**
  * A sealer over the sandbox with generous bounds, so nothing here is
@@ -576,6 +590,29 @@ describe("the cold-start sweep", () => {
     expect(await sealedNames()).toEqual([segmentName(YESTERDAY, 1)]);
   });
 
+  test("the active segment is excluded from the sweep by name, surviving the real sealer", async () => {
+    // A segment carrying an OLDER date prefix — one the sweep would
+    // otherwise seal — is instead named as the writer's own `active`
+    // segment. It must not gain a seal. A fresh sealer over the same
+    // fixture, with `active` naming something else, DOES seal it: the
+    // exclusion is proven to be about the NAME passed, not about anything
+    // else true of this fixture.
+    await seedBaseline(null);
+    const stale = await writeSegment(segmentName(YESTERDAY, 1));
+
+    await createSealer().sealAfterAppend({
+      rotatedFrom: undefined,
+      active: stale,
+    });
+    expect(await sealedNames()).toEqual([]);
+
+    await createSealer().sealAfterAppend({
+      rotatedFrom: undefined,
+      active: IDLE_ACTIVE,
+    });
+    expect(await sealedNames()).toEqual([stale]);
+  });
+
   test("a fresh instance over the same directory sweeps again", async () => {
     // The counterpart of the test above: "once" is a property of the
     // INSTANCE, not a latch written into the directory. A crashed process's
@@ -708,6 +745,7 @@ describe("the rotation byte-length guard", () => {
 
     await createSealer().sealAfterAppend({
       rotatedFrom: { name: rotated, byteLength: believedByWriter },
+      active: IDLE_ACTIVE,
     });
 
     // MUTATION THIS CATCHES: dropping
@@ -755,6 +793,7 @@ describe("the rotation byte-length guard", () => {
 
     await createSealer().sealAfterAppend({
       rotatedFrom: { name: rotated, byteLength: realSize + 1 },
+      active: IDLE_ACTIVE,
     });
 
     expect(await sealedNames()).not.toContain(rotated);

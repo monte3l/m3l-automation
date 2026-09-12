@@ -77,6 +77,7 @@ import {
   currentDatePrefix,
   parseSegmentName,
 } from "../src/internal/storage/append-only-segments.js";
+import { M3L_APPEND_ONLY_MANIFEST_NAME } from "../src/internal/storage/append-only-manifest.js";
 
 // ---------------------------------------------------------------------------
 // Fixture helpers
@@ -118,6 +119,22 @@ async function catchRejected(run: () => Promise<unknown>): Promise<unknown> {
   return undefined;
 }
 
+/**
+ * Lists the `.jsonl` names actually on disk, EXCLUDING the directory-wide
+ * `manifest.jsonl` sidecar. The sidecar deliberately does not match the
+ * segment-name pattern — it is invisible to the library's own
+ * `discoverActiveSegment` / `discoverSegmentsInOrder` / `listSegmentFiles`,
+ * so a raw `readdir`-based fixture in this suite must not treat it as a
+ * segment either, or it double-counts a file `listSegments()` (correctly)
+ * never reports.
+ */
+async function onDiskSegmentNames(dir: string): Promise<string[]> {
+  const names = await readdir(dir);
+  return names.filter(
+    (name) => name.endsWith(".jsonl") && name !== M3L_APPEND_ONLY_MANIFEST_NAME,
+  );
+}
+
 /** Drains an async iterable into an array. */
 async function collectEntries(
   iterable: AsyncIterable<M3LAppendOnlyEntry>,
@@ -144,13 +161,50 @@ function splitSegmentName(name: string): {
   return { datePrefix, sequence: Number(sequencePart) };
 }
 
+/**
+ * Every stream instance constructed via {@link makeStream} in the running
+ * test, so `afterEach` can flush each one's writer chain before the sandbox
+ * directory is removed.
+ */
+let activeStreams: M3LAppendOnlyStream[] = [];
+
+/**
+ * Constructs an `M3LAppendOnlyStream` and registers it for teardown flushing.
+ *
+ * Most tests in this suite plant fixture segments directly via
+ * `writeSegmentFile` and never call `append()`, so their tracked instance has
+ * nothing to flush — harmless, since `flush()` never rejects. The tests that
+ * DO call `append()` are exactly the ones exposed to the real race: the
+ * manifest seal runs on the writer's own internal chain rather than inside
+ * the promise `append()` awaits, so the directory is not guaranteed
+ * quiescent the instant the last `append()` call resolves. Tracking every
+ * instance uniformly (rather than only the ones that write) keeps this
+ * helper simple and safe by construction.
+ */
+function makeStream(options: {
+  directory: string;
+  maxSegmentBytes?: number;
+}): M3LAppendOnlyStream {
+  const stream = new M3LAppendOnlyStream(options);
+  activeStreams.push(stream);
+  return stream;
+}
+
 let workDir: string;
 
 beforeEach(async () => {
   workDir = await mkdtemp(path.join(tmpdir(), "m3l-append-only-segments-"));
+  activeStreams = [];
 });
 
 afterEach(async () => {
+  // Drain every tracked stream's writer chain before removing the sandbox:
+  // the manifest seal runs on the writer's own internal chain rather than
+  // inside the promise `append()` awaits, so a still-in-flight seal can
+  // otherwise recreate `manifest.jsonl` partway through this recursive
+  // remove and surface as `ENOTEMPTY` (which `fs.rm`'s built-in retry list
+  // never covers). `flush()` never rejects, so this cannot itself throw.
+  await Promise.all(activeStreams.map(async (stream) => stream.flush()));
   await rm(workDir, { recursive: true, force: true });
 });
 
@@ -187,7 +241,7 @@ describe("type contracts", () => {
 
   test("calling listSegments resolves the documented listing type", async () => {
     const dir = path.join(workDir, "type-only");
-    const stream = new M3LAppendOnlyStream({ directory: dir });
+    const stream = makeStream({ directory: dir });
 
     expectTypeOf(
       stream.listSegments(),
@@ -207,7 +261,7 @@ describe("type contracts", () => {
 describe("missing or empty sources", () => {
   test("a directory that has never been created yields an empty listing", async () => {
     const dir = path.join(workDir, "never-created");
-    const stream = new M3LAppendOnlyStream({ directory: dir });
+    const stream = makeStream({ directory: dir });
 
     await expect(stream.listSegments()).resolves.toEqual({
       segments: [],
@@ -218,7 +272,7 @@ describe("missing or empty sources", () => {
   test("an existing but empty directory yields an empty listing", async () => {
     const dir = path.join(workDir, "audit");
     await mkdir(dir, { recursive: true });
-    const stream = new M3LAppendOnlyStream({ directory: dir });
+    const stream = makeStream({ directory: dir });
 
     await expect(stream.listSegments()).resolves.toEqual({
       segments: [],
@@ -235,15 +289,13 @@ describe("after real appends", () => {
   test("lists one entry per segment file actually on disk, each with real stat data", async () => {
     const dir = path.join(workDir, "audit");
     const maxSegmentBytes = 40;
-    const stream = new M3LAppendOnlyStream({ directory: dir, maxSegmentBytes });
+    const stream = makeStream({ directory: dir, maxSegmentBytes });
 
     for (let index = 0; index < 5; index += 1) {
       await stream.append({ index, pad: "p".repeat(20) });
     }
 
-    const onDisk = (await readdir(dir)).filter((name) =>
-      name.endsWith(".jsonl"),
-    );
+    const onDisk = await onDiskSegmentNames(dir);
     // The fixture must actually force more than one segment, or the ordering
     // and per-file agreement assertions below are checking only one file.
     expect(onDisk.length).toBeGreaterThan(1);
@@ -274,7 +326,7 @@ describe("exact byteLength", () => {
     const dir = path.join(workDir, "audit");
     const content = '{"event":"exact-byte-length-check"}\n';
     await writeSegmentFile(dir, "2026-01-01-0001.jsonl", content);
-    const stream = new M3LAppendOnlyStream({ directory: dir });
+    const stream = makeStream({ directory: dir });
 
     const listed = await stream.listSegments();
     expect(listed.segments).toHaveLength(1);
@@ -298,7 +350,7 @@ describe("ordering", () => {
     await writeSegmentFile(dir, "2026-01-01-0001.jsonl", line);
     await writeSegmentFile(dir, "2026-01-01-0002.jsonl", line);
 
-    const stream = new M3LAppendOnlyStream({ directory: dir });
+    const stream = makeStream({ directory: dir });
     const listed = await stream.listSegments();
 
     expect(listed.segments.map((segment) => segment.name)).toEqual([
@@ -326,7 +378,7 @@ describe("foreign names are skipped", () => {
     // never round-tripping back to this five-digit, zero-padded name.
     await writeSegmentFile(dir, "2026-01-01-00005.jsonl", validLine);
 
-    const stream = new M3LAppendOnlyStream({ directory: dir });
+    const stream = makeStream({ directory: dir });
     const listed = await stream.listSegments();
 
     expect(listed.segments.map((segment) => segment.name)).toEqual([
@@ -341,7 +393,7 @@ describe("foreign names are skipped", () => {
     const dir = path.join(workDir, "audit");
     await writeSegmentFile(dir, "2026-01-01-12345.jsonl", '{"wide":true}\n');
 
-    const stream = new M3LAppendOnlyStream({ directory: dir });
+    const stream = makeStream({ directory: dir });
     const listed = await stream.listSegments();
 
     expect(listed.segments).toHaveLength(1);
@@ -363,7 +415,7 @@ describe("a damaged trail is still inventoried", () => {
     await writeSegmentFile(dir, "2026-01-01-0002.jsonl", '{"event":"b"}\n');
     await rm(path.join(dir, "2026-01-01-0001.jsonl"));
 
-    const stream = new M3LAppendOnlyStream({ directory: dir });
+    const stream = makeStream({ directory: dir });
 
     // (a) the inventory does not refuse to run against the gap, and a
     // segment simply missing from `readdir` (never a stat failure) is not
@@ -398,7 +450,7 @@ describe("a rotation race — a dangling symlink's stat ENOENTs", () => {
       path.join(dir, "2026-01-01-0002.jsonl"),
     );
 
-    const stream = new M3LAppendOnlyStream({ directory: dir });
+    const stream = makeStream({ directory: dir });
     const listed = await stream.listSegments();
 
     expect(listed.segments.map((segment) => segment.name)).toEqual([
@@ -425,7 +477,7 @@ describe("[security] a non-regular file planted at a segment name", () => {
     await writeFile(outsidePath, outsideContent, "utf8");
     await symlink(outsidePath, path.join(dir, "2026-01-02-0001.jsonl"));
 
-    const stream = new M3LAppendOnlyStream({ directory: dir });
+    const stream = makeStream({ directory: dir });
     const listed = await stream.listSegments();
 
     expect(listed.segments.map((segment) => segment.name)).toEqual([
@@ -444,7 +496,7 @@ describe("[security] a non-regular file planted at a segment name", () => {
     await writeSegmentFile(dir, "2026-01-01-0001.jsonl", '{"event":"real"}\n');
     await mkdir(path.join(dir, "2026-01-02-0001.jsonl"));
 
-    const stream = new M3LAppendOnlyStream({ directory: dir });
+    const stream = makeStream({ directory: dir });
     const listed = await stream.listSegments();
 
     expect(listed.segments.map((segment) => segment.name)).toEqual([
@@ -460,7 +512,7 @@ describe("[security] a non-regular file planted at a segment name", () => {
     // node:fs has no FIFO API — a real FIFO can only be created via mkfifo(1).
     execFileSync("mkfifo", [fifoPath]);
 
-    const stream = new M3LAppendOnlyStream({ directory: dir });
+    const stream = makeStream({ directory: dir });
     const listed = await stream.listSegments();
 
     expect(listed.segments.map((segment) => segment.name)).toEqual([
@@ -482,7 +534,7 @@ describe("[security] a non-regular file planted at a segment name", () => {
     await mkdir(path.join(dir, "2026-01-01-0004.jsonl"));
     await writeSegmentFile(dir, "notes.txt", "not a segment");
 
-    const stream = new M3LAppendOnlyStream({ directory: dir });
+    const stream = makeStream({ directory: dir });
     const listed = await stream.listSegments();
 
     expect(listed.segments.map((segment) => segment.name).sort()).toEqual([
@@ -534,7 +586,7 @@ describe("[security] a non-regular file planted at a segment name", () => {
     expect(hardlinkStats.nlink).toBe(2);
     expect(hardlinkStats.size).toBe(Buffer.byteLength(outsideContent));
 
-    const stream = new M3LAppendOnlyStream({ directory: dir });
+    const stream = makeStream({ directory: dir });
     const listed = await stream.listSegments();
 
     expect(listed.segments.map((segment) => segment.name)).toEqual([
@@ -569,7 +621,7 @@ describe("[security] a non-regular file planted at a segment name", () => {
     await link(outsidePath, path.join(dir, "2026-01-01-0005.jsonl"));
     await writeSegmentFile(dir, "notes.txt", "not a segment");
 
-    const stream = new M3LAppendOnlyStream({ directory: dir });
+    const stream = makeStream({ directory: dir });
     const listed = await stream.listSegments();
 
     expect(listed.segments.map((segment) => segment.name)).toEqual([
@@ -587,7 +639,7 @@ describe("[security] a non-regular file planted at a segment name", () => {
 describe("[security] a segment hardlinked away after this writer created it", () => {
   test("[security] a real segment this writer wrote, later hardlinked to a path outside the stream directory, is excluded from the listing (deliberate false positive)", async () => {
     const dir = path.join(workDir, "audit");
-    const stream = new M3LAppendOnlyStream({ directory: dir });
+    const stream = makeStream({ directory: dir });
     await stream.append({ event: "written-by-this-writer" });
 
     const onDisk = (await readdir(dir)).filter((name) =>
@@ -629,7 +681,7 @@ describe("a clean directory", () => {
     await writeSegmentFile(dir, "2026-01-01-0001.jsonl", '{"event":"a"}\n');
     await writeSegmentFile(dir, "2026-01-01-0002.jsonl", '{"event":"b"}\n');
 
-    const stream = new M3LAppendOnlyStream({ directory: dir });
+    const stream = makeStream({ directory: dir });
     const listed = await stream.listSegments();
 
     expect(listed.segments).toHaveLength(2);
@@ -666,7 +718,7 @@ describe("a symlink loop is a non-regular file, not a stat failure", () => {
       path.join(dir, "2026-01-01-0003.jsonl"),
     );
 
-    const stream = new M3LAppendOnlyStream({ directory: dir });
+    const stream = makeStream({ directory: dir });
     const listed = await stream.listSegments();
 
     expect(listed.segments).toEqual([]);
@@ -684,7 +736,7 @@ describe("a readdir failure is wrapped", () => {
     await writeFile(blockerPath, "not a directory", "utf8");
     const dir = path.join(blockerPath, "sub");
 
-    const stream = new M3LAppendOnlyStream({ directory: dir });
+    const stream = makeStream({ directory: dir });
     const thrown = await catchRejected(() => stream.listSegments());
 
     expect(thrown).toBeInstanceOf(M3LAppendOnlyStreamReadError);
@@ -703,7 +755,7 @@ describe("read-only inventory", () => {
     const dir = path.join(workDir, "audit");
     await writeSegmentFile(dir, "2026-01-01-0001.jsonl", '{"event":"a"}\n');
     await writeSegmentFile(dir, "2026-01-01-0002.jsonl", '{"event":"b"}\n');
-    const stream = new M3LAppendOnlyStream({ directory: dir });
+    const stream = makeStream({ directory: dir });
 
     const before = [...(await readdir(dir))].sort();
     const beforeContents = await Promise.all(
@@ -729,7 +781,7 @@ describe("fresh array per call", () => {
   test("mutating a previously returned segments array does not affect a later call", async () => {
     const dir = path.join(workDir, "audit");
     await writeSegmentFile(dir, "2026-01-01-0001.jsonl", '{"event":"a"}\n');
-    const stream = new M3LAppendOnlyStream({ directory: dir });
+    const stream = makeStream({ directory: dir });
 
     const first = await stream.listSegments();
     expect(Array.isArray(first.segments)).toBe(true);
@@ -815,15 +867,19 @@ describe("[security] parseSegmentName refuses a non-real calendar date", () => {
   test("every name the real writer produces round-trips through parseSegmentName", async () => {
     const dir = path.join(workDir, "audit");
     const maxSegmentBytes = 40;
-    const stream = new M3LAppendOnlyStream({ directory: dir, maxSegmentBytes });
+    const stream = makeStream({ directory: dir, maxSegmentBytes });
 
     for (let index = 0; index < 5; index += 1) {
       await stream.append({ index, pad: "p".repeat(20) });
     }
 
-    const onDisk = (await readdir(dir)).filter((name) =>
-      name.endsWith(".jsonl"),
-    );
+    // Excludes the manifest sidecar: it is not a name the writer produces AS
+    // A SEGMENT, so it is never part of the round-trip set below. Its own
+    // parser refusal (`parseSegmentName` rejects `manifest.jsonl`'s shape) is
+    // separately correct and load-bearing — that refusal is exactly what
+    // keeps the sidecar invisible to segment discovery — so this exclusion
+    // is a fixture-scoping fix, not a weakening of `parseSegmentName`.
+    const onDisk = await onDiskSegmentNames(dir);
     // The fixture must actually force more than one segment, or this is only
     // proving the round trip for a single, first-ever name.
     expect(onDisk.length).toBeGreaterThan(1);

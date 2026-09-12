@@ -679,6 +679,7 @@
       "M3LFtsIndexErrorCode",
       "M3LAppendOnlyStream",
       "M3LAppendOnlyStreamOptions",
+      "M3LAppendOnlySealFailure",
       "M3LAppendOnlyEntry",
       "M3LAppendOnlyValue",
       "M3L_APPEND_ONLY_MAX_SEGMENT_BYTES",

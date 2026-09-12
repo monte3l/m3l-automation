@@ -9,10 +9,21 @@
  * grown past what one file can hold under `check:file-budget`'s ratchet.
  *
  * Everything here is a free function over an explicit `directory`: the layer
- * holds no state at all. That is the module's actual contract — no index file
- * is kept and nothing is carried across processes, so a freshly spawned
- * process and a long-lived one always re-derive the same active segment from
- * a directory listing plus one `stat`.
+ * holds no state at all, so a freshly spawned process and a long-lived one
+ * always re-derive the same active segment from a directory listing plus one
+ * `stat`. A directory-wide `manifest.jsonl` sidecar now exists alongside the
+ * segments (written by `./append-only-sealer.js`, one line per sealed segment
+ * recording its entry count, byte length and sha256), but that changes
+ * nothing stated above: the manifest is NEVER consulted to decide where to
+ * append — segment discovery is still exactly a directory listing plus one
+ * `stat`, and this module in particular still holds no state at all. The
+ * manifest itself carries no in-memory state across processes either; it is
+ * only ever appended to and re-read from disk by its own owner. Nor is the
+ * manifest a segment: `manifest.jsonl` does not match
+ * {@link SEGMENT_NAME_PATTERN}, so it is invisible to
+ * {@link discoverActiveSegment}, the reader's `discoverSegmentsInOrder`
+ * (`./append-only-reader.js`) and {@link listSegmentFiles} — it never raises
+ * their `skipped` count and never enters their byte total.
  *
  * A `stat` that fails is never read as "the file is absent" unless it says
  * `ENOENT`. Every other failure propagates, because a byte count silently
@@ -120,8 +131,26 @@ export interface ActiveSegment {
   createdAtMs: number;
 }
 
-/** Renders a segment file name from its date prefix and sequence number. */
-function segmentFileName(datePrefix: string, sequence: number): string {
+/**
+ * Renders a segment file name from its date prefix and sequence number —
+ * the single renderer of a segment's on-disk name, full stop.
+ *
+ * Exported for `./append-only-writer.js`: the directory-wide
+ * `manifest.jsonl` sidecar (`./append-only-sealer.js`) records, per rotated
+ * segment, the name this function rendered for it, and the writer separately
+ * reports its own notion of "the segment I am currently active on" through
+ * this same function. Routing both through one renderer is what makes a name
+ * written into the manifest and a name the writer reports incapable of
+ * disagreeing by a padding or formatting difference — two independent
+ * re-implementations could drift, one shared function cannot. Its round-trip
+ * relationship with {@link parseSegmentName} (the pattern accepts `\d{4,}`
+ * while this re-pads to width four — see that function's own doc) was
+ * already load-bearing for cold-start discovery; it is now load-bearing for
+ * manifest lookups too, since a manifest entry's `segment` field must parse
+ * back to the exact name this function would itself render for the same
+ * date prefix and sequence.
+ */
+export function segmentFileName(datePrefix: string, sequence: number): string {
   return `${datePrefix}-${String(sequence).padStart(SEQUENCE_WIDTH, "0")}.jsonl`;
 }
 

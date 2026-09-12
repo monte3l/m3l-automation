@@ -57,13 +57,14 @@
 
 import type { M3LError } from "../errors/index.js";
 import { isFunction } from "../utils/guards.js";
-import { projectAppendOnlyEntry } from "../../internal/storage/append-only-projection.js";
 import { readAppendOnlySegments } from "../../internal/storage/append-only-reader.js";
+import { renderEntryLine } from "../../internal/storage/append-only-render.js";
 import { listSegmentFiles } from "../../internal/storage/append-only-segments.js";
+import { AppendOnlySealer } from "../../internal/storage/append-only-sealer.js";
 import type { AppendOnlyWriterErrors } from "../../internal/storage/append-only-writer.js";
 import { AppendOnlyWriter } from "../../internal/storage/append-only-writer.js";
+import { DEFAULT_MAX_MANIFEST_BYTES } from "../../internal/storage/append-only-manifest.js";
 import {
-  invalidArgument,
   validateReadOptions,
   validateStreamOptions,
 } from "../../internal/storage/append-only-options.js";
@@ -71,6 +72,7 @@ import type {
   M3LAppendOnlyReadOptions,
   M3LAppendOnlySegmentListing,
 } from "./append-only-read-types.js";
+import type { M3LAppendOnlyStreamOptions } from "./append-only-write-types.js";
 import { M3LAppendOnlyStreamError } from "./M3LAppendOnlyStreamError.js";
 import { M3LAppendOnlyStreamReadError } from "./M3LAppendOnlyStreamReadError.js";
 
@@ -131,56 +133,6 @@ export type M3LAppendOnlyValue =
 export type M3LAppendOnlyEntry = { readonly [key: string]: M3LAppendOnlyValue };
 
 /**
- * Constructor options for {@link M3LAppendOnlyStream}.
- *
- * `directory` is required — the stream owns no default location, because the
- * artifact it records (and therefore where that artifact belongs) is the
- * caller's decision. Every ceiling is optional and falls back to the
- * documented default.
- *
- * @example
- * ```ts
- * import type { M3LAppendOnlyStreamOptions } from "@monte3l/m3l-common/core";
- *
- * const options: M3LAppendOnlyStreamOptions = {
- *   directory: "data/output/human-actions",
- *   maxSegmentAgeMs: 3_600_000,
- * };
- * ```
- */
-export interface M3LAppendOnlyStreamOptions {
-  /** The directory the segments live in; created on the first append. */
-  readonly directory: string;
-  /**
-   * Rotate once the active segment has reached this many bytes. Defaults to
-   * {@link M3L_APPEND_ONLY_MAX_SEGMENT_BYTES}.
-   *
-   * A value below `maxLineBytes` is legal but degenerate: every append finds
-   * the ceiling already crossed and rotates first, so the stream writes one
-   * entry per segment. Nothing is lost or truncated — it is simply wasteful,
-   * and it is left legal so rotation stays testable at sizes a test can
-   * reach in a handful of writes.
-   */
-  readonly maxSegmentBytes?: number;
-  /**
-   * Rotate once the active segment has been open this many milliseconds.
-   * Defaults to {@link M3L_APPEND_ONLY_MAX_SEGMENT_AGE_MS}.
-   */
-  readonly maxSegmentAgeMs?: number;
-  /**
-   * The largest line, newline included, one append may carry. Defaults to
-   * — and may not exceed — {@link M3L_APPEND_ONLY_MAX_LINE_BYTES}.
-   *
-   * Lowering it is a caller's business; raising it is refused. The ceiling
-   * exists *because* `O_APPEND`'s whole-line atomicity does not cover a write
-   * larger than the operating system's write buffer, so raising it to, say,
-   * 8 MiB would silently void the "two writers interleave whole lines rather
-   * than corrupting one another" guarantee this same class advertises.
-   */
-  readonly maxLineBytes?: number;
-}
-
-/**
  * This stream's half of the generic writer's error port: it turns the two
  * failures `AppendOnlyWriter` can report into {@link M3LAppendOnlyStreamError}.
  *
@@ -207,54 +159,6 @@ const APPEND_ONLY_STREAM_ERRORS: AppendOnlyWriterErrors = {
 };
 
 /**
- * Proves `entry` structurally, rebuilds it as this library's own detached
- * copy, and renders the JSON text of the line the filesystem will receive.
- * The trailing newline is **not** added here: `AppendOnlyWriter` appends it,
- * so the line ceiling is measured over exactly the bytes one atomic write
- * must carry.
- *
- * What is serialized is **never the caller's object**. `JSON.stringify`
- * dispatches an inherited `toJSON`, and returns `undefined` — without
- * throwing — for one that yields `undefined`, so serializing the argument
- * directly would let a gadget on `Object.prototype` either forge the
- * persisted record or launder the text `undefined` into the stream as a line
- * no reader can parse. `projectAppendOnlyEntry` closes both by rebuilding
- * every node with a null prototype; see that module's header. The `typeof`
- * check below is the belt to that projection's braces — the projection is
- * provably serializable, so nothing should be able to make `stringify` yield
- * a non-string here, and if something does the line is never written.
- *
- * The validation and serialization run here, ahead of (and outside) the
- * writer's own append guard, because an entry that cannot be serialized is a
- * caller error, not a write failure: wrapping it in
- * {@link M3LAppendOnlyStreamError} would tell an operator the filesystem is
- * unhealthy when the argument was.
- *
- * The parameter is `unknown` rather than {@link M3LAppendOnlyEntry} because
- * that is what it honestly is: `append` is a public method reached by callers
- * with no types at all, and this function's whole job is to prove the shape
- * at runtime rather than assume it. It is also what lets `append` accept an
- * `interface`-typed record, which carries no index signature.
- */
-function renderEntryLine(entry: unknown): string {
-  const projection = projectAppendOnlyEntry(entry, invalidArgument);
-  // Typed `unknown` on purpose: the declared return type is `string`, and the
-  // whole point of this check is that a return type is not a runtime proof.
-  const json: unknown = JSON.stringify(projection);
-  /* v8 ignore next 3 -- unreachable: projectAppendOnlyEntry rebuilds every
-     node with a null prototype (Object.create(null) for objects,
-     Object.setPrototypeOf(…, null) for arrays) so an inherited toJSON gadget
-     cannot rewrite the projected record, and it already rejects undefined,
-     functions, and symbols — the only inputs that make JSON.stringify return
-     undefined. The check is kept as the last line of defence if that
-     projection contract ever regresses. */
-  if (typeof json !== "string") {
-    throw invalidArgument("entry", "not-json-serializable");
-  }
-  return json;
-}
-
-/**
  * An append-only, segmented JSONL stream: one JSON object per line, appended
  * atomically, never rewritten in place.
  *
@@ -264,11 +168,18 @@ function renderEntryLine(entry: unknown): string {
  * only ever seals the active segment (by simply no longer writing to it) and
  * opens a new one; it never prunes or truncates a segment in place.
  *
- * No index file is kept and no state is carried across processes — a fresh
- * instance always re-derives the active segment from a directory listing plus
- * one `stat`, so a long-lived process and a freshly spawned one agree, and
- * two instances over one directory interleave whole lines rather than
- * corrupting one another (`O_APPEND`; this does not hold across NFS).
+ * A directory-wide `manifest.jsonl` sidecar now exists alongside the
+ * segments, sealed on rotation by
+ * {@link "../../internal/storage/append-only-sealer.js".AppendOnlySealer}, so
+ * "no index file is kept" no longer holds without qualification. What stays
+ * true: the manifest is never consulted to decide where to append — a fresh
+ * instance still re-derives the active segment from a directory listing plus
+ * one `stat`, so a long-lived process and a freshly spawned one still agree;
+ * the manifest carries no in-memory state across processes either; and the
+ * manifest is not a segment, so it is invisible to segment discovery and
+ * never appears in {@link M3LAppendOnlyStream.listSegments}. Two instances
+ * over one directory still interleave whole lines rather than corrupting one
+ * another (`O_APPEND`; this does not hold across NFS).
  *
  * A link **already planted** at the path of the segment an append is about to
  * open is refused in either form: a symlink, by `O_NOFOLLOW` where the
@@ -313,16 +224,31 @@ export class M3LAppendOnlyStream {
    * filesystem until the first {@link M3LAppendOnlyStream.append} — the
    * directory is created then, not here.
    *
-   * @param options - The stream's directory and its optional ceilings.
+   * @param options - The stream's directory, its optional ceilings, and an
+   *   optional `onSealFailed` handler.
    * @throws {@link M3LError} with `code: "ERR_INVALID_ARGUMENT"` when the bag
    *   is not a plain object, carries an unknown key, has a blank/non-string
-   *   `directory`, a ceiling that is not a finite positive integer, or a
-   *   `maxLineBytes` above {@link M3L_APPEND_ONLY_MAX_LINE_BYTES}.
+   *   `directory`, a ceiling that is not a finite positive integer, a
+   *   `maxLineBytes` above {@link M3L_APPEND_ONLY_MAX_LINE_BYTES}, or a
+   *   truthy non-function `onSealFailed`.
    */
   constructor(options: M3LAppendOnlyStreamOptions) {
     const resolved = validateStreamOptions(options);
     this.streamDirectory = resolved.directory;
     this.streamMaxLineBytes = resolved.maxLineBytes;
+    const sealer = new AppendOnlySealer({
+      directory: resolved.directory,
+      maxSegmentBytes: resolved.maxSegmentBytes,
+      maxLineBytes: resolved.maxLineBytes,
+      maxManifestBytes: DEFAULT_MAX_MANIFEST_BYTES,
+      buildError: (message, errorOptions) =>
+        new M3LAppendOnlyStreamReadError(message, errorOptions),
+      // Conditional spread, not a direct assignment: `exactOptionalPropertyTypes`
+      // forbids setting an optional property to a value typed `T | undefined`.
+      ...(resolved.onSealFailed !== undefined && {
+        onSealFailed: resolved.onSealFailed,
+      }),
+    });
     this.writer = new AppendOnlyWriter<unknown>({
       directory: resolved.directory,
       maxSegmentBytes: resolved.maxSegmentBytes,
@@ -330,6 +256,7 @@ export class M3LAppendOnlyStream {
       maxLineBytes: resolved.maxLineBytes,
       renderEntry: renderEntryLine,
       errors: APPEND_ONLY_STREAM_ERRORS,
+      sealer,
     });
   }
 
@@ -354,7 +281,8 @@ export class M3LAppendOnlyStream {
    * it as this library's own detached copy, and renders the line before
    * touching the filesystem at all, so a rejected entry leaves nothing
    * behind — and what reaches disk is the projection, never the caller's
-   * object (see {@link projectAppendOnlyEntry}).
+   * object (see
+   * {@link "../../internal/storage/append-only-projection.js".projectAppendOnlyEntry}).
    *
    * Concurrent calls on one instance are serialized: each append awaits the
    * previous one's completion, so byte-ceiling rotation fires on the line
@@ -367,6 +295,18 @@ export class M3LAppendOnlyStream {
    * without a cast. The closure is unchanged: every property still has to be
    * an {@link M3LAppendOnlyValue}, so a `Date`- or `bigint`-valued field is
    * still a compile error.
+   *
+   * @remarks
+   * Resolving means the entry is durable — it does not mean the directory is
+   * quiescent: a `manifest.jsonl` seal for a previously rotated segment can
+   * still land afterwards (see
+   * `internal/storage/append-only-writer.js`'s `sealAfterAppend`). Removing
+   * or archiving the stream directory immediately after the last
+   * `append()` resolves can race that write — an `ENOTEMPTY` on a recursive
+   * remove is the symptom, and retrying past it is correct. Deliberate: a
+   * seal is metadata about bytes already durably appended, and a process
+   * exiting before one runs is exactly what the sealer's cold-start sweep
+   * recovers.
    *
    * @typeParam T - The caller's own record type; every property must be an
    *   {@link M3LAppendOnlyValue}.
@@ -414,7 +354,9 @@ export class M3LAppendOnlyStream {
   /**
    * Reads back every entry, oldest `(date, sequence)` first — the order
    * `append()` produced them — proving and rebuilding each line through the
-   * same {@link projectAppendOnlyEntry} the writer serializes through, so a
+   * same
+   * {@link "../../internal/storage/append-only-projection.js".projectAppendOnlyEntry}
+   * the writer serializes through, so a
    * value `append()` could never itself have written (a bare array, `-0`, a
    * too-deep structure) throws rather than being handed back as genuine. A
    * missing directory yields nothing. See
@@ -500,5 +442,48 @@ export class M3LAppendOnlyStream {
       );
     }
     return { segments: Array.from(listing.segments), skipped: listing.skipped };
+  }
+
+  /**
+   * Drains the append chain as it stands at the moment of the call: every
+   * {@link M3LAppendOnlyStream.append} — and every manifest seal run by
+   * {@link "../../internal/storage/append-only-sealer.js".AppendOnlySealer} —
+   * that was already in flight when `flush()` was called has settled by the
+   * time it resolves.
+   *
+   * **Does not guarantee:** anything about an `append()` call started
+   * concurrently with, or after, this one — those are not covered. This is a
+   * point-in-time drain, not a barrier, and this class has no `close()`; a
+   * caller who reads `flush()` as "the stream is now idle" is wrong.
+   *
+   * **Never rejects, and is not an error channel.** An append failure still
+   * reaches its own `append()` caller, and a seal failure still reaches the
+   * `onSealFailed` handler supplied at construction — `flush()` surfaces
+   * neither. Do not turn this into a rethrow of something it merely awaited.
+   *
+   * **What it is for:** making the directory safe to remove, archive, or
+   * measure. Without it, a manifest seal still in flight for a previously
+   * rotated segment can recreate `manifest.jsonl` partway through a
+   * recursive remove of the directory, which surfaces as `ENOTEMPTY` — see
+   * {@link M3LAppendOnlyStream.append}'s `@remarks`.
+   *
+   * **Never required for the trail's correctness.** A process that exits
+   * without calling `flush()` loses at most one seal, and that is exactly
+   * what {@link "../../internal/storage/append-only-sealer.js".AppendOnlySealer}'s
+   * cold-start sweep recovers on the next writer instance.
+   *
+   * @example
+   * ```ts
+   * import { M3LAppendOnlyStream } from "@monte3l/m3l-common/core";
+   * import { rm } from "node:fs/promises";
+   *
+   * const stream = new M3LAppendOnlyStream({ directory: "data/output/audit" });
+   * await stream.append({ event: "run.completed", runId: "r-1" });
+   * await stream.flush();
+   * await rm("data/output/audit", { recursive: true });
+   * ```
+   */
+  async flush(): Promise<void> {
+    await this.writer.flush();
   }
 }
