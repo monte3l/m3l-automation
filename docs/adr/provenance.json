@@ -881,7 +881,7 @@
       },
       {
         "path": "docs/adr/README.md",
-        "blob": "6e7a44588d580395795ef205b0b6d8c1a12f6a79"
+        "blob": "9d6960226ec545c5efe925756bc57ce799d83e41"
       },
       {
         "path": "docs/logs/2026-08-14-aws-rds-data.md",
@@ -1500,7 +1500,7 @@
       },
       {
         "path": "docs/plans/2026-08-20-m3l-console.md",
-        "blob": "d924dafbfa8f83aa2400d2967707ff84a33358bd"
+        "blob": "685551357bacf8bef6e2d76c154a3deb2117938c"
       },
       {
         "path": "docs/plans/IMPLEMENTATION.md",
@@ -1552,7 +1552,7 @@
     "sourceFiles": [
       {
         "path": "docs/adr/README.md",
-        "blob": "6e7a44588d580395795ef205b0b6d8c1a12f6a79"
+        "blob": "9d6960226ec545c5efe925756bc57ce799d83e41"
       },
       {
         "path": "docs/research/agent-cli-integration.md",
@@ -1587,7 +1587,7 @@
     "sourceFiles": [
       {
         "path": "docs/plans/2026-08-20-m3l-console.md",
-        "blob": "d924dafbfa8f83aa2400d2967707ff84a33358bd"
+        "blob": "685551357bacf8bef6e2d76c154a3deb2117938c"
       },
       {
         "path": "docs/plans/IMPLEMENTATION.md",
@@ -1626,7 +1626,7 @@
     "sourceFiles": [
       {
         "path": "docs/plans/2026-08-20-m3l-console.md",
-        "blob": "d924dafbfa8f83aa2400d2967707ff84a33358bd"
+        "blob": "685551357bacf8bef6e2d76c154a3deb2117938c"
       },
       {
         "path": "docs/plans/IMPLEMENTATION.md",
@@ -2383,7 +2383,7 @@
       },
       {
         "path": "docs/adr/README.md",
-        "blob": "6e7a44588d580395795ef205b0b6d8c1a12f6a79"
+        "blob": "9d6960226ec545c5efe925756bc57ce799d83e41"
       },
       {
         "path": "docs/contributing/filing-work.md",
@@ -2404,7 +2404,7 @@
       },
       {
         "path": "docs/adr/README.md",
-        "blob": "6e7a44588d580395795ef205b0b6d8c1a12f6a79"
+        "blob": "9d6960226ec545c5efe925756bc57ce799d83e41"
       },
       {
         "path": "docs/decision-notes/README.md",
@@ -2619,11 +2619,11 @@
     "sourceFiles": [
       {
         "path": "docs/adr/README.md",
-        "blob": "6e7a44588d580395795ef205b0b6d8c1a12f6a79"
+        "blob": "9d6960226ec545c5efe925756bc57ce799d83e41"
       },
       {
         "path": "docs/plans/2026-08-20-m3l-console.md",
-        "blob": "d924dafbfa8f83aa2400d2967707ff84a33358bd"
+        "blob": "685551357bacf8bef6e2d76c154a3deb2117938c"
       },
       {
         "path": "packages/m3l-console-server/src/boot/audit-rebuild.ts",
