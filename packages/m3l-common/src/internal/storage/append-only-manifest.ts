@@ -75,7 +75,6 @@ import type {
   ManifestBaselineRecord,
   ManifestContents,
   ManifestRecord,
-  ManifestSealRecord,
   SegmentSealClaim,
 } from "./append-only-manifest-records.js";
 import {
@@ -85,18 +84,13 @@ import {
 import { listSegmentFiles } from "./append-only-segments.js";
 
 /**
- * The manifest's record vocabulary, re-exported so a caller that reads or
- * appends through this module never has to name the format module as well.
+ * The manifest's public-surface vocabulary, re-exported so a caller that reads
+ * or appends through this module never has to name the format module as well.
  * Their definitions and rationale live in
  * `./append-only-manifest-records.js`.
  */
 export { MANIFEST_FORMAT_VERSION };
-export type {
-  ManifestBaselineRecord,
-  ManifestContents,
-  ManifestSealRecord,
-  SegmentSealClaim,
-};
+export type { ManifestContents, SegmentSealClaim };
 
 /**
  * The manifest's file name within a stream directory.
