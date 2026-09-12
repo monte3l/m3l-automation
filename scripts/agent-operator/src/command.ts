@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
-import { Core } from "@monte3l/m3l-common";
+import { Core } from "@m3l-automation/m3l-common";
 
 import { configParameters, configValidators } from "./config.js";
 import { hooks } from "./hooks.js";

@@ -13,7 +13,7 @@
  * them, and so the gate-ordering matrix can share one vocabulary of writers.
  */
 
-import { Core } from "@monte3l/m3l-common";
+import { Core } from "@m3l-automation/m3l-common";
 
 import type { AgentDecisionLogWriter } from "../../src/steps/decision-recorder.js";
 
@@ -34,7 +34,7 @@ export type DecisionLogWriteOutcome = "ok" | Error;
  *
  * @example
  * ```ts
- * import { Core } from "@monte3l/m3l-common";
+ * import { Core } from "@m3l-automation/m3l-common";
  * import { ScriptedDecisionLogWriter } from "./logFakes.js";
  *
  * const calls: string[] = [];

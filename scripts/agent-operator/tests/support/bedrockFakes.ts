@@ -11,7 +11,7 @@
  * a hard failure (never `undefined`) when a test forgets to queue enough
  * responses.
  */
-import type { AWS } from "@monte3l/m3l-common";
+import type { AWS } from "@m3l-automation/m3l-common";
 
 /** One recorded `invoke()` call, exactly as the invoker received it. */
 export interface BedrockInvokeCall {

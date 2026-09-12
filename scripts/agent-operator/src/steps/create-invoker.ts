@@ -20,8 +20,8 @@
  * @packageDocumentation
  */
 
-import { AWS } from "@monte3l/m3l-common";
-import type { Core } from "@monte3l/m3l-common";
+import { AWS } from "@m3l-automation/m3l-common";
+import type { Core } from "@m3l-automation/m3l-common";
 
 import { M3LAgentOperatorCliError } from "../lib/errors.js";
 
@@ -61,7 +61,7 @@ export interface CreateInvokerDeps {
  *
  * @example
  * ```ts
- * import type { Core } from "@monte3l/m3l-common";
+ * import type { Core } from "@m3l-automation/m3l-common";
  * import { createInvoker } from "./create-invoker.js";
  *
  * declare const aws: Core.M3LScript["aws"];

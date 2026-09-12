@@ -19,7 +19,7 @@ import path from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { Core } from "@monte3l/m3l-common";
+import { Core } from "@m3l-automation/m3l-common";
 
 import { M3LAgentOperatorCliError } from "../../src/lib/errors.js";
 import { loadAgentPolicy } from "../../src/steps/load-policy.js";

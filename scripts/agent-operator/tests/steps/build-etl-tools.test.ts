@@ -33,7 +33,7 @@
 
 import { describe, expect, it, vi } from "vitest";
 
-import type { AWS } from "@monte3l/m3l-common";
+import type { AWS } from "@m3l-automation/m3l-common";
 
 import { assertAllowedScriptName } from "../../src/lib/cli-names.js";
 import type { AgentOperatorScriptName } from "../../src/lib/cli-names.js";

@@ -1,13 +1,21 @@
 #!/usr/bin/env node
 // Verifies every scripts/*/package.json declares exactly one runtime
-// dependency — @monte3l/m3l-common via a plain workspace:* specifier — and
-// no devDependencies (ADR-0029: scripts depend only on the library; the
-// workspace root owns all tooling). ADR-0103's P4a slice dropped the
-// pre-rename @m3l-automation/m3l-common alias once every scripts/*/src
-// import specifier moved to the real name, so the key and the workspace
-// target now agree. This is the package.json-declaration half of the
-// boundary; the source-level half (no @aws-sdk/* import) is already
-// enforced by eslint.config.js's scripts/*/src/**/*.ts override.
+// dependency — @monte3l/m3l-common, either via the new plain workspace:*
+// specifier or (transitionally — see below) the pre-rename aliased form —
+// and no devDependencies (ADR-0029: scripts depend only on the library; the
+// workspace root owns all tooling). This is the package.json-declaration
+// half of the boundary; the source-level half (no @aws-sdk/* import) is
+// already enforced by eslint.config.js's scripts/*/src/**/*.ts override.
+//
+// TRANSITIONAL (ADR-0103 P4a / P4a2): P4a dropped the pre-rename
+// @m3l-automation/m3l-common alias for 16 of the 17 scripts packages in one
+// PR; the 17th (agent-operator, by far the largest) was deferred to a
+// follow-up PR (P4a2) to stay under the review-size ceiling
+// (docs/plans/2026-09-12-u13-registry-publish.md). This checker accepts
+// EITHER shape until P4a2 lands and migrates agent-operator too, at which
+// point TRANSITIONAL_ALIASED_NAME/VALUE and the branch that accepts them
+// should be deleted — main must never be broken by a package that hasn't
+// migrated yet.
 //
 // Separate from check-deps.mjs, which is scoped to the published library
 // package's ADR-0017 exact-pin/optional-peer rules — a different package
@@ -24,17 +32,22 @@ import { parseJsonFlag, createReporter, repoRoot } from "./lib/report.mjs";
 
 const root = repoRoot(import.meta.url);
 
-/** The one permitted dependency's key and workspace target (ADR-0029), both
- * the renamed `@monte3l/m3l-common` name as of ADR-0103's P4a slice — the
- * alias key is gone now that every scripts/*\/src import specifier moved to
- * the real name. */
+/** The one permitted dependency's key and workspace target (ADR-0029), the
+ * renamed `@monte3l/m3l-common` name as of ADR-0103's P4a slice. */
 const LIBRARY_DEPENDENCY_NAME = "@monte3l/m3l-common";
 const LIBRARY_DEPENDENCY_VALUE = "workspace:*";
 
+/** TRANSITIONAL (see the header comment) — the pre-rename aliased shape,
+ * still declared by agent-operator until P4a2 migrates it too. Delete this
+ * pair and the branch below that checks it once that lands. */
+const TRANSITIONAL_ALIASED_NAME = "@m3l-automation/m3l-common";
+const TRANSITIONAL_ALIASED_VALUE = "workspace:@monte3l/m3l-common@*";
+
 /**
  * Validate a script package.json's dependency declarations against ADR-0029:
- * exactly one runtime dependency (@monte3l/m3l-common via a plain workspace:
- * specifier) and no devDependencies at all. Pure — operates on a parsed
+ * exactly one runtime dependency — @monte3l/m3l-common, either via a plain
+ * workspace: specifier or (transitionally, until P4a2) the pre-rename
+ * aliased form — and no devDependencies at all. Pure — operates on a parsed
  * package.json object.
  * Returns human-readable problem strings (empty array = conformant).
  *
@@ -47,8 +60,10 @@ export function scriptDependencyErrors(pkg) {
   const depNames = Object.keys(deps);
   const isExactlyTheLibrary =
     depNames.length === 1 &&
-    depNames[0] === LIBRARY_DEPENDENCY_NAME &&
-    deps[LIBRARY_DEPENDENCY_NAME] === LIBRARY_DEPENDENCY_VALUE;
+    ((depNames[0] === LIBRARY_DEPENDENCY_NAME &&
+      deps[LIBRARY_DEPENDENCY_NAME] === LIBRARY_DEPENDENCY_VALUE) ||
+      (depNames[0] === TRANSITIONAL_ALIASED_NAME &&
+        deps[TRANSITIONAL_ALIASED_NAME] === TRANSITIONAL_ALIASED_VALUE));
   if (!isExactlyTheLibrary) {
     problems.push(
       `dependencies must be exactly {"${LIBRARY_DEPENDENCY_NAME}": "${LIBRARY_DEPENDENCY_VALUE}"} (got ${JSON.stringify(deps)}) — ADR-0029 bans script-local dependencies; a new capability becomes a library wrapper first.`,

@@ -614,6 +614,25 @@ describe("packageManifestErrors", () => {
     ]);
   });
 
+  // TRANSITIONAL (ADR-0103 P4a / P4a2): agent-operator still declares the
+  // pre-rename aliased shape until P4a2 migrates it too — packageManifestErrors
+  // must accept it as satisfying the dependency requirement in the meantime.
+  test("accepts the transitional pre-rename aliased shape (agent-operator, until P4a2)", () => {
+    const pkg = {
+      ...conformantManifest("data-sync"),
+      dependencies: {
+        "@m3l-automation/m3l-common": "workspace:@monte3l/m3l-common@*",
+      },
+    };
+    const errors = packageManifestErrors(pkg, "data-sync");
+    expect(
+      errors.some((error: string) =>
+        error.includes("dependencies must include"),
+      ),
+    ).toBe(false);
+    expect(errors).toEqual([]);
+  });
+
   test.each(["build", "typecheck", "start"])(
     "flags a missing scripts.%s entry",
     (scriptName) => {

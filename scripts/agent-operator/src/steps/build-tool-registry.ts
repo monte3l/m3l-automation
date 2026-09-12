@@ -22,7 +22,7 @@
  * @packageDocumentation
  */
 
-import type { AWS } from "@monte3l/m3l-common";
+import type { AWS } from "@m3l-automation/m3l-common";
 
 import { M3LAgentOperatorCliError } from "../lib/errors.js";
 import { gateToolSpec, gateTwoPhaseToolSpec } from "./gate-tool.js";
@@ -102,7 +102,7 @@ function assertNoDuplicate(
  *
  * @example
  * ```ts
- * import type { AWS } from "@monte3l/m3l-common";
+ * import type { AWS } from "@m3l-automation/m3l-common";
  * import { buildAgentToolRegistry } from "./build-tool-registry.js";
  * import type {
  *   AgentToolSpec,

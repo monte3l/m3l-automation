@@ -40,7 +40,7 @@ import type * as AgentOperatorErrors from "../src/lib/errors.js";
  * unconditional `readFileSync: readFileSyncMock`. Every test here calls
  * `vi.resetModules()` and then re-imports `../src/command.js`, which
  * re-evaluates that module's ENTIRE transitive graph,
- * `@monte3l/m3l-common` included. Under an unconditional mock,
+ * `@m3l-automation/m3l-common` included. Under an unconditional mock,
  * `mockReturnValue(manifestBytes)` makes every `readFileSync` call anywhere in
  * that graph answer with this file's manifest bytes (or throw this file's
  * injected ENOENT), so any module reading a file during evaluation gets this
@@ -173,7 +173,7 @@ afterEach(() => {
 /**
  * Generous but finite, and NOT a flake mute: whichever test runs first pays
  * the cost of the very first evaluation of `command.ts`'s whole transitive
- * graph (`@monte3l/m3l-common` included), because `loadCommandModule`
+ * graph (`@m3l-automation/m3l-common` included), because `loadCommandModule`
  * has to `vi.resetModules()` to observe `scriptDescription()` at all. Measured
  * on this worktree: 1.67s idle for the first test and ~20ms for each
  * subsequent one (the transform cache stays warm across resets), rising to

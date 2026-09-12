@@ -1,4 +1,4 @@
-import { Core } from "@monte3l/m3l-common";
+import { Core } from "@m3l-automation/m3l-common";
 
 import { commandModule } from "./command.js";
 import { configParameters } from "./config.js";

@@ -17,7 +17,7 @@
  * @packageDocumentation
  */
 
-import { Core } from "@monte3l/m3l-common";
+import { Core } from "@m3l-automation/m3l-common";
 
 import { M3LAgentOperatorCliError } from "../lib/errors.js";
 
@@ -32,7 +32,7 @@ import { M3LAgentOperatorCliError } from "../lib/errors.js";
  *
  * @example
  * ```ts
- * import { Core } from "@monte3l/m3l-common";
+ * import { Core } from "@m3l-automation/m3l-common";
  * import type { AgentDecisionLogWriter } from "./decision-recorder.js";
  *
  * const writer: AgentDecisionLogWriter = new Core.M3LAgentDecisionLog({
@@ -108,7 +108,7 @@ export function agentIdentity(fields: {
  *
  * @example
  * ```ts
- * import { Core } from "@monte3l/m3l-common";
+ * import { Core } from "@m3l-automation/m3l-common";
  * import { serializedEntryByteLength } from "./decision-recorder.js";
  *
  * declare const entry: Core.M3LAgentDecisionLogEntry;
@@ -136,7 +136,7 @@ export function serializedEntryByteLength(
  *
  * @example
  * ```ts
- * import { Core } from "@monte3l/m3l-common";
+ * import { Core } from "@m3l-automation/m3l-common";
  * import type { AgentDecisionRecordInput } from "./decision-recorder.js";
  *
  * declare const decision: Core.M3LAgentDecision;
@@ -180,7 +180,7 @@ interface AgentDecisionRecorderOptions {
  *
  * @example
  * ```ts
- * import { Core } from "@monte3l/m3l-common";
+ * import { Core } from "@m3l-automation/m3l-common";
  * import { AgentDecisionRecorder, agentIdentity } from "./decision-recorder.js";
  *
  * declare const decision: Core.M3LAgentDecision;
@@ -219,7 +219,7 @@ export class AgentDecisionRecorder {
    *
    * @example
    * ```ts
-   * import { Core } from "@monte3l/m3l-common";
+   * import { Core } from "@m3l-automation/m3l-common";
    * import { AgentDecisionRecorder } from "./decision-recorder.js";
    *
    * declare const recorder: AgentDecisionRecorder;

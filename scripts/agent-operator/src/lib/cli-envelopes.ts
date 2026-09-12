@@ -17,7 +17,7 @@
  * @packageDocumentation
  */
 
-import { Core } from "@monte3l/m3l-common";
+import { Core } from "@m3l-automation/m3l-common";
 
 /** Local alias for readability; re-exported nowhere — see {@link AgentOperatorParamDescriptor}. */
 type M3LConfigOperationDescriptor = Core.M3LConfigOperationDescriptor;
@@ -57,7 +57,7 @@ export type EnvelopeParseFailure =
  *
  * @example
  * ```ts
- * import type { ParseResult } from "@monte3l/m3l-common/core";
+ * import type { ParseResult } from "@m3l-automation/m3l-common/core";
  * // (illustrative import path; ParseResult itself lives in this script)
  *
  * function handle(result: ParseResult<number>): number {
@@ -810,7 +810,7 @@ export interface AgentOperatorFlowStepEnvelope {
  * carries — mirrors `packages/m3l-cli/src/flow/types.ts`'s
  * `M3LCliFlowRunStatus` exactly. Restated here rather than imported:
  * `scripts/agent-operator` declares exactly one runtime dependency,
- * `@monte3l/m3l-common` (ADR-0029), so `packages/m3l-cli` is not on
+ * `@m3l-automation/m3l-common` (ADR-0029), so `packages/m3l-cli` is not on
  * its dependency graph and its types are not importable from here. Because
  * this parser fails closed, a literal here that drifts from the CLI's own
  * four values would silently reject every real flow envelope — re-verify

@@ -20,6 +20,15 @@ describe("scriptDependencyErrors", () => {
     expect(scriptDependencyErrors(pkg)).toEqual([]);
   });
 
+  test("accepts the transitional pre-rename aliased shape (agent-operator, until P4a2)", () => {
+    const pkg = {
+      dependencies: {
+        "@m3l-automation/m3l-common": "workspace:@monte3l/m3l-common@*",
+      },
+    };
+    expect(scriptDependencyErrors(pkg)).toEqual([]);
+  });
+
   test("flags an extra dependency alongside the library", () => {
     const pkg = {
       dependencies: {

@@ -57,8 +57,8 @@
  * @packageDocumentation
  */
 
-import { Core } from "@monte3l/m3l-common";
-import type { AWS } from "@monte3l/m3l-common";
+import { Core } from "@m3l-automation/m3l-common";
+import type { AWS } from "@m3l-automation/m3l-common";
 
 import type { AgentDailyInvocationCounter } from "./daily-counter.js";
 import type { AgentDecisionRecorder } from "./decision-recorder.js";
@@ -238,7 +238,7 @@ export async function recordConsumption(
  *
  * @example
  * ```ts
- * import { Core } from "@monte3l/m3l-common";
+ * import { Core } from "@m3l-automation/m3l-common";
  * import { recordConclusion } from "./conclusion-tail.js";
  * import type { AgentDecisionRecorder } from "./decision-recorder.js";
  *
@@ -288,7 +288,7 @@ export async function recordConclusion(
  *
  * @example
  * ```ts
- * import type { AWS } from "@monte3l/m3l-common";
+ * import type { AWS } from "@m3l-automation/m3l-common";
  * import type { ConclusionTailSetup } from "./conclusion-tail.js";
  * import { concludeGatedOperation } from "./conclusion-tail.js";
  *

@@ -48,7 +48,7 @@
  * @packageDocumentation
  */
 
-import { AWS, Core } from "@monte3l/m3l-common";
+import { AWS, Core } from "@m3l-automation/m3l-common";
 
 import { assertAllowedScriptName } from "../lib/cli-names.js";
 import { M3LAgentOperatorCliError } from "../lib/errors.js";

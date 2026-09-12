@@ -483,8 +483,8 @@ importers:
 
   scripts/agent-operator:
     dependencies:
-      '@monte3l/m3l-common':
-        specifier: workspace:*
+      '@m3l-automation/m3l-common':
+        specifier: workspace:@monte3l/m3l-common@*
         version: link:../../packages/m3l-common
 
   scripts/api-gateway-client:

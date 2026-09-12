@@ -44,8 +44,8 @@
 
 import { describe, expect, expectTypeOf, it, vi } from "vitest";
 
-import { Core } from "@monte3l/m3l-common";
-import type { AWS } from "@monte3l/m3l-common";
+import { Core } from "@m3l-automation/m3l-common";
+import type { AWS } from "@m3l-automation/m3l-common";
 
 import type { AgentCliSurface } from "../../src/lib/cli-surface.js";
 import { M3LAgentOperatorCliError } from "../../src/lib/errors.js";

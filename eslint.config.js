@@ -299,8 +299,15 @@ export default tseslint.config(
           // library (or a subpath) — the same allow-set as the static rule.
           // Non-literal arguments (template/variable specifiers) can't be
           // checked statically and are out of scope here.
+          //
+          // TRANSITIONAL (ADR-0103 P4a/P4a2): both the renamed
+          // @monte3l/m3l-common and the pre-rename @m3l-automation/m3l-common
+          // alias are allowed here because agent-operator (the one scripts
+          // package deferred out of P4a for the review-size ceiling) still
+          // imports via the old alias. Drop the second negative lookahead
+          // once P4a2 migrates it.
           selector:
-            "ImportExpression[source.type='Literal'][source.value=/^(?!\\.)(?!node:)(?!@monte3l\\/m3l-common($|\\/)).+$/]",
+            "ImportExpression[source.type='Literal'][source.value=/^(?!\\.)(?!node:)(?!@monte3l\\/m3l-common($|\\/))(?!@m3l-automation\\/m3l-common($|\\/)).+$/]",
           message:
             "Scripts may only dynamically import @monte3l/m3l-common (or a subpath), node: builtins, or a relative module — ADR-0029 bans script-local dependencies.",
         },
@@ -389,8 +396,14 @@ export default tseslint.config(
               // is still banned here rather than slipping past both rules.
               // The library lookahead is bounded the same way so
               // `@monte3l/m3l-common-evil` is banned too.
+              //
+              // TRANSITIONAL (ADR-0103 P4a/P4a2): the pre-rename
+              // `@m3l-automation/m3l-common` alias is also excluded here
+              // because agent-operator (deferred out of P4a for the
+              // review-size ceiling) still imports via it. Drop that
+              // lookahead once P4a2 migrates it.
               regex:
-                "^(?!\\.)(?!node:)(?!@aws-sdk($|/))(?!@monte3l/m3l-common($|/)).+$",
+                "^(?!\\.)(?!node:)(?!@aws-sdk($|/))(?!@monte3l/m3l-common($|/))(?!@m3l-automation/m3l-common($|/)).+$",
               allowTypeImports: false,
               message:
                 "Scripts may only import @monte3l/m3l-common (or a subpath) and node: builtins — ADR-0029 bans script-local dependencies; a new capability becomes a library wrapper first.",
@@ -478,7 +491,7 @@ export default tseslint.config(
         },
         {
           selector:
-            "ImportExpression[source.type='Literal'][source.value=/^(?!\\.)(?!node:)(?!@monte3l\\/m3l-common($|\\/)).+$/]",
+            "ImportExpression[source.type='Literal'][source.value=/^(?!\\.)(?!node:)(?!@monte3l\\/m3l-common($|\\/))(?!@m3l-automation\\/m3l-common($|\\/)).+$/]",
           message:
             "Scripts may only dynamically import @monte3l/m3l-common (or a subpath), node: builtins, or a relative module — ADR-0029 bans script-local dependencies.",
         },
@@ -525,7 +538,7 @@ export default tseslint.config(
         },
         {
           selector:
-            "ImportExpression[source.type='Literal'][source.value=/^(?!\\.)(?!node:)(?!@monte3l\\/m3l-common($|\\/)).+$/]",
+            "ImportExpression[source.type='Literal'][source.value=/^(?!\\.)(?!node:)(?!@monte3l\\/m3l-common($|\\/))(?!@m3l-automation\\/m3l-common($|\\/)).+$/]",
           message:
             "Scripts may only dynamically import @monte3l/m3l-common (or a subpath), node: builtins, or a relative module — ADR-0029 bans script-local dependencies.",
         },

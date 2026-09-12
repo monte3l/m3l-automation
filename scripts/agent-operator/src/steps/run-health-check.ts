@@ -67,8 +67,8 @@
  * confusingly, throw on.
  */
 
-import { AWS } from "@monte3l/m3l-common";
-import type { Core } from "@monte3l/m3l-common";
+import { AWS } from "@m3l-automation/m3l-common";
+import type { Core } from "@m3l-automation/m3l-common";
 
 import { buildAgentToolRegistry } from "./build-tool-registry.js";
 import { buildHealthTools } from "./build-health-tools.js";

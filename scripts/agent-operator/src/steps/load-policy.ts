@@ -6,7 +6,7 @@
  * @packageDocumentation
  */
 
-import { Core } from "@monte3l/m3l-common";
+import { Core } from "@m3l-automation/m3l-common";
 
 import { M3LAgentOperatorCliError } from "../lib/errors.js";
 
@@ -46,7 +46,7 @@ export interface LoadAgentPolicyDeps {
  *
  * @example
  * ```ts
- * import { Core } from "@monte3l/m3l-common";
+ * import { Core } from "@m3l-automation/m3l-common";
  * import { loadAgentPolicy } from "./load-policy.js";
  *
  * const policy = await loadAgentPolicy({

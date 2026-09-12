@@ -19,9 +19,9 @@ paths:
   `serviceNameErrors()` (`bin/lib/script-scaffold.mjs`) via
   `pnpm scaffold:script` and `check:script-scaffold`.
 - **Declare exactly one runtime dependency** —
-  `"@m3l-automation/m3l-common": "workspace:*"` — and no devDependencies
-  (ADR-0029). A capability the library lacks becomes a typed library wrapper
-  first (the ADR-0027 pattern), never a script-local package. Enforced by
+  `"@monte3l/m3l-common": "workspace:*"` — and no devDependencies (ADR-0029).
+  A capability the library lacks becomes a typed library wrapper first (the
+  ADR-0027 pattern), never a script-local package. Enforced by
   `check:script-deps` plus ESLint's `@aws-sdk/*` and bare-import bans.
 
 ## Layout — modular, never a single-file script

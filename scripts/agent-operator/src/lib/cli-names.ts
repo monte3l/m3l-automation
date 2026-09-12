@@ -41,7 +41,7 @@ export type AgentOperatorScriptName = string & {
  * Kebab-case script name pattern, copied **verbatim** from `SCRIPT_NAME_RE`
  * in `packages/m3l-cli/src/scaffold/manifest.ts` (the CLI's own scaffold
  * validator). It cannot be imported here: ADR-0029 restricts a `scripts/*`
- * package to a single dependency, `@monte3l/m3l-common`. A
+ * package to a single dependency, `@m3l-automation/m3l-common`. A
  * drift-guard test reads `manifest.ts` as text and asserts this literal
  * still matches, so any future change to the upstream pattern is caught
  * rather than silently diverging.

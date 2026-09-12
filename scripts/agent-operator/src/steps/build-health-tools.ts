@@ -59,7 +59,7 @@
  * @packageDocumentation
  */
 
-import type { Core } from "@monte3l/m3l-common";
+import type { Core } from "@m3l-automation/m3l-common";
 
 import type { AgentCliSurface } from "../lib/cli-surface.js";
 import { isAllowedScriptName } from "../lib/cli-names.js";

@@ -638,9 +638,11 @@ jobs:
 
       # Every scripts/*/package.json must declare exactly the ADR-0029
       # dependency boundary — @monte3l/m3l-common via a plain workspace:*
-      # specifier (ADR-0103's P4a slice dropped the pre-rename alias) and
-      # no devDependencies. The @aws-sdk/* import ban (eslint.config.js) is
-      # the source-level half of this same rule.
+      # specifier (ADR-0103's P4a slice dropped the pre-rename alias for 16
+      # of 17 packages; agent-operator transitionally still uses the old
+      # alias until P4a2, which the checker also accepts for now) and no
+      # devDependencies. The @aws-sdk/* import ban (eslint.config.js) is the
+      # source-level half of this same rule.
       - name: Check script dependency boundary
         run: pnpm check:script-deps
 

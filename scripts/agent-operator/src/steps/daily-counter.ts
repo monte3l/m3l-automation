@@ -66,7 +66,7 @@
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
 
-import { Core } from "@monte3l/m3l-common";
+import { Core } from "@m3l-automation/m3l-common";
 
 import { M3LAgentOperatorCliError } from "../lib/errors.js";
 import type { AgentRunLedger } from "./run-ledger.js";
@@ -289,7 +289,7 @@ function budgetStateFailure(
  *
  * @example
  * ```ts
- * import { Core } from "@monte3l/m3l-common";
+ * import { Core } from "@m3l-automation/m3l-common";
  * import { openDailyInvocationCounter } from "./daily-counter.js";
  *
  * const counter = await openDailyInvocationCounter({

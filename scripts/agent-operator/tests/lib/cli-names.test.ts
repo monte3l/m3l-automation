@@ -14,7 +14,7 @@ import { M3LAgentOperatorCliError } from "../../src/lib/errors.js";
 /**
  * Contract: PR 1 spec `src/lib/cli-names.ts`. `AGENT_OPERATOR_SCRIPT_NAME_RE`
  * must copy `SCRIPT_NAME_RE` from `packages/m3l-cli/src/scaffold/manifest.ts`
- * verbatim (ADR-0029: a script depends only on `@monte3l/m3l-common`,
+ * verbatim (ADR-0029: a script depends only on `@m3l-automation/m3l-common`,
  * so the regex cannot be imported and must be drift-guarded against the
  * source of truth instead). `AGENT_OPERATOR_SCRIPT_NAME_MAX_LENGTH` (64) is
  * this package's own additional cap, checked BEFORE the regex.
