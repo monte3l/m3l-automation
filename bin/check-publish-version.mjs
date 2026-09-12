@@ -99,6 +99,18 @@ export async function versionExists(
   return Object.hasOwn(body.versions ?? {}, version);
 }
 
+/**
+ * Bound an unknown catch value to its message, never the raw value — a
+ * fetch failure's `cause` chain can carry request internals, so this keeps
+ * whatever ends up in a reporter line to text a human wrote.
+ *
+ * @param {unknown} cause
+ * @returns {string}
+ */
+function causeMessage(cause) {
+  return cause instanceof Error ? cause.message : String(cause);
+}
+
 // Main execution — only run when invoked directly, not when imported for testing.
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const { json } = parseJsonFlag();
@@ -113,7 +125,16 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     process.exit(1);
   }
 
-  const { name, version } = readPublishTarget(root);
+  let name, version;
+  try {
+    ({ name, version } = readPublishTarget(root));
+  } catch (cause) {
+    reporter.error(
+      `could not read ${PACKAGE_DIR}/package.json: ${causeMessage(cause)}`,
+    );
+    reporter.finish();
+    process.exit(1);
+  }
 
   try {
     const exists = await versionExists(name, version, {
@@ -129,7 +150,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     }
   } catch (cause) {
     reporter.error(
-      `could not check ${name}@${version} against ${REGISTRY}: ${cause}`,
+      `could not check ${name}@${version} against ${REGISTRY}: ${causeMessage(cause)}`,
     );
     reporter.finish();
     process.exit(1);

@@ -20,6 +20,12 @@ concurrency:
 jobs:
   publish:
     name: Publish @monte3l/m3l-common
+    # workflow_dispatch accepts any branch/tag from the UI; GitHub Packages
+    # versions are immutable, so publishing an unreviewed ref by mistake
+    # cannot be undone by re-publishing. Restrict the job itself, not just
+    # the trigger, to main — the one ref that already passed the required
+    # `verify`/`review` checks before it could land there.
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
@@ -44,11 +50,14 @@ jobs:
       - name: Install (frozen lockfile)
         run: pnpm install --frozen-lockfile --prefer-offline
 
-      # Full local gate suite (lint, typecheck, tests, build, exports
-      # shape, ...) before a manually-dispatched, high-consequence,
-      # infrequent publish — this job never runs otherwise, so it pays this
-      # cost itself rather than trusting a stale prior CI run against the
-      # dispatched ref.
+      # Re-runs the ref-scoped gates (build, lint, typecheck, tests, exports
+      # shape) before a manually-dispatched, high-consequence, infrequent
+      # publish, rather than trusting a stale prior CI run. The PR-diff-scoped
+      # gates (check:exports-semver's label check, check:review-size) are not
+      # meaningfully re-validated here — this dispatch targets main directly
+      # (the `if:` above), not a PR range, and main's branch protection
+      # already required them to pass, with a signed commit, before this ref
+      # could exist.
       - name: Verify
         run: pnpm verify
 
@@ -59,11 +68,14 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      # --no-git-checks: pnpm's default publish git-checks (clean tree, on
-      # the configured publish branch) assume a normal local clone; a
-      # workflow_dispatch checkout is a detached-HEAD, fetch-depth:1 clone
-      # with no local branch at all, which trips the branch check every
-      # time. `pnpm verify` above is this job's actual safety net.
+      # --no-git-checks disables BOTH of pnpm's default publish git-checks:
+      # the current-branch check (which a detached-HEAD, fetch-depth:1
+      # checkout with no local branch would always fail) and the
+      # clean-working-tree check. The latter is harmless here — a fresh clone
+      # right before this step has nothing uncommitted to hide — but is
+      # disabled by the same flag, not by choice; `pnpm verify` above, plus
+      # the `if:` restricting this job to main, are this job's actual safety
+      # net.
       - name: Publish
         run: pnpm --filter @monte3l/m3l-common publish --no-git-checks
         env:

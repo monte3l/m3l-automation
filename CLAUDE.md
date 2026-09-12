@@ -148,7 +148,7 @@ The `exports` map is the public contract (semver-gated) — full rationale: `doc
 ## Security
 
 - The library does not log by default; never log secrets, tokens, or caller data. Validate external input at the public API boundary.
-- CI holds no durable publish credential; `release.yml`'s ephemeral per-job `GITHUB_TOKEN` (`packages: write`) is the one exception, scoped to a manually-dispatched, never-PR-triggered release job (ADR-0103). No token of any kind (`NPM_TOKEN`, a stored classic PAT, AWS keys, `CLAUDE_CODE_OAUTH_TOKEN`) may land in source, tests, or fixtures.
+- CI holds no durable publish credential — `release.yml`'s ephemeral `GITHUB_TOKEN` is the exception (ADR-0103). No token may land in source, tests, or fixtures.
 - Pushed commits must be signed (valid `%G?`) — three layers, with branch protection the authoritative one: ADR-0016 and `docs/contributing/branch-protection.md`.
 
 ## Performance

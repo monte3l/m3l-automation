@@ -84,6 +84,15 @@ describe("readPublishTarget", () => {
       version: "4.7.0",
     });
   });
+
+  test("throws when packages/m3l-common/package.json contains malformed JSON", () => {
+    dir = mktemp();
+    const pkgDir = join(dir, "packages", "m3l-common");
+    mkdirSync(pkgDir, { recursive: true });
+    writeFileSync(join(pkgDir, "package.json"), "{ not valid json");
+
+    expect(() => readPublishTarget(dir)).toThrow();
+  });
 });
 
 describe("versionExists", () => {
@@ -134,6 +143,20 @@ describe("versionExists", () => {
     await expect(
       versionExists(name, version, { registry, token, fetchImpl }),
     ).resolves.toBe(false);
+  });
+
+  test("propagates the rejection when response.json() itself rejects on a malformed/truncated body", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: vi
+        .fn()
+        .mockRejectedValue(new Error("Unexpected end of JSON input")),
+    });
+
+    await expect(
+      versionExists(name, version, { registry, token, fetchImpl }),
+    ).rejects.toThrow("Unexpected end of JSON input");
   });
 
   test.each([
