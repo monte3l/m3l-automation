@@ -250,6 +250,16 @@ export function commandModuleErrors(commandSrc) {
 }
 
 /**
+ * The one permitted runtime dependency's required value (ADR-0022 +
+ * ADR-0029). ADR-0103 renamed the real package to `@monte3l/m3l-common`; a
+ * script's dependency key stays the pre-rename specifier
+ * (`@m3l-automation/m3l-common`) aliased to the renamed target, so no
+ * scripts/*\/src import changes. Mirrors `templates/script/package.json.tmpl`,
+ * the generator's own copy of this same value.
+ */
+const LIBRARY_DEPENDENCY_VALUE = "workspace:@monte3l/m3l-common@*";
+
+/**
  * Validate a script's package.json against the ADR-0022 package contract.
  * Checker-only — never consumed by generation, so it stays local rather than
  * moving into the CLI.
@@ -271,9 +281,12 @@ export function packageManifestErrors(pkg, name) {
   if (!/>=\s*24/.test(pkg.engines?.node ?? "")) {
     problems.push(`"engines.node" must declare ">=24"`);
   }
-  if (pkg.dependencies?.["@m3l-automation/m3l-common"] !== "workspace:*") {
+  if (
+    pkg.dependencies?.["@m3l-automation/m3l-common"] !==
+    LIBRARY_DEPENDENCY_VALUE
+  ) {
     problems.push(
-      `dependencies must include "@m3l-automation/m3l-common": "workspace:*"`,
+      `dependencies must include "@m3l-automation/m3l-common": ${JSON.stringify(LIBRARY_DEPENDENCY_VALUE)}`,
     );
   }
   const expectedScripts = expectedPackageScripts();

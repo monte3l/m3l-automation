@@ -135,7 +135,7 @@ function sdkError(name: string, message = name): Error {
  * rethrows), and `invoke()`'s loop-level `isAborted` re-check between
  * fallback attempts (3 ticks — one more hop, after `#invokeOnModel`
  * returns its `"advance"` outcome). Verified empirically via the coverage
- * gate (`pnpm --filter @m3l-automation/m3l-common exec vitest run
+ * gate (`pnpm --filter @monte3l/m3l-common exec vitest run
  * tests/bedrock-runtime.test.ts --coverage...`) that these tick counts
  * land on the intended branch; a behavior-preserving refactor that changes
  * the number of `await` hops between these checks would require

@@ -44,19 +44,23 @@ for the per-module breakdown.
 
 ## Installation
 
-This package is not published to npm. Inside the monorepo, consumers depend on
-it via `workspace:*`
+This package is not published to npm yet. Inside the monorepo, consumers
+depend on it via a pnpm workspace alias
 ([ADR-0029](https://github.com/monte3l/m3l-automation/blob/main/docs/adr/0029-script-dependency-boundary.md)):
 
 ```jsonc
 {
   "dependencies": {
-    "@m3l-automation/m3l-common": "workspace:*",
+    "@m3l-automation/m3l-common": "workspace:@monte3l/m3l-common@*",
   },
 }
 ```
 
-External installation from a private GitHub Packages registry is planned
+The dependency key stays this pre-rename specifier so no import site changes;
+the real package underneath it is `@monte3l/m3l-common`
+([ADR-0103](https://github.com/monte3l/m3l-automation/blob/main/docs/adr/0103-publish-scope-rename-and-staged-first-release.md))
+— the name GitHub Packages requires it to publish under. External
+installation from that private registry is in progress
 ([ADR-0057](https://github.com/monte3l/m3l-automation/blob/main/docs/adr/0057-private-registry-distribution.md),
 roadmap U13) but not yet available.
 

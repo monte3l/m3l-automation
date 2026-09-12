@@ -52,6 +52,15 @@ export const CLI_PACKAGE_NAME = "@m3l-automation/m3l-cli";
 /** The library the CLI is allowed — and required — to depend on. */
 export const CLI_LIBRARY_DEPENDENCY = "@m3l-automation/m3l-common";
 
+/**
+ * The workspace-alias value the library dependency must be pinned to.
+ * ADR-0103 renamed the real package to `@monte3l/m3l-common`; the CLI's
+ * dependency key stays the pre-rename specifier so no src import changes,
+ * with the alias's target updated instead of the plain `"workspace:*"`
+ * every other workspace-scope dependency still uses.
+ */
+export const CLI_LIBRARY_DEPENDENCY_VALUE = "workspace:@monte3l/m3l-common@*";
+
 /** Workspace-internal packages share this scope; anything else is third-party. */
 export const WORKSPACE_SCOPE = "@m3l-automation/";
 
@@ -217,9 +226,9 @@ export function cliPackageManifestErrors(pkg) {
   }
 
   const deps = pkg.dependencies ?? {};
-  if (deps[CLI_LIBRARY_DEPENDENCY] !== "workspace:*") {
+  if (deps[CLI_LIBRARY_DEPENDENCY] !== CLI_LIBRARY_DEPENDENCY_VALUE) {
     problems.push(
-      `dependencies must include "${CLI_LIBRARY_DEPENDENCY}": "workspace:*" (got ${JSON.stringify(deps[CLI_LIBRARY_DEPENDENCY])})`,
+      `dependencies must include "${CLI_LIBRARY_DEPENDENCY}": ${JSON.stringify(CLI_LIBRARY_DEPENDENCY_VALUE)} (got ${JSON.stringify(deps[CLI_LIBRARY_DEPENDENCY])})`,
     );
   }
   for (const [name, range] of Object.entries(deps)) {

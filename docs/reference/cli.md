@@ -4,10 +4,12 @@ The script-facing CLI activated by ADR-0042 (issue #333): discovery,
 introspection, and guided execution over the `configParameters` seam every
 `scripts/*` package declares in `src/config.ts`. Private, unpublished, and
 zero-_third-party_-dependency — every declared `dependencies` entry is a
-`@m3l-automation/*` workspace package pinned to `workspace:*` (the library,
-`@m3l-automation/m3l-common`, plus one entry per `scripts/*` package since
-ADR-0054/U7 — see "Dependency-graph discovery" below); everything else is
-`node:` builtins.
+`@m3l-automation/*` workspace package (the library,
+`@m3l-automation/m3l-common`, aliased to `workspace:@monte3l/m3l-common@*`
+since ADR-0103's scope rename — the key stays the pre-rename specifier so no
+import site changes — plus one entry per `scripts/*` package at plain
+`workspace:*` since ADR-0054/U7 — see "Dependency-graph discovery" below);
+everything else is `node:` builtins.
 
 Invocation: `pnpm m3l <command>` from the workspace root (a root
 `package.json` script wrapping `packages/m3l-cli/bin/m3l.mjs` — the package

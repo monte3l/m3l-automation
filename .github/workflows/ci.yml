@@ -336,7 +336,7 @@ jobs:
       # Vite/Rolldown fails to resolve "@m3l-automation/m3l-common/core/errors"
       # because packages/m3l-common/dist/ doesn't exist yet on a fresh runner.
       - name: Build m3l-common
-        run: pnpm --filter @m3l-automation/m3l-common build
+        run: pnpm --filter @monte3l/m3l-common build
 
       # Keyed on the lockfile the same way the turbo cache is — a Playwright
       # version bump changes the lockfile hash and correctly invalidates the
@@ -637,7 +637,8 @@ jobs:
         run: pnpm check:script-docs
 
       # Every scripts/*/package.json must declare exactly the ADR-0029
-      # dependency boundary — @m3l-automation/m3l-common via workspace:* and
+      # dependency boundary — @m3l-automation/m3l-common via a
+      # workspace:@monte3l/m3l-common@* alias (ADR-0103's scope rename) and
       # no devDependencies. The @aws-sdk/* import ban (eslint.config.js) is
       # the source-level half of this same rule.
       - name: Check script dependency boundary

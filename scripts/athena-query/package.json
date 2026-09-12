@@ -13,6 +13,6 @@
     "start": "node --env-file-if-exists=.env dist/main.js"
   },
   "dependencies": {
-    "@m3l-automation/m3l-common": "workspace:*"
+    "@m3l-automation/m3l-common": "workspace:@monte3l/m3l-common@*"
   }
 }

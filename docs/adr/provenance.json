@@ -7,7 +7,7 @@
       },
       {
         "path": ".github/workflows/ci.yml",
-        "blob": "d3d27cb2394ad0231e6fa2e3fea3514bdd353aa3"
+        "blob": "0759b384e50eb11e2b7391fe2dedf407705c5153"
       },
       {
         "path": ".node-version",
@@ -51,14 +51,14 @@
       },
       {
         "path": "pnpm-lock.yaml",
-        "blob": "58b8de2fee5413d3da5caa4a890a44fe05727116"
+        "blob": "7c2350069f71eb69469245563470340e3e335d9a"
       },
       {
         "path": "turbo.json",
         "blob": "d2b88dbb4423408a33153335c055b088c6fd628a"
       }
     ],
-    "verifiedAt": "2026-09-11"
+    "verifiedAt": "2026-09-12"
   },
   "0002": {
     "sourceFiles": [
@@ -68,14 +68,14 @@
       },
       {
         "path": "packages/m3l-common/package.json",
-        "blob": "55ae1207f7068ba133455349bbfdede7ec65bcdc"
+        "blob": "e6acd568be804469de0bae03040f030a4d6570e7"
       },
       {
         "path": "tsconfig.base.json",
         "blob": "35cb899531dae08c630295c4d0b25cc783d1c50f"
       }
     ],
-    "verifiedAt": "2026-09-11"
+    "verifiedAt": "2026-09-12"
   },
   "0003": {
     "sourceFiles": [
@@ -93,7 +93,7 @@
       },
       {
         "path": ".github/workflows/ci.yml",
-        "blob": "d3d27cb2394ad0231e6fa2e3fea3514bdd353aa3"
+        "blob": "0759b384e50eb11e2b7391fe2dedf407705c5153"
       },
       {
         "path": ".node-version",
@@ -109,7 +109,7 @@
       },
       {
         "path": "bin/lib/verify-steps.mjs",
-        "blob": "d67f3992e137e02d401a34d8dba9f88d38dda611"
+        "blob": "9d00ab82c546d79ee032f0b9a4becf72220da47b"
       },
       {
         "path": "docs/contributing/contributing.md",
@@ -125,14 +125,14 @@
       },
       {
         "path": "packages/m3l-common/package.json",
-        "blob": "55ae1207f7068ba133455349bbfdede7ec65bcdc"
+        "blob": "e6acd568be804469de0bae03040f030a4d6570e7"
       },
       {
         "path": "packages/m3l-console-server/tests/stream-writer.test.ts",
         "blob": "f7f20de5e8551589d0521f50b71e9e9fa544d312"
       }
     ],
-    "verifiedAt": "2026-09-11"
+    "verifiedAt": "2026-09-12"
   },
   "0004": {
     "sourceFiles": [
@@ -158,7 +158,7 @@
       },
       {
         "path": "packages/m3l-common/package.json",
-        "blob": "55ae1207f7068ba133455349bbfdede7ec65bcdc"
+        "blob": "e6acd568be804469de0bae03040f030a4d6570e7"
       },
       {
         "path": "packages/m3l-console-web/src/errors/console-web-error.ts",
@@ -200,10 +200,10 @@
       },
       {
         "path": "packages/m3l-common/package.json",
-        "blob": "55ae1207f7068ba133455349bbfdede7ec65bcdc"
+        "blob": "e6acd568be804469de0bae03040f030a4d6570e7"
       }
     ],
-    "verifiedAt": "2026-09-11"
+    "verifiedAt": "2026-09-12"
   },
   "0007": {
     "sourceFiles": [
@@ -213,20 +213,20 @@
       },
       {
         "path": ".github/workflows/ci.yml",
-        "blob": "d3d27cb2394ad0231e6fa2e3fea3514bdd353aa3"
+        "blob": "0759b384e50eb11e2b7391fe2dedf407705c5153"
       },
       {
         "path": ".github/workflows/dependency-review.yml",
         "blob": "a10b117b3ff5a84647dc7700c377e6870c873f4c"
       }
     ],
-    "verifiedAt": "2026-09-11"
+    "verifiedAt": "2026-09-12"
   },
   "0008": {
     "sourceFiles": [
       {
         "path": ".github/workflows/ci.yml",
-        "blob": "d3d27cb2394ad0231e6fa2e3fea3514bdd353aa3"
+        "blob": "0759b384e50eb11e2b7391fe2dedf407705c5153"
       },
       {
         "path": "bin/lint-commit.mjs",
@@ -237,7 +237,7 @@
         "blob": "696f6fb655e9c496dfa8f5b5698992f69a56725f"
       }
     ],
-    "verifiedAt": "2026-09-11"
+    "verifiedAt": "2026-09-12"
   },
   "0009": {
     "sourceFiles": [
@@ -260,7 +260,7 @@
       },
       {
         "path": ".github/workflows/ci.yml",
-        "blob": "d3d27cb2394ad0231e6fa2e3fea3514bdd353aa3"
+        "blob": "0759b384e50eb11e2b7391fe2dedf407705c5153"
       },
       {
         "path": "CLAUDE.md",
@@ -275,7 +275,7 @@
         "blob": "d8713837567ad2843629c00049715adc30413872"
       }
     ],
-    "verifiedAt": "2026-09-11"
+    "verifiedAt": "2026-09-12"
   },
   "0011": {
     "sourceFiles": [
@@ -556,7 +556,7 @@
       },
       {
         "path": "bin/lib/script-scaffold.mjs",
-        "blob": "809adc75c2da10d13bf54d7e4634feafaa7fab4e"
+        "blob": "1ee613d6b73c612656ca44d5bb863cbd7bcafdee"
       },
       {
         "path": "docs/plans/archive/2026-07-06-consumer-fleet-implementation-plan.md",
@@ -591,7 +591,7 @@
         "blob": "d2b88dbb4423408a33153335c055b088c6fd628a"
       }
     ],
-    "verifiedAt": "2026-09-11"
+    "verifiedAt": "2026-09-12"
   },
   "0023": {
     "sourceFiles": [
@@ -690,7 +690,7 @@
       },
       {
         "path": "pnpm-lock.yaml",
-        "blob": "58b8de2fee5413d3da5caa4a890a44fe05727116"
+        "blob": "7c2350069f71eb69469245563470340e3e335d9a"
       }
     ],
     "verifiedAt": "2026-09-12"
@@ -778,7 +778,7 @@
       },
       {
         "path": "bin/lib/script-scaffold.mjs",
-        "blob": "809adc75c2da10d13bf54d7e4634feafaa7fab4e"
+        "blob": "1ee613d6b73c612656ca44d5bb863cbd7bcafdee"
       },
       {
         "path": "docs/ROADMAP.md",
@@ -914,7 +914,7 @@
     "sourceFiles": [
       {
         "path": ".github/workflows/ci.yml",
-        "blob": "d3d27cb2394ad0231e6fa2e3fea3514bdd353aa3"
+        "blob": "0759b384e50eb11e2b7391fe2dedf407705c5153"
       },
       {
         "path": ".github/workflows/pages.yml",
@@ -958,7 +958,7 @@
       },
       {
         "path": "bin/lib/verify-steps.mjs",
-        "blob": "d67f3992e137e02d401a34d8dba9f88d38dda611"
+        "blob": "9d00ab82c546d79ee032f0b9a4becf72220da47b"
       },
       {
         "path": "bin/lint-commit.mjs",
@@ -1027,7 +1027,7 @@
       },
       {
         "path": "packages/m3l-common/package.json",
-        "blob": "55ae1207f7068ba133455349bbfdede7ec65bcdc"
+        "blob": "e6acd568be804469de0bae03040f030a4d6570e7"
       },
       {
         "path": "packages/m3l-common/src/aws/clients/provider.ts",
@@ -1044,7 +1044,7 @@
       },
       {
         "path": ".github/workflows/ci.yml",
-        "blob": "d3d27cb2394ad0231e6fa2e3fea3514bdd353aa3"
+        "blob": "0759b384e50eb11e2b7391fe2dedf407705c5153"
       },
       {
         "path": "docs/plans/IMPLEMENTATION.md",
@@ -1090,10 +1090,10 @@
       },
       {
         "path": "packages/m3l-common/package.json",
-        "blob": "55ae1207f7068ba133455349bbfdede7ec65bcdc"
+        "blob": "e6acd568be804469de0bae03040f030a4d6570e7"
       }
     ],
-    "verifiedAt": "2026-09-11"
+    "verifiedAt": "2026-09-12"
   },
   "0037": {
     "sourceFiles": [
@@ -1107,14 +1107,14 @@
       },
       {
         "path": "packages/m3l-common/package.json",
-        "blob": "55ae1207f7068ba133455349bbfdede7ec65bcdc"
+        "blob": "e6acd568be804469de0bae03040f030a4d6570e7"
       },
       {
         "path": "pnpm-workspace.yaml",
         "blob": "5d5debd51048ec86c9d57a331a2e55e0e92fe0c2"
       }
     ],
-    "verifiedAt": "2026-09-11"
+    "verifiedAt": "2026-09-12"
   },
   "0038": {
     "sourceFiles": [
@@ -1496,7 +1496,7 @@
     "sourceFiles": [
       {
         "path": "bin/lib/script-scaffold.mjs",
-        "blob": "809adc75c2da10d13bf54d7e4634feafaa7fab4e"
+        "blob": "1ee613d6b73c612656ca44d5bb863cbd7bcafdee"
       },
       {
         "path": "docs/plans/2026-08-20-m3l-console.md",
@@ -1609,7 +1609,7 @@
     "sourceFiles": [
       {
         "path": ".github/workflows/ci.yml",
-        "blob": "d3d27cb2394ad0231e6fa2e3fea3514bdd353aa3"
+        "blob": "0759b384e50eb11e2b7391fe2dedf407705c5153"
       },
       {
         "path": "bin/lib/changed-paths.mjs",
@@ -1620,7 +1620,7 @@
         "blob": "35cb899531dae08c630295c4d0b25cc783d1c50f"
       }
     ],
-    "verifiedAt": "2026-09-11"
+    "verifiedAt": "2026-09-12"
   },
   "0068": {
     "sourceFiles": [
@@ -1663,7 +1663,7 @@
       },
       {
         "path": "packages/m3l-common/package.json",
-        "blob": "55ae1207f7068ba133455349bbfdede7ec65bcdc"
+        "blob": "e6acd568be804469de0bae03040f030a4d6570e7"
       }
     ],
     "verifiedAt": "2026-09-12"
@@ -1940,7 +1940,7 @@
       },
       {
         "path": "bin/lib/verify-steps.mjs",
-        "blob": "d67f3992e137e02d401a34d8dba9f88d38dda611"
+        "blob": "9d00ab82c546d79ee032f0b9a4becf72220da47b"
       },
       {
         "path": "bin/sync-hub.mjs",

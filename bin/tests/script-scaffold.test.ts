@@ -76,7 +76,9 @@ function conformantManifest(name: string) {
     private: true,
     type: "module",
     engines: { node: ">=24" },
-    dependencies: { "@m3l-automation/m3l-common": "workspace:*" },
+    dependencies: {
+      "@m3l-automation/m3l-common": "workspace:@monte3l/m3l-common@*",
+    },
     scripts: {
       build: "tsc -b tsconfig.build.json",
       typecheck: "tsc -p tsconfig.json",
@@ -608,7 +610,7 @@ describe("packageManifestErrors", () => {
   test("flags a missing workspace dependency on m3l-common", () => {
     const pkg = { ...conformantManifest("data-sync"), dependencies: {} };
     expect(packageManifestErrors(pkg, "data-sync")).toEqual([
-      'dependencies must include "@m3l-automation/m3l-common": "workspace:*"',
+      'dependencies must include "@m3l-automation/m3l-common": "workspace:@monte3l/m3l-common@*"',
     ]);
   });
 
@@ -631,7 +633,7 @@ describe("packageManifestErrors", () => {
       '"private" must be true (scripts are never published)',
       '"type" must be "module" (ESM only)',
       '"engines.node" must declare ">=24"',
-      'dependencies must include "@m3l-automation/m3l-common": "workspace:*"',
+      'dependencies must include "@m3l-automation/m3l-common": "workspace:@monte3l/m3l-common@*"',
       '"scripts.build" must be declared',
       '"scripts.typecheck" must be declared',
       '"scripts.start" must be declared',
