@@ -185,15 +185,16 @@ target was renamed is repaired via `RENAMED_TARGETS` in
 
 ## CLI wave (U-series)
 
-| Date       | Change                                                                                 | Log                                                                                    |
-| ---------- | -------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
-| 2026-08-14 | `m3l-cli` build-out (phases 8b-8g)                                                     | [m3l-cli-build-out](./2026-08-14-m3l-cli-build-out.md)                                 |
-| 2026-08-26 | U5 — declarative operations, fleet retrofit                                            | [u5-declarative-ops-fleet-retrofit](./2026-08-26-u5-declarative-ops-fleet-retrofit.md) |
-| 2026-09-01 | U12 — `m3l completion` (bash/zsh/fish)                                                 | [cli-shell-completion](./2026-09-01-cli-shell-completion.md)                           |
-| 2026-09-02 | U10 — orchestration engine + `m3l flow`                                                | [u10-orchestration-engine](./2026-09-02-u10-orchestration-engine.md)                   |
-| 2026-09-03 | U11 retry/resume/cancellation surfacing                                                | [u11-retry-resume-cancellation](./2026-09-03-u11-retry-resume-cancellation.md)         |
-| 2026-09-10 | `m3l flow run` pre-flight parameter-resolution check — issue #883, ADR-0101 (PR #1164) | [flow-preflight-required-params](./2026-09-10-flow-preflight-required-params.md)       |
-| 2026-09-12 | U13 slice P3 — release workflow + `check:publish-version` gate (PR #1217)              | [u13-registry-release-workflow](./2026-09-12-u13-registry-release-workflow.md)         |
+| Date       | Change                                                                                 | Log                                                                                                  |
+| ---------- | -------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| 2026-08-14 | `m3l-cli` build-out (phases 8b-8g)                                                     | [m3l-cli-build-out](./2026-08-14-m3l-cli-build-out.md)                                               |
+| 2026-08-26 | U5 — declarative operations, fleet retrofit                                            | [u5-declarative-ops-fleet-retrofit](./2026-08-26-u5-declarative-ops-fleet-retrofit.md)               |
+| 2026-09-01 | U12 — `m3l completion` (bash/zsh/fish)                                                 | [cli-shell-completion](./2026-09-01-cli-shell-completion.md)                                         |
+| 2026-09-02 | U10 — orchestration engine + `m3l flow`                                                | [u10-orchestration-engine](./2026-09-02-u10-orchestration-engine.md)                                 |
+| 2026-09-03 | U11 retry/resume/cancellation surfacing                                                | [u11-retry-resume-cancellation](./2026-09-03-u11-retry-resume-cancellation.md)                       |
+| 2026-09-10 | `m3l flow run` pre-flight parameter-resolution check — issue #883, ADR-0101 (PR #1164) | [flow-preflight-required-params](./2026-09-10-flow-preflight-required-params.md)                     |
+| 2026-09-12 | U13 slice P3 — release workflow + `check:publish-version` gate (PR #1217)              | [u13-registry-release-workflow](./2026-09-12-u13-registry-release-workflow.md)                       |
+| 2026-09-13 | U13 slice P4a — `scripts/*` specifier migration, 13 of 17 packages (PR #1221)          | [u13-registry-scripts-specifier-migration](./2026-09-13-u13-registry-scripts-specifier-migration.md) |
 
 > The first two rows pre-date this section; they were written but never
 > indexed here. Adding them is an index fix, not an edit to shipped history —
