@@ -186,7 +186,13 @@ import { Core } from "@m3l-automation/m3l-common";
  * `packages/m3l-cli/src/flow/validate.ts`'s own
  * `screenSecretParameters`, which only checks canonical names — a session
  * step can carry a literal alias key that a canonical-only screen would miss
- * entirely.
+ * entirely. `ERR_CONSOLE_SESSION_FLOW_EXPORT_EXISTS` is raised by
+ * `sessions/flow-export-writer.ts`'s `exportSessionFlow` when its
+ * exclusive-create write collides with an existing file at the target path
+ * and the caller did not pass `overwrite: true` — a caller-facing
+ * precondition failure, not a fault: the request is well-formed, but the
+ * flows directory's current state can't satisfy it without an explicit
+ * overwrite.
  *
  * @example
  * ```ts
@@ -237,7 +243,8 @@ export type M3LConsoleErrorCode =
   | "ERR_CONSOLE_AUDIT_RECORD_INVALID"
   | "ERR_CONSOLE_SESSION_FLOW_EXPORT_EMPTY"
   | "ERR_CONSOLE_SESSION_FLOW_EXPORT_INVALID"
-  | "ERR_CONSOLE_SESSION_FLOW_EXPORT_SECRET";
+  | "ERR_CONSOLE_SESSION_FLOW_EXPORT_SECRET"
+  | "ERR_CONSOLE_SESSION_FLOW_EXPORT_EXISTS";
 
 /**
  * Constructor options for {@link M3LConsoleError}.

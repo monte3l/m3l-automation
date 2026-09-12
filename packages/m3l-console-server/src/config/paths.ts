@@ -167,15 +167,27 @@ function defaultResolveDataDir(): string {
  * operator whose audit-root resolution failed to fix `m3l.console.db.path`
  * — a key they never set. Same drift class the sibling
  * {@link rejectUnsafeDirectoryRootPath} guard takes its `key` for.
+ *
+ * `directoryKind` names which base directory is being resolved (e.g.
+ * `"data"`, `"config"`) and is interpolated into the thrown message; it
+ * defaults to `"data"` so every existing call site anchored on
+ * `getDataDir()` needs no change. {@link resolveFlowsDirectory} passes
+ * `"config"` explicitly since it anchors on `getConfigDir()` instead — an
+ * operator whose `getConfigDir()` call fails must not be told their "data
+ * directory" failed to resolve.
  */
-function runResolveDataDir(resolveDataDir: () => string, key: string): string {
+function runResolveDataDir(
+  resolveDataDir: () => string,
+  key: string,
+  directoryKind = "data",
+): string {
   try {
     return resolveDataDir();
   } catch (cause) {
     if (cause instanceof M3LConsoleError) throw cause;
     throw new M3LConsoleError(
       CODE,
-      `failed to resolve the data directory for configuration key '${key}'`,
+      `failed to resolve the ${directoryKind} directory for configuration key '${key}'`,
       { cause, context: { key } },
     );
   }
@@ -466,6 +478,102 @@ export function resolveRunsOutputRoot(
   rejectUnsafeDirectoryRootPath(configuredPath, RUNS_OUTPUT_ROOT_KEY);
   return path.resolve(
     runResolveDataDir(resolveDataDir, RUNS_OUTPUT_ROOT_KEY),
+    configuredPath,
+  );
+}
+
+/** Dotted config key named in every flows-directory rejection message. */
+const FLOWS_ROOT_KEY = "m3l.console.flows.root";
+
+/** The path segment appended to the config dir for the default flows directory. */
+const DEFAULT_FLOWS_RELATIVE_SEGMENTS = ["flows"] as const;
+
+/** The default `resolveConfigDir`, unwrapped — {@link runResolveDataDir} wraps its failures. */
+function defaultResolveConfigDir(): string {
+  return new Core.M3LPaths().getConfigDir();
+}
+
+/**
+ * Constructor options for {@link resolveFlowsDirectory}.
+ *
+ * @example
+ * ```ts
+ * const options: ResolveFlowsDirectoryOptions = {
+ *   configuredPath: "custom-flows",
+ * };
+ * ```
+ */
+export interface ResolveFlowsDirectoryOptions {
+  /** The operator-supplied path, if any (typically from `M3L_CONSOLE_FLOWS_ROOT`). */
+  readonly configuredPath?: string | undefined;
+  /** Resolves the base CONFIG directory; defaults to `Core.M3LPaths().getConfigDir()`. */
+  readonly resolveConfigDir?: () => string;
+}
+
+/**
+ * Resolves the console server's flows directory (X13 session-flow-export
+ * module, issue #561, PR 5/6) — where {@link
+ * "../sessions/flow-export-writer.js".exportSessionFlow} writes a session's
+ * composed flow document.
+ *
+ * A DELIBERATE divergence from every sibling resolver in this file
+ * ({@link resolveStoreDatabasePath}, {@link resolveSessionArtifactRoot},
+ * {@link resolveAuditStreamRoot}, {@link resolveRunsOutputRoot}): those all
+ * anchor on `Core.M3LPaths().getDataDir()`. This resolver anchors on
+ * `Core.M3LPaths().getConfigDir()` instead, via the injectable
+ * `resolveConfigDir` option — because `packages/m3l-cli/src/flow/load.ts`
+ * resolves flow definitions from `<workspaceRoot>/data/config/flows`, and
+ * this resolver exists to reproduce that exact path so the console server
+ * writes exports where the CLI already looks for them. The flows directory
+ * is a directory another tool (`m3l flow`) owns, not console-runtime data,
+ * so anchoring it on `getDataDir()` like every sibling resolver here would
+ * be the wrong anchor.
+ *
+ * Performs no filesystem I/O whatsoever — it is a pure path computation,
+ * mirroring {@link resolveSessionArtifactRoot}'s own shape (down to reusing
+ * {@link runResolveDataDir} for the config-dir resolution step: that helper
+ * is generic over any `() => string` resolver and dotted-key string despite
+ * its name, so it wraps a config-dir failure exactly as it does a data-dir
+ * one). Creating the directory itself is the writer's own job.
+ *
+ * When `options.configuredPath` is absent, the result defaults to
+ * `<configDir>/flows`. A relative `configuredPath` resolves against the
+ * config directory; an absolute one passes through {@link path.resolve}
+ * unchanged.
+ *
+ * A `configuredPath` that is blank/whitespace-only or `file:`-prefixed is
+ * rejected — see {@link rejectUnsafeDirectoryRootPath}.
+ *
+ * @param options - See {@link ResolveFlowsDirectoryOptions}.
+ * @returns The resolved, absolute flows directory.
+ * @throws {@link M3LConsoleError} `ERR_CONSOLE_CONFIG_INVALID` — for a
+ * rejected `configuredPath`, or when `resolveConfigDir` throws.
+ *
+ * @example
+ * ```ts
+ * import { resolveFlowsDirectory } from "./config/paths.js";
+ *
+ * const flowsDir = resolveFlowsDirectory({
+ *   configuredPath: process.env["M3L_CONSOLE_FLOWS_ROOT"],
+ * });
+ * ```
+ */
+export function resolveFlowsDirectory(
+  options: ResolveFlowsDirectoryOptions = {},
+): string {
+  const resolveConfigDir = options.resolveConfigDir ?? defaultResolveConfigDir;
+  const configuredPath = options.configuredPath;
+
+  if (configuredPath === undefined) {
+    return path.join(
+      runResolveDataDir(resolveConfigDir, FLOWS_ROOT_KEY, "config"),
+      ...DEFAULT_FLOWS_RELATIVE_SEGMENTS,
+    );
+  }
+
+  rejectUnsafeDirectoryRootPath(configuredPath, FLOWS_ROOT_KEY);
+  return path.resolve(
+    runResolveDataDir(resolveConfigDir, FLOWS_ROOT_KEY, "config"),
     configuredPath,
   );
 }
