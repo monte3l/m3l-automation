@@ -44,12 +44,15 @@ describe("registryPathSegment", () => {
     );
   });
 
-  test("only the FIRST slash is replaced — a name with a second slash keeps it literal", () => {
-    // String.replace with a string pattern (not a /g regex) only replaces
-    // the first occurrence — this is deliberate, not accidental: a
-    // real scoped package name has exactly one slash, but this pins the
-    // documented one-replacement contract explicitly.
-    expect(registryPathSegment("@scope/pkg/sub")).toBe("@scope%2Fpkg/sub");
+  test("EVERY slash is replaced — a name with a second slash is also encoded", () => {
+    // Uses String.replaceAll (not a single-occurrence replace) so every `/`
+    // in the name is percent-encoded, not just the first — this is the
+    // exact defect CodeQL flagged ("Incomplete string escaping or encoding")
+    // against the prior `replace("/", "%2F")` implementation, which left a
+    // second slash literal. A real scoped package name has exactly one
+    // slash, but this confirms the fix actually encodes every occurrence
+    // rather than only the first.
+    expect(registryPathSegment("@scope/pkg/sub")).toBe("@scope%2Fpkg%2Fsub");
   });
 
   test("a name with no slash at all is returned unchanged, not crashed on", () => {

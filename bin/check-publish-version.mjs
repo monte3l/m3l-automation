@@ -64,7 +64,7 @@ export function readPublishTarget(repoRootDir) {
  * @returns {string}
  */
 export function registryPathSegment(name) {
-  return name.replace("/", "%2F");
+  return name.replaceAll("/", "%2F");
 }
 
 /**
