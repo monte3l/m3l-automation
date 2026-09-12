@@ -360,6 +360,34 @@ const CLASSIFICATION_BY_CODE: Record<M3LConsoleErrorCode, ErrorClassification> =
       retryable: false,
       fault: false,
     },
+    // X13 session-flow-export (`sessions/flow-export.ts`). An empty session
+    // (no recorded steps) is a caller-facing precondition failure — same 409
+    // reasoning as ERR_CONSOLE_RUN_NOT_CANCELLABLE: the request is
+    // well-formed, but the session's current state can't satisfy it.
+    ERR_CONSOLE_SESSION_FLOW_EXPORT_EMPTY: {
+      status: STATUS_CONFLICT,
+      origin: "caller",
+      retryable: false,
+      fault: false,
+    },
+    // An invalid requested flow name, or a step's persisted parameters not
+    // all being plain strings, is a caller input problem caught before any
+    // write — same reasoning as ERR_CONSOLE_SESSION_REFERENCE_INVALID.
+    ERR_CONSOLE_SESSION_FLOW_EXPORT_INVALID: {
+      status: STATUS_BAD_REQUEST,
+      origin: "caller",
+      retryable: false,
+      fault: false,
+    },
+    // A parameter (by canonical name OR declared alias) the target script
+    // marks secret refuses the export outright rather than writing a
+    // credential-bearing literal to disk — caller-facing, not a fault.
+    ERR_CONSOLE_SESSION_FLOW_EXPORT_SECRET: {
+      status: STATUS_CONFLICT,
+      origin: "caller",
+      retryable: false,
+      fault: false,
+    },
   };
 
 /**

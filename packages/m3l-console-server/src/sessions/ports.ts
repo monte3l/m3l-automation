@@ -185,3 +185,55 @@ export interface M3LSessionRunEventSink {
   /** Publishes `event`. Never throws — an event sink must not become a run failure mode. */
   publish(event: M3LSessionRunEvent): void;
 }
+
+/**
+ * One declared parameter fact for a script, as reported by
+ * {@link M3LSessionScriptCatalogPort.describe} — mirrors `runs/descriptors.ts`'s
+ * per-parameter descriptor shape field for field (name, its declared
+ * aliases, and whether it is secret).
+ *
+ * @example
+ * ```ts
+ * const fact: M3LSessionScriptParameterFact = {
+ *   name: "queueName",
+ *   aliases: ["q"],
+ *   secret: true,
+ * };
+ * ```
+ */
+export interface M3LSessionScriptParameterFact {
+  /** The parameter's canonical name. */
+  readonly name: string;
+  /** Every alias this parameter also accepts. */
+  readonly aliases: readonly string[];
+  /** Whether this parameter is declared secret — never eligible for literal export. */
+  readonly secret: boolean;
+}
+
+/**
+ * The local script-catalog port `sessions/flow-export.ts` depends on —
+ * mirrors `runs/descriptors.ts`'s `describe` field for field, so the real
+ * catalog satisfies it structurally without a `sessions -> runs` import.
+ *
+ * @example
+ * ```ts
+ * import type { M3LSessionScriptCatalogPort } from "@m3l-automation/m3l-console-server/sessions/ports";
+ *
+ * async function isSecret(
+ *   catalog: M3LSessionScriptCatalogPort,
+ *   script: string,
+ *   parameterName: string,
+ * ): Promise<boolean> {
+ *   const { parameters } = await catalog.describe(script);
+ *   return parameters.some(
+ *     (p) => p.secret && (p.name === parameterName || p.aliases.includes(parameterName)),
+ *   );
+ * }
+ * ```
+ */
+export interface M3LSessionScriptCatalogPort {
+  /** Resolves `name`'s declared parameter facts; throws propagated unchanged from the real catalog. */
+  describe(
+    name: string,
+  ): Promise<{ readonly parameters: readonly M3LSessionScriptParameterFact[] }>;
+}

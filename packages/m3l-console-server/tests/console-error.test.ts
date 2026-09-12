@@ -13,7 +13,7 @@ import {
 import type { M3LConsoleErrorCode } from "../src/errors/console-error.js";
 
 describe("M3LConsoleErrorCode", () => {
-  test("is the exact thirty-nine-member union the contract declares (X2/X3-A1/X4/X6/X7/X8/X10b)", () => {
+  test("is the exact forty-two-member union the contract declares (X2/X3-A1/X4/X6/X7/X8/X10b/X13)", () => {
     expectTypeOf<M3LConsoleErrorCode>().toEqualTypeOf<
       | "ERR_CONSOLE_CONFIG_INVALID"
       | "ERR_CONSOLE_BAD_REQUEST"
@@ -54,6 +54,9 @@ describe("M3LConsoleErrorCode", () => {
       | "ERR_CONSOLE_SCRIPT_INTROSPECTION_FAILED"
       | "ERR_CONSOLE_AUDIT_WRITE_FAILED"
       | "ERR_CONSOLE_AUDIT_RECORD_INVALID"
+      | "ERR_CONSOLE_SESSION_FLOW_EXPORT_EMPTY"
+      | "ERR_CONSOLE_SESSION_FLOW_EXPORT_INVALID"
+      | "ERR_CONSOLE_SESSION_FLOW_EXPORT_SECRET"
     >();
   });
 
@@ -300,6 +303,39 @@ describe("M3LConsoleError — ERR_CONSOLE_SESSION_ARTIFACT_* (X6 slice 3)", () =
       // catalog (see the module doc comment) — these two new session-
       // artifact codes stay unclassified by Core.classifyErrorCode, same as
       // every existing ERR_CONSOLE_* code.
+      expect(Core.classifyErrorCode(error.code)).toBeUndefined();
+    },
+  );
+});
+
+describe("M3LConsoleError — ERR_CONSOLE_SESSION_FLOW_EXPORT_* (X13)", () => {
+  test.each<[M3LConsoleErrorCode, string]>([
+    [
+      "ERR_CONSOLE_SESSION_FLOW_EXPORT_EMPTY",
+      "the session has no steps to export",
+    ],
+    [
+      "ERR_CONSOLE_SESSION_FLOW_EXPORT_INVALID",
+      "the requested flow name or a step's parameters are not exportable",
+    ],
+    [
+      "ERR_CONSOLE_SESSION_FLOW_EXPORT_SECRET",
+      "a step parameter is declared secret and cannot be written to a flow file",
+    ],
+  ])(
+    "constructs %s and is caught by isConsoleError and instanceof Core.M3LError",
+    (code, message) => {
+      const error = new M3LConsoleError(code, message);
+
+      expect(error.code).toBe(code);
+      expect(error.message).toBe(message);
+      expect(isConsoleError(error)).toBe(true);
+      expect(error).toBeInstanceOf(Core.M3LError);
+      expect(error).toBeInstanceOf(Error);
+      // ERR_CONSOLE_* is deliberately absent from Core's own classification
+      // catalog (see the module doc comment) — these three X13
+      // session-flow-export codes stay unclassified by
+      // Core.classifyErrorCode, same as every existing ERR_CONSOLE_* code.
       expect(Core.classifyErrorCode(error.code)).toBeUndefined();
     },
   );
