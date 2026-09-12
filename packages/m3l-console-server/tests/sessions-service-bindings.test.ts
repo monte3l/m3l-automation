@@ -19,6 +19,7 @@ import { M3LConsoleError } from "../src/errors/console-error.js";
 import { encodeArtifactRef } from "../src/sessions/artifact-codec.js";
 import type { M3LSessionArtifactRef } from "../src/sessions/artifact-codec.js";
 import type { M3LSessionArtifactStore } from "../src/sessions/artifacts.js";
+import type { M3LSessionScriptCatalogPort } from "../src/sessions/ports.js";
 import { createSessionService } from "../src/sessions/service.js";
 import type {
   CreateSessionServiceOptions,
@@ -45,6 +46,13 @@ import type { RunExecutionMode } from "../src/store/runs-repository.js";
 // mirrored from the real store/sessions-repository.ts (including the two
 // new methods this same task's Part A adds: attachStepRun/getStepByRunId).
 // ---------------------------------------------------------------------------
+
+/** No script declares any secret parameter — no test in this file calls `exportFlow`, so this is a minimal, always-empty stand-in for the required `scripts` port. */
+function nonSecretCatalog(): M3LSessionScriptCatalogPort {
+  return {
+    describe: () => Promise.resolve({ parameters: [] }),
+  };
+}
 
 /** The narrow slice of `M3LConsoleSessionsRepository` (plus the two new Part-A methods) this service depends on. */
 interface FakeSessionsRepository extends M3LConsoleSessionsRepository {
@@ -453,6 +461,10 @@ function buildHarness(
     openSessionsMax: 10,
     newId: () => `id-${String(idCounter++)}`,
     nowMs: () => clock.ms,
+    // Never a real sandbox — no test in this file ever calls `exportFlow`,
+    // so this path is never actually written to.
+    scripts: nonSecretCatalog(),
+    flowsDirectory: "/dev/null/unused-default-flows-directory",
     ...overrides,
   });
 

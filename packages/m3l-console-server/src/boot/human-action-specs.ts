@@ -331,6 +331,23 @@ export const HUMAN_ACTION_SPECS: ReadonlyMap<string, HumanActionSpec> = new Map<
     },
   ],
   [
+    // X13 Round B's flow export. Targets the SESSION, mirroring
+    // `session.step.add` immediately above: the exported flow file has no id
+    // of its own to target, and the session is what an operator recognises
+    // this action by. `posture` is `"confirmed"` unconditionally, like
+    // `session.binding.select` — this route carries no `dryRun`/`confirmed`
+    // fields of its own for `postureOf` to read.
+    "POST /api/v1/sessions/:id/flow-export",
+    {
+      action: "session.flow.export",
+      phase: "before",
+      project: (ctx) => ({
+        target: { kind: "session", id: param(ctx, "id") },
+        posture: "confirmed",
+      }),
+    },
+  ],
+  [
     "POST /api/v1/sessions/:id/steps/:stepId/decision",
     {
       action: "session.decision.raise",

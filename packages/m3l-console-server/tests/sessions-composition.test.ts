@@ -39,6 +39,7 @@ import type {
   M3LSessionRunEvent,
   M3LSessionRunHandle,
   M3LSessionRunLauncherPort,
+  M3LSessionScriptCatalogPort,
 } from "../src/sessions/ports.js";
 import type {
   M3LConsoleSessionsRepository,
@@ -253,6 +254,16 @@ function createFakeSessionsRepository(
 // Fake M3LSessionRunLauncherPort
 // ---------------------------------------------------------------------------
 
+/** No script declares any secret parameter — the default `scripts` fixture. */
+function createNonSecretCatalog(): M3LSessionScriptCatalogPort {
+  return {
+    describe: () =>
+      Promise.resolve({
+        parameters: [{ name: "command", aliases: [], secret: false }],
+      }),
+  };
+}
+
 function createFakeLauncher(): M3LSessionRunLauncherPort {
   let counter = 0;
   return {
@@ -323,6 +334,11 @@ function buildOptions(
       return () => `id-${String(counter++)}`;
     })(),
     nowMs: () => 1_000,
+    // Never a real sandbox by default — no test in this file exercises
+    // `exportFlow` beyond the "callable" smoke proof below, which never
+    // writes to disk.
+    scripts: createNonSecretCatalog(),
+    flowsDirectory: "/dev/null/unused-default-flows-directory",
     ...overrides,
   };
 }
@@ -381,6 +397,16 @@ describe("createSessionSubsystem — .service is a working M3LSessionService", (
     expect(thrown).toMatchObject({
       code: "ERR_CONSOLE_SESSION_LIMIT_EXCEEDED",
     });
+  });
+
+  // X13 Round B: a thin wiring-reaches-through proof — not a re-test of
+  // Round A's/`service-flow-export.ts`'s own contract, which
+  // `sessions-flow-export-writer.test.ts`/`sessions-service-flow-export.test.ts`
+  // already own.
+  test("exposes exportFlow as a callable method of the constructed service", () => {
+    const subsystem = createSessionSubsystem(buildOptions());
+
+    expect(typeof subsystem.service.exportFlow).toBe("function");
   });
 });
 
@@ -470,6 +496,8 @@ describe("M3LSessionSubsystemOptions / M3LSessionSubsystem", () => {
       logger: new Core.M3LLogger([]),
       newId: vi.fn(() => "id"),
       nowMs: vi.fn(() => 0),
+      scripts: createNonSecretCatalog(),
+      flowsDirectory: "/tmp/flows",
     };
 
     const subsystem = createSessionSubsystem(options);

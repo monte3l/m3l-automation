@@ -113,3 +113,71 @@ export function readRequiredBoolean(
   }
   return value;
 }
+
+/**
+ * Validates and returns an optional, non-empty string field: `undefined`
+ * when absent (or explicitly set to `undefined`), the validated string
+ * otherwise.
+ *
+ * @param body - The object to read `field` from.
+ * @param field - The actual object key to look up.
+ * @param label - The field name reported in a rejection message; defaults
+ *   to `field`.
+ * @returns The validated value, or `undefined` when the field is absent.
+ * @throws {@link M3LConsoleError} `ERR_CONSOLE_BAD_REQUEST` when present but
+ *   not a string, or empty.
+ *
+ * @example
+ * ```ts
+ * import { readOptionalNonEmptyString } from "@m3l-automation/m3l-console-server/http/routes/session-body.js";
+ *
+ * readOptionalNonEmptyString({}, "description"); // undefined
+ * ```
+ */
+export function readOptionalNonEmptyString(
+  body: Record<string, unknown>,
+  field: string,
+  label: string = field,
+): string | undefined {
+  const value = body[field];
+  if (value === undefined) return undefined;
+  if (!Core.isString(value)) {
+    rejectBody(label, "must be a string");
+  }
+  if (value.length === 0) {
+    rejectBody(label, "must not be empty");
+  }
+  return value;
+}
+
+/**
+ * Validates and returns an optional boolean field: `undefined` when absent
+ * (or explicitly set to `undefined`), the validated boolean otherwise.
+ *
+ * @param body - The object to read `field` from.
+ * @param field - The actual object key to look up.
+ * @param label - The field name reported in a rejection message; defaults
+ *   to `field`.
+ * @returns The validated value, or `undefined` when the field is absent.
+ * @throws {@link M3LConsoleError} `ERR_CONSOLE_BAD_REQUEST` when present but
+ *   not a boolean.
+ *
+ * @example
+ * ```ts
+ * import { readOptionalBoolean } from "@m3l-automation/m3l-console-server/http/routes/session-body.js";
+ *
+ * readOptionalBoolean({}, "overwrite"); // undefined
+ * ```
+ */
+export function readOptionalBoolean(
+  body: Record<string, unknown>,
+  field: string,
+  label: string = field,
+): boolean | undefined {
+  const value = body[field];
+  if (value === undefined) return undefined;
+  if (!Core.isBoolean(value)) {
+    rejectBody(label, "must be a boolean");
+  }
+  return value;
+}

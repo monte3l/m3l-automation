@@ -53,6 +53,8 @@ import type { M3LConsoleRunsConfig } from "../src/config/runs.js";
 import type { M3LConsoleSessionsConfig } from "../src/config/sessions.js";
 import type { M3LRunSubsystem } from "../src/runs/composition.js";
 import type { M3LRunRegistry } from "../src/runs/registry.js";
+import { createSessionSubsystem } from "../src/sessions/composition.js";
+import type * as SessionsCompositionModule from "../src/sessions/composition.js";
 import type { M3LSessionSubsystem } from "../src/sessions/composition.js";
 import type {
   M3LConsoleSessionsRepository,
@@ -87,9 +89,31 @@ vi.mock("node:child_process", async () => {
   return { ...actual, spawn: vi.fn() };
 });
 
+// Wraps the REAL `createSessionSubsystem` (never replaces its behavior —
+// every existing test in this file still exercises the genuine composition
+// wiring) purely so the catalog-threading test below can inspect what
+// `buildSessionSubsystem` actually passed it, by identity. Same
+// async-importActual-preserving-factory shape as the two mocks above,
+// applied to a sibling `src` module instead of a node builtin.
+vi.mock("../src/sessions/composition.js", async () => {
+  const actual = await vi.importActual<typeof SessionsCompositionModule>(
+    "../src/sessions/composition.js",
+  );
+  return {
+    ...actual,
+    createSessionSubsystem: vi.fn(actual.createSessionSubsystem),
+  };
+});
+
 afterEach(() => {
   vi.restoreAllMocks();
   vi.mocked(childProcess.spawn).mockReset();
+  // `mockClear()`, not `mockReset()`: the factory above sets this mock's
+  // IMPLEMENTATION to the real `createSessionSubsystem` via
+  // `vi.fn(actual.createSessionSubsystem)` — `mockReset()` would also wipe
+  // that implementation, breaking every other test in this file that relies
+  // on the real composition wiring still running underneath.
+  vi.mocked(createSessionSubsystem).mockClear();
 });
 
 // ---------------------------------------------------------------------------
@@ -775,6 +799,77 @@ describe("buildConsoleSubsystems — session artifact root resolution", () => {
     expect(() =>
       subsystems.sessions?.service.createSession("alice", "corr-1"),
     ).not.toThrow();
+  });
+});
+
+// X13 Round B: the flows directory resolution, mirroring the artifact-root
+// block immediately above verbatim — same "doesn't throw" proof style,
+// since (like the artifact root) `resolveFlowsDirectory` performs no
+// filesystem I/O itself and a plain string configuredPath cannot otherwise
+// be observed through the constructed subsystem's public surface without a
+// full exportFlow() call.
+describe("buildConsoleSubsystems — flows directory resolution", () => {
+  test("a configured M3L_CONSOLE_FLOWS_ROOT reaches the constructed subsystem without throwing", () => {
+    const subsystems = buildConsoleSubsystems(
+      {
+        env: buildEnv({ M3L_CONSOLE_FLOWS_ROOT: "custom/flows" }),
+        runsConfig: MINIMAL_RUNS_CONFIG,
+        runs: createFakeRunRegistry(),
+        sessionsConfig: MINIMAL_SESSIONS_CONFIG,
+        sessions: createFakeSessionsRepository(),
+      },
+      new Core.M3LLogger([]),
+    );
+
+    expect(subsystems.sessions).not.toBeUndefined();
+    expect(() =>
+      subsystems.sessions?.service.createSession("alice", "corr-1"),
+    ).not.toThrow();
+  });
+
+  test("an absent M3L_CONSOLE_FLOWS_ROOT falls back to the default config-dir-relative root without throwing", () => {
+    const subsystems = buildConsoleSubsystems(
+      {
+        env: buildEnv(),
+        runsConfig: MINIMAL_RUNS_CONFIG,
+        runs: createFakeRunRegistry(),
+        sessionsConfig: MINIMAL_SESSIONS_CONFIG,
+        sessions: createFakeSessionsRepository(),
+      },
+      new Core.M3LLogger([]),
+    );
+
+    expect(subsystems.sessions).not.toBeUndefined();
+    expect(() =>
+      subsystems.sessions?.service.createSession("alice", "corr-1"),
+    ).not.toThrow();
+  });
+});
+
+// X13 Round B: proves the run subsystem's OWN `catalog` reaches the session
+// subsystem as its `scripts` dependency, by identity — not merely "some
+// catalog was passed". `createSessionSubsystem` is wrapped (not replaced;
+// see the `vi.mock` above) so its call args are inspectable while every
+// other test in this file still exercises the real composition wiring
+// underneath.
+describe("buildConsoleSubsystems — the run subsystem's catalog reaches the session subsystem", () => {
+  test("createSessionSubsystem is called with the run subsystem's own catalog as `scripts`, by identity", () => {
+    const subsystems = buildConsoleSubsystems(
+      {
+        env: buildEnv(),
+        runsConfig: MINIMAL_RUNS_CONFIG,
+        runs: createFakeRunRegistry(),
+        sessionsConfig: MINIMAL_SESSIONS_CONFIG,
+        sessions: createFakeSessionsRepository(),
+      },
+      new Core.M3LLogger([]),
+    );
+
+    expect(subsystems.runs).toBeDefined();
+    expect(subsystems.sessions).toBeDefined();
+    const call = vi.mocked(createSessionSubsystem).mock.calls[0];
+    expect(call).toBeDefined();
+    expect(call?.[0].scripts).toBe(subsystems.runs?.catalog);
   });
 });
 

@@ -130,6 +130,14 @@ const fakeSessionService: SessionRouteReaderPort & SessionRouteWriterPort = {
   listBindingsForSession: () => [],
   listStepsForSession: () => [],
   listDecisionsForSession: () => [],
+  exportFlow: () =>
+    Promise.resolve({
+      name: "x",
+      yaml: "",
+      steps: [],
+      decisionsDropped: 0,
+      path: "/x",
+    }),
 };
 
 /** The thirteen session-module routes `createBuiltInRoutes` must add when `options.sessions` is supplied. */

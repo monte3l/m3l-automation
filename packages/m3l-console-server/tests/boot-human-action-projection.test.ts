@@ -14,6 +14,7 @@ import { describe, expect, test } from "vitest";
 import type { M3LHumanActionAuditPort } from "../src/audit/port.js";
 import type { M3LHumanActionRecord } from "../src/audit/record.js";
 import { applyHumanActionAudit } from "../src/boot/human-action-audit.js";
+import { HUMAN_ACTION_SPECS } from "../src/boot/human-action-specs.js";
 import {
   createRequestContext,
   withBody,
@@ -287,6 +288,55 @@ describe("per-route projection", () => {
     expect(record.action).toBe(action);
     expect(record.target).toEqual({ kind: "session", id: "sess-1" });
     expect(record.posture).toBe("confirmed");
+  });
+
+  // X13 Round B's new write route. Mirrors the "POST …/steps →
+  // session.step.add" case immediately above: targets the SESSION (the
+  // exported flow file has no id of its own to target), `phase: "before"`
+  // like every other write in this table.
+  test("POST …/flow-export → session.flow.export, targeting the session", async () => {
+    const record = await recordFor({
+      method: "POST",
+      path: "/api/v1/sessions/:id/flow-export",
+      url: "http://127.0.0.1/api/v1/sessions/sess-1/flow-export",
+      params: { id: "sess-1" },
+      body: { name: "dlq-reconcile" },
+    });
+
+    expect(record.action).toBe("session.flow.export");
+    expect(record.target).toEqual({ kind: "session", id: "sess-1" });
+    expect(record.posture).toBe("confirmed");
+  });
+});
+
+// X13 Round B: the spec's own declared fields, read directly off
+// `HUMAN_ACTION_SPECS` — `phase` has no OTHER observable surface through
+// `recordFor` above (a write and a view differ only in WHEN the entry is
+// written, which `boot-human-action-audit.test.ts`'s gate tests cover for
+// the table as a whole), so this is the one place `phase: "before"` is
+// pinned for this specific route.
+describe("POST /api/v1/sessions/:id/flow-export spec", () => {
+  test("action session.flow.export, phase before, targets the session by :id param", () => {
+    const spec = HUMAN_ACTION_SPECS.get(
+      "POST /api/v1/sessions/:id/flow-export",
+    );
+
+    expect(spec).toBeDefined();
+    if (spec === undefined) return;
+
+    expect(spec.action).toBe("session.flow.export");
+    expect(spec.phase).toBe("before");
+
+    const base = createRequestContext({
+      method: "POST",
+      url: "http://127.0.0.1/api/v1/sessions/sess-9/flow-export",
+      headers: {},
+      signal: new AbortController().signal,
+    });
+    const ctx = withParams(base, { id: "sess-9" });
+    const projection = spec.project(ctx);
+
+    expect(projection.target).toEqual({ kind: "session", id: "sess-9" });
   });
 });
 

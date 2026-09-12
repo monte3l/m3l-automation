@@ -13,7 +13,7 @@ import {
 import type { M3LConsoleErrorCode } from "../src/errors/console-error.js";
 
 describe("M3LConsoleErrorCode", () => {
-  test("is the exact forty-two-member union the contract declares (X2/X3-A1/X4/X6/X7/X8/X10b/X13)", () => {
+  test("is the exact forty-three-member union the contract declares (X2/X3-A1/X4/X6/X7/X8/X10b/X13)", () => {
     expectTypeOf<M3LConsoleErrorCode>().toEqualTypeOf<
       | "ERR_CONSOLE_CONFIG_INVALID"
       | "ERR_CONSOLE_BAD_REQUEST"
@@ -57,6 +57,7 @@ describe("M3LConsoleErrorCode", () => {
       | "ERR_CONSOLE_SESSION_FLOW_EXPORT_EMPTY"
       | "ERR_CONSOLE_SESSION_FLOW_EXPORT_INVALID"
       | "ERR_CONSOLE_SESSION_FLOW_EXPORT_SECRET"
+      | "ERR_CONSOLE_SESSION_FLOW_EXPORT_EXISTS"
     >();
   });
 
@@ -322,6 +323,10 @@ describe("M3LConsoleError — ERR_CONSOLE_SESSION_FLOW_EXPORT_* (X13)", () => {
       "ERR_CONSOLE_SESSION_FLOW_EXPORT_SECRET",
       "a step parameter is declared secret and cannot be written to a flow file",
     ],
+    [
+      "ERR_CONSOLE_SESSION_FLOW_EXPORT_EXISTS",
+      "a flow file with this name already exists and overwrite was not requested",
+    ],
   ])(
     "constructs %s and is caught by isConsoleError and instanceof Core.M3LError",
     (code, message) => {
@@ -333,7 +338,7 @@ describe("M3LConsoleError — ERR_CONSOLE_SESSION_FLOW_EXPORT_* (X13)", () => {
       expect(error).toBeInstanceOf(Core.M3LError);
       expect(error).toBeInstanceOf(Error);
       // ERR_CONSOLE_* is deliberately absent from Core's own classification
-      // catalog (see the module doc comment) — these three X13
+      // catalog (see the module doc comment) — these four X13
       // session-flow-export codes stay unclassified by
       // Core.classifyErrorCode, same as every existing ERR_CONSOLE_* code.
       expect(Core.classifyErrorCode(error.code)).toBeUndefined();

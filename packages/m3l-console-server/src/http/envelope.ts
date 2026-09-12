@@ -388,6 +388,17 @@ const CLASSIFICATION_BY_CODE: Record<M3LConsoleErrorCode, ErrorClassification> =
       retryable: false,
       fault: false,
     },
+    // A colliding target filename (no `overwrite: true` requested) is a
+    // caller-facing precondition failure — same 409 reasoning as the other
+    // three X13 codes above: the request is well-formed, but the flows
+    // directory's current state can't satisfy it without an explicit
+    // overwrite.
+    ERR_CONSOLE_SESSION_FLOW_EXPORT_EXISTS: {
+      status: STATUS_CONFLICT,
+      origin: "caller",
+      retryable: false,
+      fault: false,
+    },
   };
 
 /**

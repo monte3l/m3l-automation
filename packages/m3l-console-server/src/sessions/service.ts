@@ -45,6 +45,8 @@ import { buildSessionBindingMethods } from "./service-bindings.js";
 import type { SessionBindingMethods } from "./service-bindings.js";
 import { buildSessionReadMethods } from "./service-reads.js";
 import type { SessionReadMethods } from "./service-reads.js";
+import { buildSessionFlowExportMethods } from "./service-flow-export.js";
+import type { SessionFlowExportMethods } from "./service-flow-export.js";
 import type {
   M3LSessionAddStepBinding,
   M3LSessionAddStepInput,
@@ -54,6 +56,7 @@ import type {
   M3LSessionRunEvent,
   M3LSessionRunHandle,
   M3LSessionRunLauncherPort,
+  M3LSessionScriptCatalogPort,
 } from "./ports.js";
 
 /**
@@ -99,6 +102,10 @@ export interface CreateSessionServiceOptions {
   readonly newId: () => string;
   /** The current time, in epoch milliseconds — injected for determinism. */
   readonly nowMs: () => number;
+  /** The script catalog used to screen an exported flow's parameter keys for secrecy (X13). */
+  readonly scripts: M3LSessionScriptCatalogPort;
+  /** The directory an exported flow document is written into (X13). */
+  readonly flowsDirectory: string;
 }
 
 /**
@@ -115,7 +122,7 @@ export interface CreateSessionServiceOptions {
  * ```
  */
 export interface M3LSessionService
-  extends SessionReadMethods, SessionBindingMethods {
+  extends SessionReadMethods, SessionBindingMethods, SessionFlowExportMethods {
   /**
    * Creates a new open session.
    *
@@ -641,5 +648,6 @@ export function createSessionService(
     ...buildDecisionServiceMethods(options),
     ...buildSessionReadMethods(options),
     ...buildSessionBindingMethods(options),
+    ...buildSessionFlowExportMethods(options),
   };
 }
