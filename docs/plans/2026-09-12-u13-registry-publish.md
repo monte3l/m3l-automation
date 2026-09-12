@@ -1,6 +1,6 @@
 # U13 — private-registry publishing: scope rename + staged first release (2026-09-12)
 
-- **Status:** in progress — slice 1 of 4 (this PR)
+- **Status:** in progress — slice 1 of 4 landed (PR #1214), slice 2 in progress
 - **Owner:** Enrico Lionello (maintainer)
 - **Decisions:** [ADR-0103](../adr/0103-publish-scope-rename-and-staged-first-release.md)
   (partially supersedes [ADR-0057](../adr/0057-private-registry-distribution.md)
@@ -38,9 +38,9 @@ same `## Landing plan` heading and `| Slice | Branch | Scope | Status |`
 table a submodule's reference page carries, gated by
 `pnpm check:landing-plans`.
 
-| Slice | Branch                                | Scope                                                                                                           | Status      |
-| ----- | ------------------------------------- | --------------------------------------------------------------------------------------------------------------- | ----------- |
-| P1    | `feat/u13-registry-publish-adr`       | ADR-0103 amending ADR-0057 + this landing-plan doc (Stage 1)                                                    | In progress |
-| P2    | `feat/u13-registry-rename`            | Rename `m3l-common` to `@monte3l/m3l-common` behind a workspace alias (Stage 2)                                 | Not started |
-| P3    | `feat/u13-registry-release-workflow`  | `publishConfig`, `release.yml`, `check:publish-version`, consumer install docs, security-prose update (Stage 3) | Not started |
-| P4    | `feat/u13-registry-specifier-cleanup` | Migrate import specifiers to `@monte3l/m3l-common`, drop the alias (Stage 4, optional)                          | Not started |
+| Slice | Branch                                | Scope                                                                                                           | Status            |
+| ----- | ------------------------------------- | --------------------------------------------------------------------------------------------------------------- | ----------------- |
+| P1    | `feat/u13-registry-publish-adr`       | ADR-0103 amending ADR-0057 + this landing-plan doc (Stage 1)                                                    | Landed (PR #1214) |
+| P2    | `feat/u13-registry-rename`            | Rename `m3l-common` to `@monte3l/m3l-common` behind a workspace alias (Stage 2)                                 | In progress       |
+| P3    | `feat/u13-registry-release-workflow`  | `publishConfig`, `release.yml`, `check:publish-version`, consumer install docs, security-prose update (Stage 3) | Not started       |
+| P4    | `feat/u13-registry-specifier-cleanup` | Migrate import specifiers to `@monte3l/m3l-common`, drop the alias (Stage 4, optional)                          | Not started       |
