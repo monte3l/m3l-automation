@@ -173,6 +173,8 @@ interface FakeRepositoryHandle {
   readonly repository: M3LConsoleSessionsRepository;
   /** Number of times `listStepsForSession` was called — proves ordering of validation vs. lookup. */
   listStepsForSessionCallCount: number;
+  /** Number of times `listBindingsForSession` was called — proves it is hoisted above the per-step loop, not called once per step. */
+  listBindingsForSessionCallCount: number;
 }
 
 /** A minimal, Map-free fake repository: only the three read methods this module needs are backed by fixture data; every other method throws if reached. */
@@ -181,6 +183,7 @@ function createFakeRepository(
 ): FakeRepositoryHandle {
   const handle: FakeRepositoryHandle = {
     listStepsForSessionCallCount: 0,
+    listBindingsForSessionCallCount: 0,
     repository: {
       insertSession: () => notImplemented("insertSession"),
       getSession: (id: string) =>
@@ -200,8 +203,12 @@ function createFakeRepository(
       attachStepRun: () => notImplemented("attachStepRun"),
       getStepByRunId: () => notImplemented("getStepByRunId"),
       insertBinding: () => notImplemented("insertBinding"),
-      listBindingsForSession: (sessionId: string) =>
-        options.session?.id === sessionId ? (options.bindings ?? []) : [],
+      listBindingsForSession: (sessionId: string) => {
+        handle.listBindingsForSessionCallCount += 1;
+        return options.session?.id === sessionId
+          ? (options.bindings ?? [])
+          : [];
+      },
       insertDecision: () => notImplemented("insertDecision"),
       answerDecision: () => notImplemented("answerDecision"),
       getDecision: () => notImplemented("getDecision"),
@@ -249,12 +256,19 @@ function nonSecretCatalog(): M3LSessionScriptCatalogPort {
   return createFakeScriptCatalog(new Map([["sqs-etl", sqsEtlParameters]]));
 }
 
+/** A fixed, arbitrary instant the injected clock resolves to — proves the clock is read, not hardcoded to real time. */
+const FIXED_NOW_ISO = "2026-09-12T00:00:00.000Z";
+
 /** Builds the dependency bag from a repository handle and a script catalog. */
 function deps(
   handle: FakeRepositoryHandle,
   scripts: M3LSessionScriptCatalogPort = nonSecretCatalog(),
 ): SessionFlowExportDependencies {
-  return { sessionsRepository: handle.repository, scripts };
+  return {
+    sessionsRepository: handle.repository,
+    scripts,
+    now: () => new Date(FIXED_NOW_ISO),
+  };
 }
 
 const VALID_REQUEST: M3LSessionFlowExportRequest = { name: "dlq-reconcile" };
@@ -345,6 +359,17 @@ describe("buildSessionFlowExport — happy path", () => {
       script: "sqs-etl",
       outcome: "success",
     });
+
+    // The "Exported at ..." header comment reads the injected clock, not
+    // `new Date()` — proven by pinning `now` to a fixed, arbitrary instant
+    // and asserting the exact stamp appears in the rendered yaml. `.soft`
+    // so this and the call-count assertion below both report in one run.
+    expect.soft(result.yaml).toContain(`Exported at ${FIXED_NOW_ISO}`);
+
+    // `listBindingsForSession` is hoisted above the per-step loop and
+    // called exactly once per export, regardless of step count (two steps
+    // here) — not once per step.
+    expect.soft(handle.listBindingsForSessionCallCount).toBe(1);
   });
 
   test("description carries through when supplied on the request", async () => {

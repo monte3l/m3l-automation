@@ -388,15 +388,6 @@ const CLASSIFICATION_BY_CODE: Record<M3LConsoleErrorCode, ErrorClassification> =
       retryable: false,
       fault: false,
     },
-    // Reserved for a later PR's write-collision case: the target flow file
-    // already exists and overwrite was not requested — a caller-facing state
-    // conflict, same shape as ERR_CONSOLE_SESSION_TRANSITION_INVALID.
-    ERR_CONSOLE_SESSION_FLOW_EXPORT_EXISTS: {
-      status: STATUS_CONFLICT,
-      origin: "caller",
-      retryable: false,
-      fault: false,
-    },
   };
 
 /**

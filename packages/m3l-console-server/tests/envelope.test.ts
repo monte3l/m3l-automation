@@ -355,17 +355,6 @@ const CLASSIFICATION_TABLE: Record<
     retryable: false,
     fault: false,
   },
-  // ASSUMPTION (flagged for the hub, see console-error.test.ts's matching
-  // note): models the design plan's `wx`-by-default write, refusing when
-  // the target flow file already exists and `overwrite` was not requested
-  // — a caller-facing state conflict, same 409/caller/non-retryable/
-  // non-fault shape as ERR_CONSOLE_SESSION_TRANSITION_INVALID.
-  ERR_CONSOLE_SESSION_FLOW_EXPORT_EXISTS: {
-    status: 409,
-    origin: "caller",
-    retryable: false,
-    fault: false,
-  },
 };
 
 // `Object.entries` widens the key to `string`; `CLASSIFICATION_TABLE`'s
