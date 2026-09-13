@@ -96,7 +96,7 @@ function mapS3ObjectSummaries(
  * @throws A plain `M3LError` with `code === "ERR_NO_PROGRESS"` when the underlying page cursor (`NextContinuationToken`) is identical between two consecutive pages, since a repeating cursor cannot make progress.
  * @example
  * ```ts
- * import { listObjects } from "@m3l-automation/m3l-common/aws";
+ * import { listObjects } from "@monte3l/m3l-common/aws";
  *
  * for await (const page of listObjects(client, "reports", { prefix: "2026/" })) {
  *   for (const object of page.objects) console.log(object.key);
@@ -159,7 +159,7 @@ export interface S3ObjectMetadata {
  * @throws {@link M3LS3OperationError} when the underlying `HeadObjectCommand` rejects for a reason other than not-found.
  * @example
  * ```ts
- * import { headObject } from "@m3l-automation/m3l-common/aws";
+ * import { headObject } from "@monte3l/m3l-common/aws";
  *
  * const metadata = await headObject(client, "reports", "2026/07/summary.json");
  * ```
@@ -209,7 +209,7 @@ export interface GetObjectResult {
  * @throws {@link M3LS3OperationError} when the underlying `GetObjectCommand` rejects.
  * @example
  * ```ts
- * import { getObject } from "@m3l-automation/m3l-common/aws";
+ * import { getObject } from "@monte3l/m3l-common/aws";
  *
  * const { body } = await getObject(client, "reports", "2026/07/summary.json");
  * ```
@@ -264,7 +264,7 @@ export interface PutObjectOptions {
  * @throws {@link M3LS3OperationError} when the underlying `PutObjectCommand` rejects.
  * @example
  * ```ts
- * import { putObject } from "@m3l-automation/m3l-common/aws";
+ * import { putObject } from "@monte3l/m3l-common/aws";
  *
  * await putObject(client, "reports", "2026/07/summary.json", jsonBody, {
  *   contentType: "application/json",
@@ -316,7 +316,7 @@ export interface CopyObjectSource {
  * @throws {@link M3LS3OperationError} when the underlying `CopyObjectCommand` rejects.
  * @example
  * ```ts
- * import { copyObject } from "@m3l-automation/m3l-common/aws";
+ * import { copyObject } from "@monte3l/m3l-common/aws";
  *
  * await copyObject(client, "archive", "2026/07/summary.json", {
  *   bucket: "reports",
@@ -360,7 +360,7 @@ export async function copyObject(
  * @throws {@link M3LS3OperationError} when the underlying `DeleteObjectCommand` rejects.
  * @example
  * ```ts
- * import { deleteObject } from "@m3l-automation/m3l-common/aws";
+ * import { deleteObject } from "@monte3l/m3l-common/aws";
  *
  * await deleteObject(client, "reports", "2026/07/summary.json");
  * ```
@@ -410,7 +410,7 @@ export interface DeleteObjectsResult {
  * @throws {@link M3LS3OperationError} when the underlying `DeleteObjectsCommand` rejects, or when `keys.length` exceeds 1000.
  * @example
  * ```ts
- * import { deleteObjects } from "@m3l-automation/m3l-common/aws";
+ * import { deleteObjects } from "@monte3l/m3l-common/aws";
  *
  * const { deleted, errors } = await deleteObjects(client, "reports", chunk);
  * ```

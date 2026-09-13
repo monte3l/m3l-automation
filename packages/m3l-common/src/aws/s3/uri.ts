@@ -45,7 +45,7 @@ function truncateForError(value: string): string {
  *   to {@link MAX_ECHOED_VALUE_LENGTH} characters in the thrown error.
  * @example
  * ```ts
- * import { parseS3Uri } from "@m3l-automation/m3l-common/aws";
+ * import { parseS3Uri } from "@monte3l/m3l-common/aws";
  *
  * parseS3Uri("s3://reports/2026/07/summary.json");
  * // { bucket: "reports", key: "2026/07/summary.json" }
@@ -80,7 +80,7 @@ export function parseS3Uri(uri: string): M3LS3Uri {
  * @throws {@link M3LError} with `code: "ERR_INVALID_ARGUMENT"` — see above.
  * @example
  * ```ts
- * import { formatS3Uri } from "@m3l-automation/m3l-common/aws";
+ * import { formatS3Uri } from "@monte3l/m3l-common/aws";
  *
  * formatS3Uri({ bucket: "reports", key: "2026/07/summary.json" });
  * // "s3://reports/2026/07/summary.json"

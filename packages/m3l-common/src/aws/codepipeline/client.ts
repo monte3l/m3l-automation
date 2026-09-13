@@ -1096,7 +1096,7 @@ export interface M3LCodePipelineStartExecutionOptions {
  *
  * @example
  * ```ts
- * import { M3LCodePipelineOperations } from "@m3l-automation/m3l-common/aws";
+ * import { M3LCodePipelineOperations } from "@monte3l/m3l-common/aws";
  *
  * const codePipeline = new M3LCodePipelineOperations(script.aws.clients.codePipeline);
  * const { pipelines } = await codePipeline.listPipelines();

@@ -31,7 +31,7 @@ interface M3LSecretsManagerOperationErrorOptions {
  *
  * @example
  * ```ts
- * import { M3LSecretsManagerOperationError } from "@m3l-automation/m3l-common/aws";
+ * import { M3LSecretsManagerOperationError } from "@monte3l/m3l-common/aws";
  *
  * try {
  *   await secretsManagerOperations.getSecretValue("db-password");

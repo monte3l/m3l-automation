@@ -8,12 +8,12 @@
         {
           "file": "packages/m3l-common/src/aws/cloudwatch-logs-insights/client.ts",
           "symbol": "M3LLogsInsightsClient",
-          "blob": "589b3979a5064ef8a9e7e04ee428039673f70553"
+          "blob": "8bf1eb18f64355f20da27b23b83f817fbb5bce63"
         },
         {
           "file": "packages/m3l-common/src/aws/cloudwatch-logs-insights/client.ts",
           "symbol": "LogsInsightsAwaitOptions",
-          "blob": "589b3979a5064ef8a9e7e04ee428039673f70553"
+          "blob": "8bf1eb18f64355f20da27b23b83f817fbb5bce63"
         },
         {
           "file": "packages/m3l-common/src/aws/cloudwatch-logs-insights/types.ts",
@@ -43,15 +43,15 @@
         {
           "file": "packages/m3l-common/src/aws/cloudwatch-logs-insights/errors.ts",
           "symbol": "M3LLogsInsightsStartQueryError",
-          "blob": "4e8542fb2bd81ae290765fb7eccbecbe61ab686a"
+          "blob": "74ef7c9c6b25f6b00a5920b96153cebe57ce92af"
         },
         {
           "file": "packages/m3l-common/src/aws/cloudwatch-logs-insights/errors.ts",
           "symbol": "M3LLogsInsightsQueryFailedError",
-          "blob": "4e8542fb2bd81ae290765fb7eccbecbe61ab686a"
+          "blob": "74ef7c9c6b25f6b00a5920b96153cebe57ce92af"
         }
       ],
-      "retrieved": "2026-08-18"
+      "retrieved": "2026-09-13"
     },
     {
       "heading": "`M3LLogsInsightsClient`",
@@ -59,10 +59,10 @@
         {
           "file": "packages/m3l-common/src/aws/cloudwatch-logs-insights/client.ts",
           "symbol": "M3LLogsInsightsClient",
-          "blob": "589b3979a5064ef8a9e7e04ee428039673f70553"
+          "blob": "8bf1eb18f64355f20da27b23b83f817fbb5bce63"
         }
       ],
-      "retrieved": "2026-08-18"
+      "retrieved": "2026-09-13"
     },
     {
       "heading": "Error handling",
@@ -70,15 +70,15 @@
         {
           "file": "packages/m3l-common/src/aws/cloudwatch-logs-insights/errors.ts",
           "symbol": "M3LLogsInsightsStartQueryError",
-          "blob": "4e8542fb2bd81ae290765fb7eccbecbe61ab686a"
+          "blob": "74ef7c9c6b25f6b00a5920b96153cebe57ce92af"
         },
         {
           "file": "packages/m3l-common/src/aws/cloudwatch-logs-insights/errors.ts",
           "symbol": "M3LLogsInsightsQueryFailedError",
-          "blob": "4e8542fb2bd81ae290765fb7eccbecbe61ab686a"
+          "blob": "74ef7c9c6b25f6b00a5920b96153cebe57ce92af"
         }
       ],
-      "retrieved": "2026-07-15"
+      "retrieved": "2026-09-13"
     }
   ]
 }

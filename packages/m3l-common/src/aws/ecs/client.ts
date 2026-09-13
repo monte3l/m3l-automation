@@ -302,11 +302,11 @@ function buildNetworkConfiguration(
  * (list/describe/create/update/delete + a stabilization wait), plus the
  * read-only cluster context a service operation needs — without any caller
  * ever importing an `@aws-sdk/client-ecs` command class directly (ADR-0029 —
- * scripts depend only on `@m3l-automation/m3l-common`).
+ * scripts depend only on `@monte3l/m3l-common`).
  *
  * @example
  * ```ts
- * import { AWS } from "@m3l-automation/m3l-common";
+ * import { AWS } from "@monte3l/m3l-common";
  *
  * const ecsOperations = new AWS.M3LECSOperations(script.aws.clients.ecs);
  * const { serviceArns } = await ecsOperations.listServices({ cluster: "my-cluster" });

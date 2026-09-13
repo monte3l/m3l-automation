@@ -483,10 +483,10 @@
       },
       {
         "path": "packages/m3l-common/src/aws/clients/provider.ts",
-        "blob": "8de88ccbba9e75d387c88342faec1e394c3a057b"
+        "blob": "a056ddca9946bb148c929d24cd0b45f8a1433b76"
       }
     ],
-    "verifiedAt": "2026-09-11"
+    "verifiedAt": "2026-09-13"
   },
   "0018": {
     "sourceFiles": [
@@ -740,7 +740,7 @@
       },
       {
         "path": "packages/m3l-common/src/aws/clients/provider.ts",
-        "blob": "8de88ccbba9e75d387c88342faec1e394c3a057b"
+        "blob": "a056ddca9946bb148c929d24cd0b45f8a1433b76"
       },
       {
         "path": "packages/m3l-common/src/core/polling/classifiers.ts",
@@ -769,10 +769,10 @@
       },
       {
         "path": "packages/m3l-common/src/aws/clients/provider.ts",
-        "blob": "8de88ccbba9e75d387c88342faec1e394c3a057b"
+        "blob": "a056ddca9946bb148c929d24cd0b45f8a1433b76"
       }
     ],
-    "verifiedAt": "2026-09-12"
+    "verifiedAt": "2026-09-13"
   },
   "0028": {
     "sourceFiles": [
@@ -815,7 +815,7 @@
       },
       {
         "path": "docs/plans/2026-09-12-u13-registry-publish.md",
-        "blob": "7b4a6990eab5715a03a7b9f243a441179d8868e6"
+        "blob": "bd347baf47eec921389eb6f20a467910c931b812"
       },
       {
         "path": "docs/ROADMAP.md",
@@ -921,10 +921,10 @@
       },
       {
         "path": "packages/m3l-common/src/aws/clients/provider.ts",
-        "blob": "8de88ccbba9e75d387c88342faec1e394c3a057b"
+        "blob": "a056ddca9946bb148c929d24cd0b45f8a1433b76"
       }
     ],
-    "verifiedAt": "2026-09-12"
+    "verifiedAt": "2026-09-13"
   },
   "0032": {
     "sourceFiles": [
@@ -1047,10 +1047,10 @@
       },
       {
         "path": "packages/m3l-common/src/aws/clients/provider.ts",
-        "blob": "8de88ccbba9e75d387c88342faec1e394c3a057b"
+        "blob": "a056ddca9946bb148c929d24cd0b45f8a1433b76"
       }
     ],
-    "verifiedAt": "2026-09-12"
+    "verifiedAt": "2026-09-13"
   },
   "0034": {
     "sourceFiles": [
@@ -1068,7 +1068,7 @@
       },
       {
         "path": "packages/m3l-common/src/aws/credentials/manager.ts",
-        "blob": "9c43e6dde443d3f0891258a51efd1cd5369da078"
+        "blob": "c29139438e6ef67ecb0608709d8b65630ff92beb"
       },
       {
         "path": "packages/m3l-common/src/core/polling/M3LRetryRunner.ts",
@@ -1140,22 +1140,22 @@
       },
       {
         "path": "packages/m3l-common/src/aws/clients/aws-provider.ts",
-        "blob": "9ebad8509b0cf0e344f9b6d94265391dd28a2720"
+        "blob": "51ad704a6711d89a40e414ae91fa1e70b6c8e159"
       },
       {
         "path": "packages/m3l-common/src/aws/clients/provider.ts",
-        "blob": "8de88ccbba9e75d387c88342faec1e394c3a057b"
+        "blob": "a056ddca9946bb148c929d24cd0b45f8a1433b76"
       },
       {
         "path": "packages/m3l-common/src/aws/sqs/client.ts",
-        "blob": "2e3a657ec5f84b0b5b4486b2d4f0ee177d13d1b9"
+        "blob": "8ab97bebe72dc375ea4b8eee1e0ca74e1dc64f08"
       },
       {
         "path": "scripts/sqs-etl/src/steps/redrive-queue.ts",
         "blob": "113541d0681aaae6b68c25996021c4d0e1bd1355"
       }
     ],
-    "verifiedAt": "2026-09-12"
+    "verifiedAt": "2026-09-13"
   },
   "0039": {
     "sourceFiles": [
@@ -1170,7 +1170,7 @@
     "sourceFiles": [
       {
         "path": "packages/m3l-common/src/aws/credentials/manager.ts",
-        "blob": "9c43e6dde443d3f0891258a51efd1cd5369da078"
+        "blob": "c29139438e6ef67ecb0608709d8b65630ff92beb"
       },
       {
         "path": "packages/m3l-common/src/core/utils/M3LSingleFlight.ts",
@@ -1183,7 +1183,7 @@
     "sourceFiles": [
       {
         "path": "packages/m3l-common/src/aws/credentials/manager.ts",
-        "blob": "9c43e6dde443d3f0891258a51efd1cd5369da078"
+        "blob": "c29139438e6ef67ecb0608709d8b65630ff92beb"
       },
       {
         "path": "packages/m3l-common/src/core/logging/M3LLogEvent.ts",
@@ -1266,14 +1266,14 @@
       },
       {
         "path": "packages/m3l-common/src/aws/clients/provider.ts",
-        "blob": "8de88ccbba9e75d387c88342faec1e394c3a057b"
+        "blob": "a056ddca9946bb148c929d24cd0b45f8a1433b76"
       },
       {
         "path": "packages/m3l-common/src/aws/clients/service-provider.ts",
-        "blob": "525749955c204dae2c1d0a1cd4f363afff408894"
+        "blob": "25e02a9a435176035e3ee535886c51ea8616efcd"
       }
     ],
-    "verifiedAt": "2026-09-12"
+    "verifiedAt": "2026-09-13"
   },
   "0045": {
     "sourceFiles": [
@@ -1516,7 +1516,7 @@
       },
       {
         "path": "docs/plans/2026-08-20-m3l-console.md",
-        "blob": "de4545d7b48420379bbc5cd8598691510870737f"
+        "blob": "378b6e98f9b95d1e3df162b6ce23346d6ebc17c2"
       },
       {
         "path": "docs/plans/IMPLEMENTATION.md",
@@ -1603,14 +1603,14 @@
     "sourceFiles": [
       {
         "path": "docs/plans/2026-08-20-m3l-console.md",
-        "blob": "de4545d7b48420379bbc5cd8598691510870737f"
+        "blob": "378b6e98f9b95d1e3df162b6ce23346d6ebc17c2"
       },
       {
         "path": "docs/plans/IMPLEMENTATION.md",
         "blob": "87588193ea8a51452f364ed352c7ef69a63104f7"
       }
     ],
-    "verifiedAt": "2026-09-12"
+    "verifiedAt": "2026-09-13"
   },
   "0066": {
     "sourceFiles": [
@@ -1642,7 +1642,7 @@
     "sourceFiles": [
       {
         "path": "docs/plans/2026-08-20-m3l-console.md",
-        "blob": "de4545d7b48420379bbc5cd8598691510870737f"
+        "blob": "378b6e98f9b95d1e3df162b6ce23346d6ebc17c2"
       },
       {
         "path": "docs/plans/IMPLEMENTATION.md",
@@ -1657,7 +1657,7 @@
         "blob": "890bd0ce2ce918f976fdb62edf0ffe505954c2b2"
       }
     ],
-    "verifiedAt": "2026-09-12"
+    "verifiedAt": "2026-09-13"
   },
   "0070": {
     "sourceFiles": [
@@ -1878,7 +1878,7 @@
       },
       {
         "path": "packages/m3l-common/src/aws/sqs/client.ts",
-        "blob": "2e3a657ec5f84b0b5b4486b2d4f0ee177d13d1b9"
+        "blob": "8ab97bebe72dc375ea4b8eee1e0ca74e1dc64f08"
       },
       {
         "path": "packages/m3l-common/src/aws/sqs/types.ts",
@@ -1889,7 +1889,7 @@
         "blob": "9f0bdf1b0929b4e8ebc573812b6fcfae138cdd67"
       }
     ],
-    "verifiedAt": "2026-09-12"
+    "verifiedAt": "2026-09-13"
   },
   "0078": {
     "sourceFiles": [
@@ -2639,13 +2639,13 @@
       },
       {
         "path": "docs/plans/2026-08-20-m3l-console.md",
-        "blob": "de4545d7b48420379bbc5cd8598691510870737f"
+        "blob": "378b6e98f9b95d1e3df162b6ce23346d6ebc17c2"
       },
       {
         "path": "packages/m3l-console-server/src/boot/audit-rebuild.ts",
         "blob": "f2d496b3a7a60ab9e7229cd8707453522255695a"
       }
     ],
-    "verifiedAt": "2026-09-12"
+    "verifiedAt": "2026-09-13"
   }
 }

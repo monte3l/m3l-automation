@@ -96,7 +96,7 @@ const UNSAFE_CONTROL_CHAR_PATTERN =
  *   doc comment).
  * @example
  * ```ts
- * import { M3LError } from "@m3l-automation/m3l-common/core";
+ * import { M3LError } from "@monte3l/m3l-common/core";
  *
  * function refuse(discriminant: string): never {
  *   throw new M3LError(`unexpected content-block type "${discriminant}"`);

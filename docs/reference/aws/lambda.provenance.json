@@ -8,12 +8,12 @@
         {
           "file": "packages/m3l-common/src/aws/lambda/client.ts",
           "symbol": "M3LLambdaOperations",
-          "blob": "23c94b72374f575a56b1aaaaf21cf4a6a8fee819"
+          "blob": "a0f6ec38e0d7ee94430caca6b12ec92d970a6ef5"
         },
         {
           "file": "packages/m3l-common/src/aws/lambda/error.ts",
           "symbol": "M3LLambdaOperationError",
-          "blob": "04db1ae80f5ce87657db0d9c46de9ef626793caf"
+          "blob": "02c6a6b3280aa813a49878af72fe008b444e7f95"
         },
         {
           "file": "packages/m3l-common/src/aws/lambda/types.ts",
@@ -51,7 +51,7 @@
           "blob": "cc432362450ecd0050f18076f95c62458a6ad944"
         }
       ],
-      "retrieved": "2026-07-18"
+      "retrieved": "2026-09-13"
     },
     {
       "heading": "`M3LLambdaOperations`",
@@ -59,10 +59,10 @@
         {
           "file": "packages/m3l-common/src/aws/lambda/client.ts",
           "symbol": "M3LLambdaOperations",
-          "blob": "23c94b72374f575a56b1aaaaf21cf4a6a8fee819"
+          "blob": "a0f6ec38e0d7ee94430caca6b12ec92d970a6ef5"
         }
       ],
-      "retrieved": "2026-07-18"
+      "retrieved": "2026-09-13"
     },
     {
       "heading": "Plain types (field-by-field)",
@@ -111,10 +111,10 @@
         {
           "file": "packages/m3l-common/src/aws/lambda/error.ts",
           "symbol": "M3LLambdaOperationError",
-          "blob": "04db1ae80f5ce87657db0d9c46de9ef626793caf"
+          "blob": "02c6a6b3280aa813a49878af72fe008b444e7f95"
         }
       ],
-      "retrieved": "2026-07-18"
+      "retrieved": "2026-09-13"
     }
   ]
 }

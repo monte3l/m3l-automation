@@ -38,7 +38,7 @@ interface M3LEventBridgeOperationErrorOptions {
  *
  * @example
  * ```ts
- * import { M3LEventBridgeOperationError } from "@m3l-automation/m3l-common/aws";
+ * import { M3LEventBridgeOperationError } from "@monte3l/m3l-common/aws";
  *
  * try {
  *   await eventBridgeOperations.deleteRule("my-rule");

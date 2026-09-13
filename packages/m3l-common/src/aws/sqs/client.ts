@@ -75,7 +75,7 @@ import {
  *
  * @example
  * ```ts
- * import { M3LSQSOperations } from "@m3l-automation/m3l-common/aws";
+ * import { M3LSQSOperations } from "@monte3l/m3l-common/aws";
  *
  * const sqsOperations = new M3LSQSOperations(script.aws.clients.sqs);
  * const messages = await sqsOperations.receive(queueUrl, { maxMessages: 10 });
@@ -304,7 +304,7 @@ export class M3LSQSOperations {
    *   present but its JSON is malformed or does not match the expected shape.
    * @example
    * ```ts
-   * import { M3LSQSOperations } from "@m3l-automation/m3l-common/aws";
+   * import { M3LSQSOperations } from "@monte3l/m3l-common/aws";
    *
    * const sqsOperations = new M3LSQSOperations(script.aws.clients.sqs);
    * const attrs = await sqsOperations.getQueueAttributes(queueUrl);

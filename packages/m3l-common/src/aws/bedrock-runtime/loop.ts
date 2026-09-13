@@ -84,7 +84,7 @@ const DEFAULT_MAX_TOOLS_PER_TURN = 8;
  *
  * @example
  * ```ts
- * import type { M3LBedrockToolLoopOptions } from "@m3l-automation/m3l-common/aws";
+ * import type { M3LBedrockToolLoopOptions } from "@monte3l/m3l-common/aws";
  *
  * const options: M3LBedrockToolLoopOptions = {
  *   tools: new Map(),
@@ -116,7 +116,7 @@ export interface M3LBedrockToolLoopOptions {
  *
  * @example
  * ```ts
- * import type { M3LBedrockToolLoopInvoker } from "@m3l-automation/m3l-common/aws";
+ * import type { M3LBedrockToolLoopInvoker } from "@monte3l/m3l-common/aws";
  *
  * declare const ops: M3LBedrockToolLoopInvoker;
  * const result = await ops.invoke({ messages: [] });
@@ -552,11 +552,11 @@ async function performIteration(
  *   `maxToolsPerTurn`.
  * @example
  * ```ts
- * import { runBedrockToolLoop } from "@m3l-automation/m3l-common/aws";
+ * import { runBedrockToolLoop } from "@monte3l/m3l-common/aws";
  * import type {
  *   M3LBedrockToolLoopInvoker,
  *   M3LBedrockToolRegistration,
- * } from "@m3l-automation/m3l-common/aws";
+ * } from "@monte3l/m3l-common/aws";
  *
  * declare const ops: M3LBedrockToolLoopInvoker;
  * const getWeather: M3LBedrockToolRegistration = {

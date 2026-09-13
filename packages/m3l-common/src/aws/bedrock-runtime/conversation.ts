@@ -39,7 +39,7 @@ interface CreateBedrockConversationOptions {
  *
  * @example
  * ```ts
- * import type { M3LBedrockConversation } from "@m3l-automation/m3l-common/aws";
+ * import type { M3LBedrockConversation } from "@monte3l/m3l-common/aws";
  *
  * const conversation: M3LBedrockConversation = {
  *   messages: [{ role: "user", content: [{ type: "text", text: "hi" }] }],
@@ -66,7 +66,7 @@ export interface M3LBedrockConversation {
  * @returns A new, independent `M3LBedrockConversation` value.
  * @example
  * ```ts
- * import { createBedrockConversation } from "@m3l-automation/m3l-common/aws";
+ * import { createBedrockConversation } from "@monte3l/m3l-common/aws";
  *
  * const conversation = createBedrockConversation({ system: "be terse" });
  * ```
@@ -90,8 +90,8 @@ export function createBedrockConversation(
  * @returns A new `M3LBedrockConversation` with `message` appended.
  * @example
  * ```ts
- * import { appendBedrockMessage } from "@m3l-automation/m3l-common/aws";
- * import type { M3LBedrockConversation } from "@m3l-automation/m3l-common/aws";
+ * import { appendBedrockMessage } from "@monte3l/m3l-common/aws";
+ * import type { M3LBedrockConversation } from "@monte3l/m3l-common/aws";
  *
  * declare const conversation: M3LBedrockConversation;
  * const updated = appendBedrockMessage(conversation, {
@@ -120,8 +120,8 @@ export function appendBedrockMessage(
  *   `{ role: "user", content: [{ type: "text", text }] }` message appended.
  * @example
  * ```ts
- * import { appendBedrockUserText } from "@m3l-automation/m3l-common/aws";
- * import type { M3LBedrockConversation } from "@m3l-automation/m3l-common/aws";
+ * import { appendBedrockUserText } from "@monte3l/m3l-common/aws";
+ * import type { M3LBedrockConversation } from "@monte3l/m3l-common/aws";
  *
  * declare const conversation: M3LBedrockConversation;
  * const updated = appendBedrockUserText(conversation, "hello there");

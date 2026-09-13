@@ -8,12 +8,12 @@
         {
           "file": "packages/m3l-common/src/aws/cloudwatch-metrics/client.ts",
           "symbol": "M3LCloudWatchMetricsOperations",
-          "blob": "ed49612c83032006e7250c036ceb97ea3f4607de"
+          "blob": "dbf759e147508639c228200d4646eb31d8f01c97"
         },
         {
           "file": "packages/m3l-common/src/aws/cloudwatch-metrics/error.ts",
           "symbol": "M3LCloudWatchMetricsOperationError",
-          "blob": "14e2407eec57c2224cef4116ce155145471772ae"
+          "blob": "a6456054f2c9bb0ec97610d48409aefce96a0970"
         },
         {
           "file": "packages/m3l-common/src/aws/cloudwatch-metrics/types.ts",
@@ -56,7 +56,7 @@
           "blob": "ab2d7f30c63ed2d19571c14a1f570533978be487"
         }
       ],
-      "retrieved": "2026-08-11"
+      "retrieved": "2026-09-13"
     },
     {
       "heading": "`M3LCloudWatchMetricsOperations`",
@@ -64,10 +64,10 @@
         {
           "file": "packages/m3l-common/src/aws/cloudwatch-metrics/client.ts",
           "symbol": "M3LCloudWatchMetricsOperations",
-          "blob": "ed49612c83032006e7250c036ceb97ea3f4607de"
+          "blob": "dbf759e147508639c228200d4646eb31d8f01c97"
         }
       ],
-      "retrieved": "2026-08-11"
+      "retrieved": "2026-09-13"
     },
     {
       "heading": "`M3LCloudWatchMetricsOperationError`",
@@ -75,10 +75,10 @@
         {
           "file": "packages/m3l-common/src/aws/cloudwatch-metrics/error.ts",
           "symbol": "M3LCloudWatchMetricsOperationError",
-          "blob": "14e2407eec57c2224cef4116ce155145471772ae"
+          "blob": "a6456054f2c9bb0ec97610d48409aefce96a0970"
         }
       ],
-      "retrieved": "2026-08-11"
+      "retrieved": "2026-09-13"
     },
     {
       "heading": "Plain types",
@@ -132,10 +132,10 @@
         {
           "file": "packages/m3l-common/src/aws/cloudwatch-metrics/client.ts",
           "symbol": "M3LCloudWatchMetricsOperations",
-          "blob": "ed49612c83032006e7250c036ceb97ea3f4607de"
+          "blob": "dbf759e147508639c228200d4646eb31d8f01c97"
         }
       ],
-      "retrieved": "2026-08-11"
+      "retrieved": "2026-09-13"
     }
   ]
 }

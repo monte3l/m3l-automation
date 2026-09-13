@@ -573,7 +573,7 @@ export interface M3LCloudFormationDescribeStackEventsOptions {
  *
  * @example
  * ```ts
- * import { M3LCloudFormationOperations } from "@m3l-automation/m3l-common/aws";
+ * import { M3LCloudFormationOperations } from "@monte3l/m3l-common/aws";
  *
  * const cloudFormation = new M3LCloudFormationOperations(script.aws.clients.cloudFormation);
  * const { stackSummaries } = await cloudFormation.listStacks();

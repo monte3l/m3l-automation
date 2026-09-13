@@ -29,7 +29,7 @@ interface M3LAthenaStartQueryErrorOptions {
  *
  * @example
  * ```ts
- * import { M3LAthenaStartQueryError } from "@m3l-automation/m3l-common/aws";
+ * import { M3LAthenaStartQueryError } from "@monte3l/m3l-common/aws";
  *
  * try {
  *   await athena.startQuery(input);
@@ -92,7 +92,7 @@ interface M3LAthenaQueryFailedErrorOptions {
  *
  * @example
  * ```ts
- * import { M3LAthenaQueryFailedError } from "@m3l-automation/m3l-common/aws";
+ * import { M3LAthenaQueryFailedError } from "@monte3l/m3l-common/aws";
  *
  * try {
  *   await athena.awaitResults(queryExecutionId);
@@ -153,7 +153,7 @@ interface M3LAthenaTemplateErrorOptions {
  *
  * @example
  * ```ts
- * import { M3LAthenaTemplateError } from "@m3l-automation/m3l-common/aws";
+ * import { M3LAthenaTemplateError } from "@monte3l/m3l-common/aws";
  *
  * try {
  *   compileAthenaQueryTemplate("SELECT * FROM t WHERE a = :a", {});

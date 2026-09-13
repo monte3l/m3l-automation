@@ -144,11 +144,11 @@ function buildOptionalFunctionFields(
  * Typed operations wrapper over a raw `LambdaClient`, covering the verb set
  * `scripts/lambda-ops` needs (list/get/invoke/create/update/delete) without
  * any caller ever importing an `@aws-sdk/client-lambda` command class
- * directly (ADR-0029 — scripts depend only on `@m3l-automation/m3l-common`).
+ * directly (ADR-0029 — scripts depend only on `@monte3l/m3l-common`).
  *
  * @example
  * ```ts
- * import { AWS } from "@m3l-automation/m3l-common";
+ * import { AWS } from "@monte3l/m3l-common";
  *
  * const lambdaOperations = new AWS.M3LLambdaOperations(script.aws.clients.lambda);
  * const { functions } = await lambdaOperations.listFunctions();

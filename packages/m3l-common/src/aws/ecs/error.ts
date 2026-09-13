@@ -32,7 +32,7 @@ interface M3LECSOperationErrorOptions {
  *
  * @example
  * ```ts
- * import { M3LECSOperationError } from "@m3l-automation/m3l-common/aws";
+ * import { M3LECSOperationError } from "@monte3l/m3l-common/aws";
  *
  * try {
  *   await ecsOperations.describeService("my-cluster", "my-service");

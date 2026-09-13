@@ -8,22 +8,22 @@
         {
           "file": "packages/m3l-common/src/aws/eks/client.ts",
           "symbol": "M3LEKSOperations",
-          "blob": "6308edcd3599576acb401961fed377cd0fa75a2a"
+          "blob": "463d5b9dd95ef14a67f836a13954290daa7713c0"
         },
         {
           "file": "packages/m3l-common/src/aws/eks/client.ts",
           "symbol": "M3LEKSListClustersOptions",
-          "blob": "6308edcd3599576acb401961fed377cd0fa75a2a"
+          "blob": "463d5b9dd95ef14a67f836a13954290daa7713c0"
         },
         {
           "file": "packages/m3l-common/src/aws/eks/client.ts",
           "symbol": "M3LEKSListNodegroupsOptions",
-          "blob": "6308edcd3599576acb401961fed377cd0fa75a2a"
+          "blob": "463d5b9dd95ef14a67f836a13954290daa7713c0"
         },
         {
           "file": "packages/m3l-common/src/aws/eks/error.ts",
           "symbol": "M3LEKSOperationError",
-          "blob": "f797b2661b495cb9ceec8fe3faf70701082b7a6f"
+          "blob": "e393444c5d9894e293f91fffe05b2f1ea6552c67"
         },
         {
           "file": "packages/m3l-common/src/aws/eks/types.ts",
@@ -116,7 +116,7 @@
           "blob": "a9a7d29f4ab626aeed9355585bceda9a3bf9c6f8"
         }
       ],
-      "retrieved": "2026-08-18"
+      "retrieved": "2026-09-13"
     },
     {
       "heading": "`M3LEKSOperations`",
@@ -124,10 +124,10 @@
         {
           "file": "packages/m3l-common/src/aws/eks/client.ts",
           "symbol": "M3LEKSOperations",
-          "blob": "6308edcd3599576acb401961fed377cd0fa75a2a"
+          "blob": "463d5b9dd95ef14a67f836a13954290daa7713c0"
         }
       ],
-      "retrieved": "2026-08-18"
+      "retrieved": "2026-09-13"
     },
     {
       "heading": "Options types (field-by-field)",
@@ -135,12 +135,12 @@
         {
           "file": "packages/m3l-common/src/aws/eks/client.ts",
           "symbol": "M3LEKSListClustersOptions",
-          "blob": "6308edcd3599576acb401961fed377cd0fa75a2a"
+          "blob": "463d5b9dd95ef14a67f836a13954290daa7713c0"
         },
         {
           "file": "packages/m3l-common/src/aws/eks/client.ts",
           "symbol": "M3LEKSListNodegroupsOptions",
-          "blob": "6308edcd3599576acb401961fed377cd0fa75a2a"
+          "blob": "463d5b9dd95ef14a67f836a13954290daa7713c0"
         },
         {
           "file": "packages/m3l-common/src/aws/eks/types.ts",
@@ -148,7 +148,7 @@
           "blob": "a9a7d29f4ab626aeed9355585bceda9a3bf9c6f8"
         }
       ],
-      "retrieved": "2026-08-18"
+      "retrieved": "2026-09-13"
     },
     {
       "heading": "Plain types (field-by-field)",
@@ -247,10 +247,10 @@
         {
           "file": "packages/m3l-common/src/aws/eks/error.ts",
           "symbol": "M3LEKSOperationError",
-          "blob": "f797b2661b495cb9ceec8fe3faf70701082b7a6f"
+          "blob": "e393444c5d9894e293f91fffe05b2f1ea6552c67"
         }
       ],
-      "retrieved": "2026-07-27"
+      "retrieved": "2026-09-13"
     }
   ]
 }

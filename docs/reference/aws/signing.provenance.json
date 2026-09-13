@@ -8,25 +8,25 @@
         {
           "file": "packages/m3l-common/src/aws/signing/client.ts",
           "symbol": "M3LRequestSigner",
-          "blob": "65f18897b2142865555ad56dc1b1d7a22bdb7b63"
+          "blob": "4adc678ddd93ee732a4643d181af7353b6b1475f"
         },
         {
           "file": "packages/m3l-common/src/aws/signing/error.ts",
           "symbol": "M3LSigningError",
-          "blob": "a98663834afafab2da5873d5c78af8770ffb4a74"
+          "blob": "397f6fdafc59c46a7eb038d9185a5fd6a72b4768"
         },
         {
           "file": "packages/m3l-common/src/aws/signing/types.ts",
           "symbol": "M3LRequestSignerOptions",
-          "blob": "5fb4dbc9b8f80decdd358e6a155c55559a6f1984"
+          "blob": "1de054141894b3401425b9b5a2797cbf13635861"
         },
         {
           "file": "packages/m3l-common/src/aws/signing/types.ts",
           "symbol": "M3LSignableRequest",
-          "blob": "5fb4dbc9b8f80decdd358e6a155c55559a6f1984"
+          "blob": "1de054141894b3401425b9b5a2797cbf13635861"
         }
       ],
-      "retrieved": "2026-08-10"
+      "retrieved": "2026-09-13"
     },
     {
       "heading": "`M3LRequestSigner`",
@@ -34,10 +34,10 @@
         {
           "file": "packages/m3l-common/src/aws/signing/client.ts",
           "symbol": "M3LRequestSigner",
-          "blob": "65f18897b2142865555ad56dc1b1d7a22bdb7b63"
+          "blob": "4adc678ddd93ee732a4643d181af7353b6b1475f"
         }
       ],
-      "retrieved": "2026-08-10"
+      "retrieved": "2026-09-13"
     },
     {
       "heading": "`M3LSigningError`",
@@ -45,10 +45,10 @@
         {
           "file": "packages/m3l-common/src/aws/signing/error.ts",
           "symbol": "M3LSigningError",
-          "blob": "a98663834afafab2da5873d5c78af8770ffb4a74"
+          "blob": "397f6fdafc59c46a7eb038d9185a5fd6a72b4768"
         }
       ],
-      "retrieved": "2026-07-16"
+      "retrieved": "2026-09-13"
     },
     {
       "heading": "Plain types",
@@ -56,15 +56,15 @@
         {
           "file": "packages/m3l-common/src/aws/signing/types.ts",
           "symbol": "M3LRequestSignerOptions",
-          "blob": "5fb4dbc9b8f80decdd358e6a155c55559a6f1984"
+          "blob": "1de054141894b3401425b9b5a2797cbf13635861"
         },
         {
           "file": "packages/m3l-common/src/aws/signing/types.ts",
           "symbol": "M3LSignableRequest",
-          "blob": "5fb4dbc9b8f80decdd358e6a155c55559a6f1984"
+          "blob": "1de054141894b3401425b9b5a2797cbf13635861"
         }
       ],
-      "retrieved": "2026-07-16"
+      "retrieved": "2026-09-13"
     },
     {
       "heading": "Notes and behavior",
@@ -72,10 +72,10 @@
         {
           "file": "packages/m3l-common/src/aws/signing/client.ts",
           "symbol": "M3LRequestSigner",
-          "blob": "65f18897b2142865555ad56dc1b1d7a22bdb7b63"
+          "blob": "4adc678ddd93ee732a4643d181af7353b6b1475f"
         }
       ],
-      "retrieved": "2026-08-10"
+      "retrieved": "2026-09-13"
     }
   ]
 }

@@ -38,7 +38,7 @@ export type DynamoDBItem = Record<string, unknown>;
  * @throws {@link M3LDynamoDBOperationError} when the underlying `GetCommand` rejects.
  * @example
  * ```ts
- * import { getItem } from "@m3l-automation/m3l-common/aws";
+ * import { getItem } from "@monte3l/m3l-common/aws";
  *
  * const order = await getItem(script.aws.clients.dynamoDBDocument, "orders", { id: "42" });
  * ```
@@ -74,7 +74,7 @@ export async function getItem(
  * @throws {@link M3LDynamoDBOperationError} when the underlying `PutCommand` rejects.
  * @example
  * ```ts
- * import { putItem } from "@m3l-automation/m3l-common/aws";
+ * import { putItem } from "@monte3l/m3l-common/aws";
  *
  * await putItem(script.aws.clients.dynamoDBDocument, "orders", { id: "42", status: "paid" });
  * ```
@@ -113,7 +113,7 @@ export async function putItem(
  * @throws {@link M3LDynamoDBOperationError} when the underlying `UpdateCommand` rejects.
  * @example
  * ```ts
- * import { updateItem } from "@m3l-automation/m3l-common/aws";
+ * import { updateItem } from "@monte3l/m3l-common/aws";
  *
  * await updateItem(script.aws.clients.dynamoDBDocument, "orders", { id: "42" }, { status: "shipped" });
  * ```
@@ -172,7 +172,7 @@ export async function updateItem(
  * @throws {@link M3LDynamoDBOperationError} when the underlying `DeleteCommand` rejects.
  * @example
  * ```ts
- * import { deleteItem } from "@m3l-automation/m3l-common/aws";
+ * import { deleteItem } from "@monte3l/m3l-common/aws";
  *
  * await deleteItem(script.aws.clients.dynamoDBDocument, "orders", { id: "42" });
  * ```
@@ -231,7 +231,7 @@ export interface DynamoDBPage {
  * @throws A plain `M3LError` with `code === "ERR_NO_PROGRESS"` when the underlying page cursor (`LastEvaluatedKey`) is identical between two consecutive pages, since a repeating cursor cannot make progress.
  * @example
  * ```ts
- * import { queryItems } from "@m3l-automation/m3l-common/aws";
+ * import { queryItems } from "@monte3l/m3l-common/aws";
  *
  * for await (const page of queryItems(client, { tableName: "orders", keyCondition: { userId: "42" } })) {
  *   for (const item of page.items) console.log(item);
@@ -332,7 +332,7 @@ export interface ScanSegmentOptions {
  * @throws A plain `M3LError` with `code === "ERR_NO_PROGRESS"` when the underlying page cursor (`LastEvaluatedKey`) is identical between two consecutive pages, since a repeating cursor cannot make progress.
  * @example
  * ```ts
- * import { scanSegment } from "@m3l-automation/m3l-common/aws";
+ * import { scanSegment } from "@monte3l/m3l-common/aws";
  *
  * for await (const page of scanSegment(client, { tableName: "orders" })) {
  *   for (const item of page.items) console.log(item);
@@ -401,7 +401,7 @@ export interface BatchWriteResult {
  * @throws {@link M3LDynamoDBOperationError} when the underlying `BatchWriteCommand` rejects, or when `items.length` exceeds 25.
  * @example
  * ```ts
- * import { batchWriteItems } from "@m3l-automation/m3l-common/aws";
+ * import { batchWriteItems } from "@monte3l/m3l-common/aws";
  *
  * const { written, unprocessed } = await batchWriteItems(client, "orders", chunk);
  * ```
@@ -476,7 +476,7 @@ export interface BatchDeleteResult {
  * @throws {@link M3LDynamoDBOperationError} when the underlying `BatchWriteCommand` rejects, or when `keys.length` exceeds 25.
  * @example
  * ```ts
- * import { batchDeleteItems } from "@m3l-automation/m3l-common/aws";
+ * import { batchDeleteItems } from "@monte3l/m3l-common/aws";
  *
  * const { deleted, unprocessed } = await batchDeleteItems(client, "orders", chunk);
  * ```
@@ -548,7 +548,7 @@ export interface TableDescription {
  * @throws {@link M3LDynamoDBOperationError} when the underlying `DescribeTableCommand` rejects.
  * @example
  * ```ts
- * import { describeTable } from "@m3l-automation/m3l-common/aws";
+ * import { describeTable } from "@monte3l/m3l-common/aws";
  *
  * const { itemCount } = await describeTable(script.aws.clients.dynamoDB, "orders");
  * ```

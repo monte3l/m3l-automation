@@ -105,7 +105,7 @@ interface BaseClientConfig {
  * import {
  *   AWSClientProvider,
  *   parseAWSProfile,
- * } from "@m3l-automation/m3l-common/aws";
+ * } from "@monte3l/m3l-common/aws";
  *
  * const provider = new AWSClientProvider({
  *   profile: parseAWSProfile("my-profile"),
@@ -324,7 +324,7 @@ export class AWSClientProvider {
    *
    * @example
    * ```ts
-   * import { AWSClientProvider } from "@m3l-automation/m3l-common/aws";
+   * import { AWSClientProvider } from "@monte3l/m3l-common/aws";
    *
    * const provider = new AWSClientProvider();
    * void provider.s3;

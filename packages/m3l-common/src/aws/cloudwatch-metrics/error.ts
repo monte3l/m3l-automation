@@ -33,7 +33,7 @@ interface M3LCloudWatchMetricsOperationErrorOptions {
  *
  * @example
  * ```ts
- * import { M3LCloudWatchMetricsOperationError } from "@m3l-automation/m3l-common/aws";
+ * import { M3LCloudWatchMetricsOperationError } from "@monte3l/m3l-common/aws";
  *
  * try {
  *   await cloudWatchMetricsOperations.putMetricData({

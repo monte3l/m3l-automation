@@ -59,7 +59,7 @@ interface M3LAWSCredentialsErrorOptions {
  *
  * @example
  * ```ts
- * import { M3LAWSCredentialsError } from "@m3l-automation/m3l-common/aws";
+ * import { M3LAWSCredentialsError } from "@monte3l/m3l-common/aws";
  *
  * try {
  *   // ... validate credentials ...

@@ -28,7 +28,7 @@ interface M3LSigningErrorOptions {
  *
  * @example
  * ```ts
- * import { M3LSigningError } from "@m3l-automation/m3l-common/aws";
+ * import { M3LSigningError } from "@monte3l/m3l-common/aws";
  *
  * try {
  *   await signer.signedHeaders(request);

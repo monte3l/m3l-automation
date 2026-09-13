@@ -32,7 +32,7 @@ interface M3LLambdaOperationErrorOptions {
  *
  * @example
  * ```ts
- * import { M3LLambdaOperationError } from "@m3l-automation/m3l-common/aws";
+ * import { M3LLambdaOperationError } from "@monte3l/m3l-common/aws";
  *
  * try {
  *   await lambdaOperations.getFunction("my-function");

@@ -647,13 +647,13 @@ export interface M3LEKSListNodegroupsOptions {
  * **control-plane** cluster and nodegroup list/describe/create/update/delete
  * plus lifecycle waiters — without any caller ever importing an
  * `@aws-sdk/client-eks` command class directly (ADR-0029 — scripts depend
- * only on `@m3l-automation/m3l-common`). Kubectl-level workload operations
+ * only on `@monte3l/m3l-common`). Kubectl-level workload operations
  * (pods/deployments/services) are out of scope; see
  * `docs/reference/aws/eks.md`.
  *
  * @example
  * ```ts
- * import { AWS } from "@m3l-automation/m3l-common";
+ * import { AWS } from "@monte3l/m3l-common";
  *
  * const eksOperations = new AWS.M3LEKSOperations(script.aws.clients.eks);
  * const { clusters } = await eksOperations.listClusters();

@@ -28,7 +28,7 @@ type AWSProviderOptions = AWSClientProviderOptions;
  *
  * @example
  * ```ts
- * import { AWSProvider } from "@m3l-automation/m3l-common/aws";
+ * import { AWSProvider } from "@monte3l/m3l-common/aws";
  *
  * const aws = new AWSProvider({ profile: "my-profile" });
  *

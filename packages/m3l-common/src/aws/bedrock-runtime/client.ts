@@ -269,8 +269,8 @@ type ModelAttemptOutcome =
  *
  * @example
  * ```ts
- * import type { M3LScript } from "@m3l-automation/m3l-common/core";
- * import { M3LBedrockRuntimeOperations } from "@m3l-automation/m3l-common/aws";
+ * import type { M3LScript } from "@monte3l/m3l-common/core";
+ * import { M3LBedrockRuntimeOperations } from "@monte3l/m3l-common/aws";
  *
  * export async function run(script: M3LScript): Promise<void> {
  *   const ops = new M3LBedrockRuntimeOperations(
