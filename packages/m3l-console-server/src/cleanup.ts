@@ -217,12 +217,34 @@ async function runAsync<T>(
   }
 }
 
+/**
+ * A caught value's `M3LConsoleError` code, or `undefined` when it is not one
+ * — never throwing.
+ *
+ * `instanceof M3LConsoleError` walks the value's prototype chain, which can
+ * throw for a hostile value (e.g. a Proxy whose `getPrototypeOf` trap
+ * throws) exactly like the `instanceof` checks {@link underlyingErrnoCodeOf}
+ * guards against (X8c review finding, issue #1058 follow-up). This is a
+ * failure-REPORTING path — a hostile `cause` on the driver that already
+ * failed must not replace or interrupt `runCleanup`'s own
+ * `M3LConsoleError("ERR_CONSOLE_INTERNAL")` — so returning `undefined` here
+ * is safe: it degrades the reported `code`, not the outcome.
+ */
+function consoleErrorCodeOf(cause: unknown): string | undefined {
+  try {
+    return cause instanceof M3LConsoleError ? cause.code : undefined;
+  } catch {
+    // A hostile cause's instanceof check threw — nothing further safe to
+    // read from it; report no code rather than let the throw escape.
+    return undefined;
+  }
+}
+
 /** Narrows one {@link DriverFail} into the published {@link CleanupDriverFailure} shape. */
 function toCleanupFailure(result: DriverFail): CleanupDriverFailure {
   return {
     driver: result.driver,
-    code:
-      result.cause instanceof M3LConsoleError ? result.cause.code : undefined,
+    code: consoleErrorCodeOf(result.cause),
     errno: underlyingErrnoCodeOf(result.cause),
   };
 }

@@ -338,6 +338,138 @@ describe("runCleanup — failing first driver (telemetry)", () => {
 });
 
 // ---------------------------------------------------------------------------
+// [X8c review finding] A hostile cause must not replace the sweep's own
+// error. `toCleanupFailure` (src/cleanup.ts) calls `underlyingErrnoCodeOf`
+// (src/errors/errno.ts) outside any try/catch, via
+// `failures.map(toCleanupFailure)` in `buildDriverFailureContext`. If that
+// helper is not itself throw-proof against a hostile link (an own `code`
+// getter that throws, or a Proxy whose trap throws), the raw hostile error
+// escapes `runCleanup` in place of the intended
+// `M3LConsoleError("ERR_CONSOLE_INTERNAL")`. This test locks that: a hostile
+// cause on the failing driver must still surface as the sweep's own error,
+// not the raw hostile one.
+// ---------------------------------------------------------------------------
+
+describe("runCleanup — hostile cause (X8c review finding)", () => {
+  test("rejects with M3LConsoleError ERR_CONSOLE_INTERNAL, not the raw hostile cause, when the failing driver's cause has a throwing own code getter", async () => {
+    const { store, openStore } = makeMemoryStore();
+
+    // Mirrors the telemetry-fails test's setup (make the FIRST driver
+    // throw), but the thrown value's own `code` is a hostile getter rather
+    // than a plain string.
+    const hostile = new Error("hostile");
+    Object.defineProperty(hostile, "code", {
+      configurable: true,
+      get() {
+        throw new Error("hostile code getter blew up");
+      },
+    });
+    vi.spyOn(store.telemetry, "prune").mockImplementation(() => {
+      throw hostile;
+    });
+
+    let thrown: unknown;
+    try {
+      await runCleanup({
+        env: buildEnv(),
+        openStore,
+        nowMs: () => FAR_FUTURE_MS,
+      });
+    } catch (e) {
+      thrown = e;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LConsoleError);
+    expect((thrown as M3LConsoleError).code).toBe("ERR_CONSOLE_INTERNAL");
+
+    const ctx = (thrown as M3LConsoleError).context;
+    expect(ctx?.["failures"]).toEqual([
+      { driver: "telemetry", code: "ERR_CONSOLE_INTERNAL", errno: undefined },
+    ]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// [X8c review finding — code-reviewer Should-fix] `consoleErrorCodeOf`'s own
+// catch branch (src/cleanup.ts, `cause instanceof M3LConsoleError ? ... :
+// undefined` wrapped in try/catch) is never reached by the "hostile cause"
+// test above: that test makes `store.telemetry.prune` throw, and
+// `pruneTelemetry` always re-wraps whatever it catches into a clean
+// `M3LConsoleError` before it escapes — so `consoleErrorCodeOf`'s
+// `instanceof` check only ever sees a well-behaved `M3LConsoleError`
+// instance, never something hostile. `pruneRunOutputs`'s `classifyAndSweep`
+// helper is different: it calls `repository.get(dirName)` with no try/catch
+// around that call site in `pruneRunOutputs`'s own for-loop
+// (src/run-output-retention.ts), so a throw from `repository.get` escapes
+// UNWRAPPED all the way to `runCleanup`'s `runAsync("runOutputs", ...)`
+// catch — the "two simultaneous driver failures" test above already proves
+// this for a plain `Error` (`thrown?.cause).toBe(runsError)`, not a wrapper
+// around it). This test reuses that exact seam with a hostile Proxy instead,
+// to actually reach `consoleErrorCodeOf`'s catch branch.
+// ---------------------------------------------------------------------------
+
+describe("runCleanup — consoleErrorCodeOf catch branch (X8c review finding)", () => {
+  test("a driver's unwrapped cause whose instanceof check itself throws still surfaces as ERR_CONSOLE_INTERNAL, with that driver's failure entry reporting code/errno as undefined", async () => {
+    const { store, openStore } = makeMemoryStore();
+
+    // A Proxy whose getPrototypeOf trap throws makes `instanceof` itself
+    // throw — the same sanity check errno.test.ts's own hostile-Proxy cases
+    // run before relying on this shape.
+    const hostile = new Proxy(new Error("x"), {
+      getPrototypeOf() {
+        throw new Error("getPrototypeOf trap blew up");
+      },
+    });
+    expect(() => hostile instanceof Error).toThrow(
+      "getPrototypeOf trap blew up",
+    );
+
+    // Seam: a directory in runsRoot makes readdir find an entry, so
+    // classifyAndSweep calls store.runs.get(dirName) — the one call site in
+    // pruneRunOutputs's walk that is not wrapped in its own try/catch.
+    await mkdir(join(runsRoot, "run-hostile"), { recursive: true });
+    vi.spyOn(store.runs, "get").mockImplementation(() => {
+      throw hostile;
+    });
+
+    // The other drivers get real data so "still ran" is provable via their
+    // outcomes landing in context, not merely the absence of a failure entry.
+    insertTelemetry(store, 60_000);
+    await insertFinishedStep(store, "session-hostile", "step-hostile", OLD_MS);
+
+    let thrown: M3LConsoleError | undefined;
+    try {
+      await runCleanup({
+        env: buildEnv(),
+        openStore,
+        nowMs: () => FAR_FUTURE_MS,
+      });
+    } catch (e) {
+      if (e instanceof M3LConsoleError) thrown = e;
+    }
+
+    // The hostile cause does not escape in place of runCleanup's own error.
+    expect(thrown).toBeDefined();
+    expect(thrown?.code).toBe("ERR_CONSOLE_INTERNAL");
+
+    // consoleErrorCodeOf's own catch branch degrades `code` to `undefined`
+    // rather than letting the hostile Proxy's throw escape; underlyingErrnoCodeOf
+    // (already hardened against the same hostile shape) degrades `errno` the
+    // same way.
+    const ctx = thrown?.context;
+    expect(ctx).toBeDefined();
+    expect(ctx?.["failures"]).toEqual([
+      { driver: "runOutputs", code: undefined, errno: undefined },
+    ]);
+
+    // The other drivers still ran — their outcomes are in context.
+    expect(ctx).toHaveProperty("telemetry");
+    expect(ctx).toHaveProperty("sessionArtifacts");
+    expect(ctx).toHaveProperty("auditTrail");
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Case 4: store is closed even when a driver throws
 // ---------------------------------------------------------------------------
 

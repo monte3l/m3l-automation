@@ -62,8 +62,69 @@ export function errnoCodeOf(cause: unknown): string | undefined {
   return typeof code === "string" ? code : undefined;
 }
 
-/** The maximum number of links {@link underlyingErrnoCodeOf} inspects — the caught value itself plus up to nine causes — mirroring `MAX_CAUSE_CHAIN_WALK` in `packages/m3l-common/src/aws/rds-data/client.ts`. */
+/**
+ * The maximum number of links {@link underlyingErrnoCodeOf} inspects — the
+ * caught value itself plus up to nine causes — mirroring
+ * `MAX_CAUSE_CHAIN_WALK` in `packages/m3l-common/src/aws/rds-data/client.ts`.
+ */
 const MAX_CAUSE_CHAIN_WALK = 10;
+
+/**
+ * One link's classification during {@link underlyingErrnoCodeOf}'s walk:
+ *
+ * - `"stop"` — the link is not an `Error`, the walk bound forbids reading a
+ *   further `.cause`, or inspecting the link threw. There is nothing further
+ *   to walk to, so the overall result is `undefined`.
+ * - `"decide"` — the link is the first non-`Core.M3LError` `Error` found;
+ *   `code` (from {@link errnoCodeOf}, possibly itself `undefined`) is the
+ *   walk's final answer.
+ * - `"advance"` — the link is a `Core.M3LError` and a further link remains
+ *   to inspect; `next` is its own `.cause`, read exactly once.
+ */
+type LinkInspection =
+  | { readonly kind: "stop" }
+  | { readonly kind: "decide"; readonly code: string | undefined }
+  | { readonly kind: "advance"; readonly next: unknown };
+
+/**
+ * Classifies one link in {@link underlyingErrnoCodeOf}'s walk, never
+ * throwing.
+ *
+ * Every read that could observe attacker- or caller-controlled behaviour —
+ * `instanceof Error`, `instanceof Core.M3LError`, {@link errnoCodeOf}'s own
+ * `Object.hasOwn` and `.code` read, and the `.cause` read — happens inside
+ * ONE `try`. A HOSTILE link (a `code` getter that throws, or a Proxy whose
+ * `getPrototypeOf` or `getOwnPropertyDescriptor` trap throws) therefore
+ * classifies the same as a non-`Error` link: `"stop"`. Returning `undefined`
+ * for a link that cannot be safely inspected is correct here — this helper
+ * only builds a failure REPORT, and a hostile value on the failure path must
+ * never replace or interrupt the caller's real, already-decided failure.
+ *
+ * @param link - The value to classify.
+ * @param canAdvance - `false` once the walk bound ({@link MAX_CAUSE_CHAIN_WALK})
+ *   forbids reading a further `.cause`; a `Core.M3LError` link then
+ *   classifies as `"stop"` rather than reading `.cause` needlessly.
+ */
+function inspectCauseLink(link: unknown, canAdvance: boolean): LinkInspection {
+  try {
+    if (!(link instanceof Error)) {
+      return { kind: "stop" };
+    }
+    if (!(link instanceof Core.M3LError)) {
+      return { kind: "decide", code: errnoCodeOf(link) };
+    }
+    if (!canAdvance) {
+      return { kind: "stop" };
+    }
+    return { kind: "advance", next: link.cause };
+  } catch {
+    // A hostile link — its instanceof check, Object.hasOwn, code read, or
+    // cause read threw — leaves nothing further safe to read from it. Stop
+    // the walk the same way a non-Error link would, rather than let a raw
+    // throw escape this failure-reporting helper.
+    return { kind: "stop" };
+  }
+}
 
 /**
  * The `errno`-shaped own `code` of the first NON-`Core.M3LError` `Error` link
@@ -98,19 +159,31 @@ const MAX_CAUSE_CHAIN_WALK = 10;
  * `.cause` chain is caller-constructed data, not a structure this module
  * controls, and an accidental or adversarial cycle (say, `a.cause = b` and
  * `b.cause = a`) would otherwise loop forever. A link's `.cause` is read
- * only when a further link remains to inspect, and exactly ONCE per read,
- * inside a `try`/`catch`: a throwing getter ends the walk with `undefined`
- * rather than propagating, because code on this failure-reporting path
- * must never itself throw. A link that is not an `Error` at all (including
- * the starting `cause` itself) also ends the walk with `undefined` — there
- * is nothing further to read `.cause` from. The tenth link's own `.cause`
- * is never read, since there is no eleventh link left to inspect with it.
+ * only when a further link remains to inspect, and exactly ONCE per read.
+ * A link that is not an `Error` at all (including the starting `cause`
+ * itself) ends the walk with `undefined` — there is nothing further to read
+ * `.cause` from. The tenth link's own `.cause` is never read, since there is
+ * no eleventh link left to inspect with it.
+ *
+ * NOTHING this function reads from a link can escape as a raw throw —
+ * `instanceof Error`, `instanceof Core.M3LError`, {@link errnoCodeOf}'s own
+ * `Object.hasOwn`/`.code` read, and the `.cause` read are all classified by
+ * {@link inspectCauseLink} inside one `try`/`catch` per link. A HOSTILE link
+ * — a `code` getter that throws, or a Proxy whose `getPrototypeOf` or
+ * `getOwnPropertyDescriptor` trap throws — ends the walk with `undefined`
+ * the same as a throwing `.cause` getter or a non-`Error` link, because code
+ * on this failure-reporting path must never itself throw (X8c review
+ * finding, issue #1058 follow-up: this guarantee originally covered only
+ * the `.cause` read, letting a hostile link elsewhere in the chain escape
+ * as a raw throw).
  *
  * @param cause - Any caught value, typically an `M3LConsoleError` (or other
  *   `Core.M3LError`) that may wrap a real filesystem or driver failure.
  * @returns The first non-M3L link's own `code`, or `undefined` when `cause`
- *   is not an `Error`, every link up to the bound is a `Core.M3LError`, or
- *   the first non-M3L link has no qualifying own `code`.
+ *   is not an `Error`, every link up to the bound is a `Core.M3LError`, the
+ *   first non-M3L link has no qualifying own `code`, or any link along the
+ *   way cannot be safely inspected (a throwing `.cause`/`code` accessor or
+ *   `instanceof` check).
  *
  * @example
  * ```ts
@@ -129,25 +202,15 @@ const MAX_CAUSE_CHAIN_WALK = 10;
 export function underlyingErrnoCodeOf(cause: unknown): string | undefined {
   let link: unknown = cause;
   for (let depth = 0; depth < MAX_CAUSE_CHAIN_WALK; depth += 1) {
-    if (!(link instanceof Error)) {
-      return undefined;
-    }
-    if (!(link instanceof Core.M3LError)) {
-      return errnoCodeOf(link);
-    }
-    if (depth === MAX_CAUSE_CHAIN_WALK - 1) {
-      // This is the last link the bound allows inspecting — there is no
-      // further link to walk to, so reading `.cause` here would be a wasted
-      // (and, for a hostile getter, needlessly risky) read.
-      return undefined;
-    }
-    try {
-      link = link.cause;
-    } catch {
-      // A `.cause` getter that itself throws leaves this link's downstream
-      // state unknowable — stop here rather than risk propagating a raw
-      // throw out of a failure-reporting helper.
-      return undefined;
+    const inspection = inspectCauseLink(link, depth < MAX_CAUSE_CHAIN_WALK - 1);
+    switch (inspection.kind) {
+      case "stop":
+        return undefined;
+      case "decide":
+        return inspection.code;
+      case "advance":
+        link = inspection.next;
+        break;
     }
   }
   return undefined;

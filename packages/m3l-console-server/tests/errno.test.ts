@@ -302,8 +302,110 @@ describe("underlyingErrnoCodeOf", () => {
         },
       });
 
-      expect(() => underlyingErrnoCodeOf(poisoned)).not.toThrow();
-      expect(underlyingErrnoCodeOf(poisoned)).toBeUndefined();
+      // Call once, capturing the result inside the `not.toThrow` callback —
+      // a prior version of this test called `underlyingErrnoCodeOf(poisoned)`
+      // twice (once per assertion), which is wasteful and, for a stateful
+      // poisoned getter, can even observe two different outcomes.
+      let result: string | undefined;
+      expect(() => {
+        result = underlyingErrnoCodeOf(poisoned);
+      }).not.toThrow();
+      expect(result).toBeUndefined();
+    });
+  });
+
+  // [X8c review finding, issue #1058 follow-up] `underlyingErrnoCodeOf`
+  // originally guarded only the `.cause` read; the `instanceof
+  // Core.M3LError` / `instanceof Error` checks on each link, and the call to
+  // `errnoCodeOf(link)` (which itself runs `Object.hasOwn(cause, "code")`
+  // plus a `.code` read), were not — so a hostile link escaped as a raw
+  // throw instead of ending the walk with `undefined`. This block locks the
+  // fix: every read on a link now happens inside `inspectCauseLink`'s single
+  // `try`/`catch`, so any throw while inspecting a link ends the walk with
+  // `undefined` rather than escaping. This is reachable from
+  // `src/cleanup.ts`, whose `failures.map(toCleanupFailure)` runs outside
+  // any try, so a raw throw here would replace `runCleanup`'s intended
+  // `M3LConsoleError("ERR_CONSOLE_INTERNAL")` (see `cleanup.test.ts`'s
+  // "hostile cause" lock).
+  describe("hostile links — the walk must never itself throw", () => {
+    test("returns undefined and does not throw when the input Error's own code getter throws", () => {
+      const hostile = new Error("hostile");
+      Object.defineProperty(hostile, "code", {
+        configurable: true,
+        get() {
+          throw new Error("hostile code getter blew up");
+        },
+      });
+
+      let result: string | undefined;
+      expect(() => {
+        result = underlyingErrnoCodeOf(hostile);
+      }).not.toThrow();
+      expect(result).toBeUndefined();
+    });
+
+    test("returns undefined and does not throw when the first non-M3L link's own code getter throws", () => {
+      const hostile = new Error("hostile");
+      Object.defineProperty(hostile, "code", {
+        configurable: true,
+        get() {
+          throw new Error("hostile code getter blew up");
+        },
+      });
+      // The M3L link is skipped, then the hostile first non-M3L link is
+      // inspected — this exercises `errnoCodeOf`'s unguarded `.code` read.
+      const wrapped = new M3LConsoleError("ERR_CONSOLE_INTERNAL", "wrapped", {
+        cause: hostile,
+      });
+
+      let result: string | undefined;
+      expect(() => {
+        result = underlyingErrnoCodeOf(wrapped);
+      }).not.toThrow();
+      expect(result).toBeUndefined();
+    });
+
+    test("returns undefined and does not throw when the first non-M3L link is a Proxy whose getOwnPropertyDescriptor trap throws", () => {
+      const target: Error = new Error("x");
+      const hostile: Error = new Proxy(target, {
+        getOwnPropertyDescriptor() {
+          throw new Error("getOwnPropertyDescriptor trap blew up");
+        },
+      });
+      // Confirms this Proxy actually makes Object.hasOwn throw — the
+      // mechanism errnoCodeOf's ownership guard relies on.
+      expect(() => Object.hasOwn(hostile, "code")).toThrow();
+
+      const wrapped = new M3LConsoleError("ERR_CONSOLE_INTERNAL", "wrapped", {
+        cause: hostile,
+      });
+
+      let result: string | undefined;
+      expect(() => {
+        result = underlyingErrnoCodeOf(wrapped);
+      }).not.toThrow();
+      expect(result).toBeUndefined();
+    });
+
+    test("returns undefined and does not throw when the first non-M3L link is a Proxy whose getPrototypeOf trap throws", () => {
+      const target: Error = new Error("x");
+      const hostile: Error = new Proxy(target, {
+        getPrototypeOf() {
+          throw new Error("getPrototypeOf trap blew up");
+        },
+      });
+      // Confirms this Proxy actually makes `instanceof` itself throw.
+      expect(() => hostile instanceof Error).toThrow();
+
+      const wrapped = new M3LConsoleError("ERR_CONSOLE_INTERNAL", "wrapped", {
+        cause: hostile,
+      });
+
+      let result: string | undefined;
+      expect(() => {
+        result = underlyingErrnoCodeOf(wrapped);
+      }).not.toThrow();
+      expect(result).toBeUndefined();
     });
   });
 
