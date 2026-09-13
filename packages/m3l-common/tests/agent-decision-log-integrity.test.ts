@@ -466,6 +466,17 @@ describe("recovery after a failed append", () => {
     const entry = makeEntry(BASE_NOW);
 
     await log.write(entry);
+    // Drain the first write's own background manifest seal before this
+    // removal: the seal runs on the writer's internal serialized chain, not
+    // inside the promise `write()` awaits, so a still-in-flight seal can
+    // otherwise recreate `manifest.jsonl` partway through this recursive
+    // remove and surface as `ENOTEMPTY` — which `fs.rm` never retries. This
+    // does not change what this test provokes: `flush()` leaves the writer's
+    // cached active segment untouched, so the very next `write()` still hits
+    // a genuine `ENOENT` once the directory is gone underneath it — the same
+    // reasoning `storage-append-only-stream.test.ts`'s `provokeAppendFailure`
+    // documents for the identical race.
+    await log.flush();
     await rm(logDir, { recursive: true, force: true });
 
     const thrown = await catchRejected(() => log.write(entry));
@@ -474,6 +485,11 @@ describe("recovery after a failed append", () => {
     // The third write must recreate the directory and succeed.
     await expect(log.write(entry)).resolves.toBeUndefined();
     expect(await readAllLines(logDir)).toHaveLength(1);
+    // Drain this instance's own chain once more before the sandbox-wide
+    // `afterEach` removes `workDir`: the third write's own manifest seal can
+    // still be in flight at this point, and `afterEach`'s `rm(workDir, ...)`
+    // would otherwise race it the same way.
+    await log.flush();
   });
 });
 

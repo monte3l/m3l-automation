@@ -42,7 +42,7 @@
  * @packageDocumentation
  */
 
-import { mkdtemp, readFile, readdir, rm } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, rm, stat } from "node:fs/promises";
 import type * as NodeFsPromises from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -224,8 +224,18 @@ describe("AppendOnlyWriter — seal port wiring", () => {
     expect(calls).toHaveLength(2);
     const [firstCall, secondCall] = calls;
     expect(firstCall?.rotatedFrom).toBeUndefined();
-    expect(secondCall?.rotatedFrom).toBe(firstCall?.active);
-    expect(secondCall?.active).not.toBe(secondCall?.rotatedFrom);
+
+    // `rotatedFrom` is now an object (name + byteLength), not a bare name —
+    // pin both fields. `byteLength` is asserted against the segment's real
+    // on-disk size, read independently via `stat`, never against whatever
+    // the writer itself reported: rotation never mutates the segment it
+    // left, so its size at this point already equals its final size.
+    expect(secondCall?.rotatedFrom?.name).toBe(firstCall?.active);
+    const rotatedFromPath = path.join(directory, firstCall?.active ?? "");
+    const { size: rotatedFromRealBytes } = await stat(rotatedFromPath);
+    expect(rotatedFromRealBytes).toBeGreaterThan(0);
+    expect(secondCall?.rotatedFrom?.byteLength).toBe(rotatedFromRealBytes);
+    expect(secondCall?.active).not.toBe(secondCall?.rotatedFrom?.name);
 
     const segmentFiles = await listSegmentFiles(directory);
     expect(segmentFiles).toContain(firstCall?.active);
