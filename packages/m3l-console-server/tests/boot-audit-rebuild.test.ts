@@ -27,7 +27,7 @@ import type { AddressInfo } from "node:net";
 
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 import { createHumanActionAuditStream } from "../src/audit/stream.js";
 import type { M3LHumanActionRecord } from "../src/audit/record.js";

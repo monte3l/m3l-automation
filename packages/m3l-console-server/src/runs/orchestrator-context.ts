@@ -25,7 +25,7 @@
  * @packageDocumentation
  */
 
-import type { Core } from "@m3l-automation/m3l-common";
+import type { Core } from "@monte3l/m3l-common";
 
 import type { M3LRunAuditSink } from "./audit.js";
 import type { M3LRunEventSink } from "./events.js";

@@ -35,7 +35,7 @@ import type { IncomingMessage } from "node:http";
 
 import { describe, expect, test } from "vitest";
 
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 import { M3LConsoleError } from "../src/errors/console-error.js";
 import { readJsonBody } from "../src/http/body.js";

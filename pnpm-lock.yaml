@@ -449,8 +449,8 @@ importers:
 
   packages/m3l-console-server:
     dependencies:
-      '@m3l-automation/m3l-common':
-        specifier: workspace:@monte3l/m3l-common@*
+      '@monte3l/m3l-common':
+        specifier: workspace:*
         version: link:../m3l-common
 
   packages/m3l-console-web:

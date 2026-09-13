@@ -81,7 +81,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 
 import { afterEach, describe, expect, test } from "vitest";
 
-import type { Core } from "@m3l-automation/m3l-common";
+import type { Core } from "@monte3l/m3l-common";
 
 import { createConsoleRuntime } from "../src/main.js";
 import type { M3LConsoleRuntime } from "../src/main.js";

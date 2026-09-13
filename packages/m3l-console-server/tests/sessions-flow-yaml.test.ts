@@ -20,7 +20,7 @@ import { join } from "node:path";
 
 import { afterEach, describe, expect, test } from "vitest";
 
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 import { renderFlowYaml } from "../src/sessions/flow-yaml.js";
 import type {

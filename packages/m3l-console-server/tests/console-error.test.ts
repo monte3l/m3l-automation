@@ -4,7 +4,7 @@
  */
 import { describe, expect, expectTypeOf, test } from "vitest";
 
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 import {
   isConsoleError,

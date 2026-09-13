@@ -26,7 +26,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 
 import { describe, expect, test } from "vitest";
 
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 import { createConsoleRequestListener } from "../src/http/handler.js";
 import type { M3LConsoleMiddleware } from "../src/http/middleware.js";

@@ -11,10 +11,10 @@
  * @packageDocumentation
  */
 
-import type { Core } from "@m3l-automation/m3l-common";
+import type { Core } from "@monte3l/m3l-common";
 
-export type { M3LBindingExpectedType } from "@m3l-automation/m3l-common/core";
-export { validateBindingValue } from "@m3l-automation/m3l-common/core";
+export type { M3LBindingExpectedType } from "@monte3l/m3l-common/core";
+export { validateBindingValue } from "@monte3l/m3l-common/core";
 
 /** Console-local alias for the promoted `Core.M3LStepBinding` shape. */
 export type M3LSessionBinding = Core.M3LStepBinding;

@@ -20,7 +20,7 @@ import * as path from "node:path";
 
 import { afterEach, describe, expect, test, vi } from "vitest";
 
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 import type { M3LConsoleRunsConfig } from "../src/config/runs.js";
 import type { M3LRunAuditRecord, M3LRunAuditSink } from "../src/runs/audit.js";

@@ -4,7 +4,7 @@
  * slice 2, ADR-0068).
  *
  * The parsing/formatting/resolving logic now lives in
- * `@m3l-automation/m3l-common`'s `core/orchestration` submodule; this file
+ * `@monte3l/m3l-common`'s `core/orchestration` submodule; this file
  * exists only to keep the console server's own error hierarchy intact — a
  * caught `Core.M3LStepReferenceError` is re-thrown as an `M3LConsoleError`
  * with the console's own `ERR_CONSOLE_SESSION_REFERENCE_INVALID` code, so
@@ -14,11 +14,11 @@
  * @packageDocumentation
  */
 
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 import { M3LConsoleError } from "../errors/console-error.js";
 
-export type { M3LStepReference } from "@m3l-automation/m3l-common/core";
+export type { M3LStepReference } from "@monte3l/m3l-common/core";
 
 /** Re-throws a caught `Core.M3LStepReferenceError` as the console's own error type; rethrows anything else untouched. */
 function rethrowAsConsoleError(cause: unknown): never {

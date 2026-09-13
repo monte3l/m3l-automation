@@ -6,7 +6,7 @@
  */
 import { describe, expect, expectTypeOf, test } from "vitest";
 
-import type { Core } from "@m3l-automation/m3l-common";
+import type { Core } from "@monte3l/m3l-common";
 
 import { mapSpawnOutcome } from "../src/runs/outcome.js";
 import type { M3LSpawnExitInfo } from "../src/runs/outcome.js";

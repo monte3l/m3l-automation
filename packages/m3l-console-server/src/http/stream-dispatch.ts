@@ -9,7 +9,7 @@
 
 import type { ServerResponse } from "node:http";
 
-import type { Core } from "@m3l-automation/m3l-common";
+import type { Core } from "@monte3l/m3l-common";
 
 import type { M3LConsoleResponse } from "./respond.js";
 import { isStreamResponse } from "./stream-response.js";
@@ -32,7 +32,7 @@ const DEFAULT_STREAM_RETRY_MS = 2_000;
  *
  * @example
  * ```ts
- * import { Core } from "@m3l-automation/m3l-common";
+ * import { Core } from "@monte3l/m3l-common";
  *
  * const options: StreamDispatchOptions = { logger: new Core.M3LLogger([]) };
  * ```
@@ -80,7 +80,7 @@ export interface ResolvedDispatch {
  * @example
  * ```ts
  * import type { ServerResponse } from "node:http";
- * import { Core } from "@m3l-automation/m3l-common";
+ * import { Core } from "@monte3l/m3l-common";
  *
  * import { resolveDispatchedResult } from "@m3l-automation/m3l-console-server/http/stream-dispatch.js";
  * import type { M3LConsoleResult } from "@m3l-automation/m3l-console-server/http/stream-response.js";

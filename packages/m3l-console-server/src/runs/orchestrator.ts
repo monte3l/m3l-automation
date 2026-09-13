@@ -12,7 +12,7 @@
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 import type { RunExecutionMode } from "../store/runs-repository.js";
 

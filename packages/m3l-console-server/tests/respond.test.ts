@@ -16,7 +16,7 @@ import type { ServerResponse } from "node:http";
 
 import { describe, expect, test } from "vitest";
 
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 import { jsonResponse, writeResponse } from "../src/http/respond.js";
 

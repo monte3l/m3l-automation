@@ -15,7 +15,7 @@
 
 import type { ServerResponse } from "node:http";
 
-import type { Core } from "@m3l-automation/m3l-common";
+import type { Core } from "@monte3l/m3l-common";
 
 import { encodeSseComment, encodeSseFrame, encodeSseRetry } from "./sse.js";
 import type { M3LSseFrame } from "./sse.js";
@@ -67,7 +67,7 @@ export interface M3LStreamWriteOutcome {
  * @example
  * ```ts
  * import type { ServerResponse } from "node:http";
- * import { Core } from "@m3l-automation/m3l-common";
+ * import { Core } from "@monte3l/m3l-common";
  *
  * function buildOptions(
  *   res: ServerResponse,
@@ -513,7 +513,7 @@ function encodeRetryFrame(
  * @example
  * ```ts
  * import type { ServerResponse } from "node:http";
- * import { Core } from "@m3l-automation/m3l-common";
+ * import { Core } from "@monte3l/m3l-common";
  *
  * import { writeStream } from "@m3l-automation/m3l-console-server/http/stream-writer.js";
  * import type { M3LConsoleStreamResponse } from "@m3l-automation/m3l-console-server/http/stream-response.js";

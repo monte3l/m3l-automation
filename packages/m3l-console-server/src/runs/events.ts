@@ -14,7 +14,7 @@
  * @packageDocumentation
  */
 
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 import { M3LConsoleError } from "../errors/console-error.js";
 
@@ -94,7 +94,7 @@ export interface M3LRunEventSink {
  *
  * @example
  * ```ts
- * import { Core } from "@m3l-automation/m3l-common";
+ * import { Core } from "@monte3l/m3l-common";
  * import {
  *   createCompositeRunEventSink,
  *   createLoggerRunEventSink,
@@ -154,7 +154,7 @@ export function createCompositeRunEventSink(
  *
  * @example
  * ```ts
- * import { Core } from "@m3l-automation/m3l-common";
+ * import { Core } from "@monte3l/m3l-common";
  * import { createLoggerRunEventSink } from "@m3l-automation/m3l-console-server/runs/events.js";
  *
  * const sink = createLoggerRunEventSink(new Core.M3LLogger([]));

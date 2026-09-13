@@ -16,7 +16,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 
 import { describe, expect, test } from "vitest";
 
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 import { createRouter } from "../../src/http/router.js";
 import type { M3LRoute } from "../../src/http/router.js";

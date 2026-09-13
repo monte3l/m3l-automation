@@ -2,7 +2,7 @@
  * Tests for `src/stream/event-stream.ts` — the generic, transport-agnostic
  * event fan-out leaf backing X4 live run streaming (#552).
  *
- * `stream/` may import only `@m3l-automation/m3l-common`, `node:` builtins,
+ * `stream/` may import only `@monte3l/m3l-common`, `node:` builtins,
  * and `../errors/` — this file therefore never imports `runs/` or `http/`,
  * and every fixture is deliberately generic over `TPayload` (see the
  * `expectTypeOf` block at the bottom) so nothing here accidentally pins the

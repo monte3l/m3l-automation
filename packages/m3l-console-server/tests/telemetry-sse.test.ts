@@ -21,7 +21,7 @@ import type { ServerResponse } from "node:http";
 
 import { describe, expect, test } from "vitest";
 
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 import type { RequestFaultContext } from "../src/http/access-log.js";
 import { finishRequest } from "../src/http/finish-request.js";

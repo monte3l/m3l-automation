@@ -71,7 +71,7 @@ import type { AddressInfo } from "node:net";
 
 import { afterEach, describe, expect, test } from "vitest";
 
-import type { Core } from "@m3l-automation/m3l-common";
+import type { Core } from "@monte3l/m3l-common";
 
 import { startConsole } from "../src/main.js";
 import type { M3LRunningConsole } from "../src/main.js";

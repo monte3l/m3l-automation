@@ -20,7 +20,7 @@
  * @packageDocumentation
  */
 
-import type { Core } from "@m3l-automation/m3l-common";
+import type { Core } from "@monte3l/m3l-common";
 
 import { M3LConsoleError } from "../errors/console-error.js";
 
@@ -144,7 +144,7 @@ function messageFor(action: M3LRunAuditAction): string {
  *
  * @example
  * ```ts
- * import { Core } from "@m3l-automation/m3l-common";
+ * import { Core } from "@monte3l/m3l-common";
  * import { createLoggerAuditSink } from "@m3l-automation/m3l-console-server/runs/audit.js";
  *
  * const sink = createLoggerAuditSink(new Core.M3LLogger([]));

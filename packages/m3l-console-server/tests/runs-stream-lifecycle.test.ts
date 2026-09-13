@@ -21,7 +21,7 @@
  */
 import { describe, expect, test } from "vitest";
 
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 import { createRunSubsystem } from "../src/runs/composition.js";
 import type { M3LRunEvent } from "../src/runs/events.js";

@@ -6,7 +6,7 @@
  * bounded ring buffer of the most recently published events, and a set of
  * live subscribers. Deliberately has no I/O and no logger dependency — it is
  * generic over `TPayload`, so it never names a run-specific shape, and
- * `stream/` is only ever allowed to import `@m3l-automation/m3l-common`,
+ * `stream/` is only ever allowed to import `@monte3l/m3l-common`,
  * `node:` builtins, and `../errors/` (ADR-0065, ADR-0066): `runs/` publishes
  * into a stream and `http/` serves it, so any edge out of `stream/` would
  * drag transport and orchestration into each other.

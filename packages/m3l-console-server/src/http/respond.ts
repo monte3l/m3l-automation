@@ -11,7 +11,7 @@
 
 import type { ServerResponse } from "node:http";
 
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 /** The `content-type` header value every {@link jsonResponse} sets. */
 const JSON_CONTENT_TYPE = "application/json; charset=utf-8";

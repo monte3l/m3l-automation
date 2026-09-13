@@ -10,7 +10,7 @@
  * @packageDocumentation
  */
 
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 /**
  * The closed set of machine-readable error codes the console server raises.
@@ -263,7 +263,7 @@ interface M3LConsoleErrorOptions {
  *
  * @example
  * ```ts
- * import { M3LError } from "@m3l-automation/m3l-common/core";
+ * import { M3LError } from "@monte3l/m3l-common/core";
  *
  * // extends Core.M3LError, so `instanceof M3LError` still narrows it
  * throw new M3LConsoleError(

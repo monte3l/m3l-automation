@@ -12,7 +12,7 @@
  * @packageDocumentation
  */
 
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 import type { M3LConsoleErrorCode } from "../errors/console-error.js";
 import { M3LConsoleError } from "../errors/console-error.js";
@@ -523,7 +523,7 @@ export interface M3LConsoleErrorEnvelope {
  * @returns `true` when `error` is a genuine fault.
  * @example
  * ```ts
- * import { Core } from "@m3l-automation/m3l-common";
+ * import { Core } from "@monte3l/m3l-common";
  *
  * isFaultError(
  *   new M3LConsoleError("ERR_CONSOLE_NOT_FOUND", "route not found"),

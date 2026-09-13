@@ -20,7 +20,7 @@
  * @packageDocumentation
  */
 
-import type { Core } from "@m3l-automation/m3l-common";
+import type { Core } from "@monte3l/m3l-common";
 
 import { createEventStreamHub } from "../stream/event-stream.js";
 import type { M3LEventStreamHub } from "../stream/event-stream.js";
@@ -61,7 +61,7 @@ import { createStreamRunEventSink } from "./stream-events.js";
  *
  * @example
  * ```ts
- * import { Core } from "@m3l-automation/m3l-common";
+ * import { Core } from "@monte3l/m3l-common";
  * import type { M3LRunSubsystemOptions } from "@m3l-automation/m3l-console-server/runs/composition.js";
  * import type { M3LRunRegistry } from "@m3l-automation/m3l-console-server/runs/registry.js";
  *
@@ -213,7 +213,7 @@ export interface M3LRunSubsystem {
  *
  * @example
  * ```ts
- * import { Core } from "@m3l-automation/m3l-common";
+ * import { Core } from "@monte3l/m3l-common";
  * import { createRunSubsystem } from "@m3l-automation/m3l-console-server/runs/composition.js";
  * import type { M3LRunRegistry } from "@m3l-automation/m3l-console-server/runs/registry.js";
  *

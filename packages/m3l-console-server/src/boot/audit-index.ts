@@ -37,7 +37,7 @@
  * @packageDocumentation
  */
 
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 import type { M3LHumanActionAuditPort } from "../audit/port.js";
 import type {
