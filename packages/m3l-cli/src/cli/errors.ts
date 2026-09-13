@@ -8,7 +8,7 @@
  * @packageDocumentation
  */
 
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 /**
  * The closed set of machine-readable error codes the m3l CLI raises.

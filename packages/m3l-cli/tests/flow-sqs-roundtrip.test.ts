@@ -21,7 +21,7 @@ import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 import { beforeAll, describe, expect, test } from "vitest";
 
 import { discoverScripts } from "../src/discovery/discover.js";

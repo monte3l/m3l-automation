@@ -24,7 +24,7 @@ import { join } from "node:path";
 
 import { afterEach, describe, expect, test } from "vitest";
 
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 import { M3LCliError } from "../src/cli/errors.js";
 import type { M3LCliEnvFileSetting } from "../src/cli/flags.js";

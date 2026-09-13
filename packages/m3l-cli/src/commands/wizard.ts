@@ -8,7 +8,7 @@
  * @packageDocumentation
  */
 
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 import { M3LCliError } from "../cli/errors.js";
 import { formatAlignedTable } from "../cli/table.js";
@@ -51,7 +51,7 @@ interface M3LCliWizardCommandContext extends M3LCliCommandContext {
  *
  * @example
  * ```ts
- * import { M3LPrompt } from "@m3l-automation/m3l-common/core";
+ * import { M3LPrompt } from "@monte3l/m3l-common/core";
  * import type { M3LCliWizardPrompt } from "./wizard.js";
  *
  * // M3LPrompt structurally satisfies M3LCliWizardPrompt — no adapter needed.

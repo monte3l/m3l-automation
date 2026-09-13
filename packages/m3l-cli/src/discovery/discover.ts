@@ -9,7 +9,7 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { createRequire } from "node:module";
 
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 import { M3LCliError } from "../cli/errors.js";
 
@@ -20,9 +20,6 @@ interface M3LCliOwnManifest {
 
 /** The `@m3l-automation/*` scope prefix a declared dependency name must carry to be considered a script. */
 const SCOPE_PREFIX = "@m3l-automation/";
-
-/** The one `@m3l-automation/*` dependency that is the library, never a script. */
-const LIBRARY_PACKAGE_NAME = "@m3l-automation/m3l-common";
 
 /**
  * Reads this CLI package's own `package.json`, resolved relative to this
@@ -99,17 +96,17 @@ export interface M3LCliDependencyGraphOptions {
 
 /**
  * Filters this CLI's own declared `dependencies` down to the
- * `@m3l-automation/*` script package names (excluding the library itself),
- * stripped of their scope prefix.
+ * `@m3l-automation/*` script package names (the library itself no longer
+ * shares this scope, so nothing needs excluding by name), stripped of their
+ * scope prefix.
  */
 function declaredScriptDependencyNames(
   options: M3LCliDependencyGraphOptions | undefined,
 ): readonly string[] {
   const readOwnManifest = options?.readOwnManifest ?? readOwnManifestDefault;
   const dependencies = readOwnManifest().dependencies ?? {};
-  return Object.keys(dependencies).filter(
-    (depName) =>
-      depName.startsWith(SCOPE_PREFIX) && depName !== LIBRARY_PACKAGE_NAME,
+  return Object.keys(dependencies).filter((depName) =>
+    depName.startsWith(SCOPE_PREFIX),
   );
 }
 
@@ -235,7 +232,7 @@ function discoverScriptsFromFilesystem(
  * ```ts
  * const candidates = discoverScriptsFromDependencyGraph();
  * // one M3LCliScriptCandidate per @m3l-automation/* dependency this CLI
- * // package declares (excluding @m3l-automation/m3l-common) that resolves
+ * // package declares (excluding @monte3l/m3l-common) that resolves
  * ```
  */
 export function discoverScriptsFromDependencyGraph(

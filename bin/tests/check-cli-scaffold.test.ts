@@ -247,17 +247,25 @@ describe("cliPackageManifestErrors — synthetic fixtures", () => {
     expect(errors[0]).toContain(JSON.stringify(CLI_LIBRARY_DEPENDENCY_VALUE));
   });
 
-  test("flags the pre-rename plain workspace:* value for the library dependency", () => {
-    // ADR-0103: the library's workspace alias now targets @monte3l/m3l-common,
-    // so the bare "workspace:*" this key used before the rename no longer
-    // satisfies the pin.
+  test("flags the pre-rename aliased shape (old key + old value) as non-conformant", () => {
+    // This slice migrated the CLI off the transitional
+    // "@m3l-automation/m3l-common": "workspace:@monte3l/m3l-common@*" alias
+    // onto the plain "@monte3l/m3l-common": "workspace:*" pin every other
+    // workspace dependency already uses. The old shape must now fail on two
+    // counts at once: the new key is missing, and the old key survives as an
+    // unrecognized (but workspace-scoped) dependency pinned to the wrong value.
     const errors = cliPackageManifestErrors(
       manifestWith({
-        dependencies: { [CLI_LIBRARY_DEPENDENCY]: "workspace:*" },
+        dependencies: {
+          "@m3l-automation/m3l-common": "workspace:@monte3l/m3l-common@*",
+        },
       }),
     );
-    expect(errors).toHaveLength(1);
-    expect(errors[0]).toContain(JSON.stringify(CLI_LIBRARY_DEPENDENCY_VALUE));
+    expect(errors).toHaveLength(2);
+    expect(errors.some((e) => e.includes(CLI_LIBRARY_DEPENDENCY))).toBe(true);
+    expect(
+      errors.some((e) => e.includes('must be pinned to "workspace:*"')),
+    ).toBe(true);
   });
 
   test("flags a third-party runtime dependency", () => {

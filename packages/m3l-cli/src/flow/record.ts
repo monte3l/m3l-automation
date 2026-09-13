@@ -592,7 +592,7 @@ export function readFlowRunRecord(
  *
  * @example
  * ```ts
- * import { validateResumeRecord } from "@m3l-automation/m3l-common/core";
+ * import { validateResumeRecord } from "@monte3l/m3l-common/core";
  * const { resumeFromStepId, stepExecutionCount } = validateResumeRecord(record, definition);
  * ```
  */
@@ -636,7 +636,7 @@ export interface M3LCliResumeOptions {
  *
  * @example
  * ```ts
- * import { readFlowRunRecord, validateResumeRecord } from "@m3l-automation/m3l-common/core";
+ * import { readFlowRunRecord, validateResumeRecord } from "@monte3l/m3l-common/core";
  * const record = readFlowRunRecord(recordPath);
  * const { resumeFromStepId, stepExecutionCount } = validateResumeRecord(record, definition);
  * ```

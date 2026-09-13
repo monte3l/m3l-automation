@@ -557,7 +557,7 @@ export default tseslint.config(
   },
   {
     // The m3l CLI package mirrors the scripts' ADR-0029 dependency boundary:
-    // its only runtime dependency is @m3l-automation/m3l-common, so its
+    // its only runtime dependency is @monte3l/m3l-common, so its
     // source may import only the library (or a subpath) and node: builtins.
     // This mechanizes the package's zero-runtime-dependency guarantee
     // (ADR-0042) at source level, the same way check:script-deps guards the
@@ -569,10 +569,10 @@ export default tseslint.config(
         {
           patterns: [
             {
-              regex: "^(?!\\.)(?!node:)(?!@m3l-automation/m3l-common($|/)).+$",
+              regex: "^(?!\\.)(?!node:)(?!@monte3l/m3l-common($|/)).+$",
               allowTypeImports: false,
               message:
-                "The m3l CLI may only import @m3l-automation/m3l-common (or a subpath) and node: builtins — ADR-0042 keeps it zero-dependency.",
+                "The m3l CLI may only import @monte3l/m3l-common (or a subpath) and node: builtins — ADR-0042 keeps it zero-dependency.",
             },
           ],
         },

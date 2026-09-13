@@ -8,7 +8,7 @@ import { join } from "node:path";
 
 import { afterEach, describe, expect, expectTypeOf, test, vi } from "vitest";
 
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 // Make 'node:fs' configurable so vi.spyOn can intercept individual functions
 // (ESM namespace objects are non-writable) — mirrors packages/m3l-common's
