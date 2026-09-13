@@ -63,7 +63,7 @@
 
 import { createHash } from "node:crypto";
 import type * as FsPromises from "node:fs/promises";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -79,6 +79,7 @@ import {
 } from "../src/internal/storage/append-only-manifest.js";
 import { AppendOnlySealer } from "../src/internal/storage/append-only-sealer.js";
 import type { AppendOnlySealerOptions } from "../src/internal/storage/append-only-sealer.js";
+import type { AppendOnlySealRequest } from "../src/internal/storage/append-only-sealer-types.js";
 
 // ---------------------------------------------------------------------------
 // The inert `open` counter
@@ -260,6 +261,25 @@ function definedOrThrow<T>(value: T | undefined, label: string): T {
   return value;
 }
 
+/** The real, current size of `name` on disk — never a hard-coded number. */
+async function segmentByteLength(name: string): Promise<number> {
+  const { size } = await stat(path.join(sandbox, name));
+  return size;
+}
+
+/**
+ * A rotation request naming `name`, with `byteLength` read from its real
+ * current size on disk — what a rotating writer would believe an untampered
+ * segment holds. Callers that need to snapshot the size BEFORE a test
+ * mutates the file read it via {@link segmentByteLength} directly instead.
+ */
+async function rotationRequest(name: string): Promise<AppendOnlySealRequest> {
+  return { rotatedFrom: { name, byteLength: await segmentByteLength(name) } };
+}
+
+/** No rotation happened on this append. */
+const NO_ROTATION: AppendOnlySealRequest = { rotatedFrom: undefined };
+
 /**
  * A sealer over the sandbox with generous bounds, so nothing here is
  * accidentally about a ceiling. `maxSegmentBytes + maxLineBytes` is the
@@ -289,7 +309,7 @@ describe("rotation sealing", () => {
     const rotated = await writeSegment(segmentName(TODAY, 1));
     await writeSegment(segmentName(TODAY, 2));
 
-    await createSealer().sealAfterAppend(rotated);
+    await createSealer().sealAfterAppend(await rotationRequest(rotated));
 
     expect(await sealedNames()).toEqual([rotated]);
   });
@@ -298,7 +318,7 @@ describe("rotation sealing", () => {
     await seedBaseline(null);
     const rotated = await writeSegment(segmentName(TODAY, 1));
 
-    await createSealer().sealAfterAppend(rotated);
+    await createSealer().sealAfterAppend(await rotationRequest(rotated));
 
     const seal = definedOrThrow((await sealsOnDisk()).get(rotated), "the seal");
     expect(seal.entryCount).toBe(FIXTURE_LINES.length);
@@ -313,7 +333,7 @@ describe("rotation sealing", () => {
     const bytes = await readFile(path.join(sandbox, rotated));
     const independent = createHash("sha256").update(bytes).digest("hex");
 
-    await createSealer().sealAfterAppend(rotated);
+    await createSealer().sealAfterAppend(await rotationRequest(rotated));
 
     const seal = definedOrThrow((await sealsOnDisk()).get(rotated), "the seal");
     expect(seal.sha256).toBe(independent);
@@ -332,7 +352,7 @@ describe("rotation sealing", () => {
     await createSealer({
       maxSegmentBytes: 64,
       maxLineBytes: 64,
-    }).sealAfterAppend(rotated);
+    }).sealAfterAppend(await rotationRequest(rotated));
 
     const seal = definedOrThrow((await sealsOnDisk()).get(rotated), "the seal");
     expect(seal.byteLength).toBe(100);
@@ -342,7 +362,7 @@ describe("rotation sealing", () => {
     await seedBaseline(null);
     await writeSegment(segmentName(TODAY, 1));
 
-    await createSealer().sealAfterAppend(undefined);
+    await createSealer().sealAfterAppend(NO_ROTATION);
 
     expect(await sealedNames()).toEqual([]);
   });
@@ -351,7 +371,7 @@ describe("rotation sealing", () => {
     const rotated = await writeSegment(segmentName(TODAY, 1));
     const highest = await writeSegment(segmentName(TODAY, 2));
 
-    await createSealer().sealAfterAppend(rotated);
+    await createSealer().sealAfterAppend(await rotationRequest(rotated));
 
     const contents = await readManifest(
       sandbox,
@@ -372,8 +392,8 @@ describe("rotation sealing", () => {
     const rotated = await writeSegment(segmentName(TODAY, 1));
     const sealer = createSealer();
 
-    await sealer.sealAfterAppend(rotated);
-    await sealer.sealAfterAppend(rotated);
+    await sealer.sealAfterAppend(await rotationRequest(rotated));
+    await sealer.sealAfterAppend(await rotationRequest(rotated));
 
     const seal = definedOrThrow((await sealsOnDisk()).get(rotated), "the seal");
     expect(seal.sha256).toBe(FIXTURE_SHA256);
@@ -415,7 +435,7 @@ describe("an upgraded trail's first rotation", () => {
     const bytes = await readFile(path.join(sandbox, rotated));
     const independent = createHash("sha256").update(bytes).digest("hex");
 
-    await createSealer().sealAfterAppend(rotated);
+    await createSealer().sealAfterAppend(await rotationRequest(rotated));
 
     const contents = await readManifest(
       sandbox,
@@ -437,7 +457,7 @@ describe("an upgraded trail's first rotation", () => {
     // pre-upgrade process wrote, so these stay unproven.
     const rotated = await seedPreUpgradeTrail();
 
-    await createSealer().sealAfterAppend(rotated);
+    await createSealer().sealAfterAppend(await rotationRequest(rotated));
 
     expect(await sealedNames()).toEqual([rotated]);
     expect(segmentOpens().map((file) => path.basename(file))).toEqual([
@@ -456,7 +476,7 @@ describe("the cold-start sweep", () => {
     const stale = await writeSegment(segmentName(YESTERDAY, 1));
     await writeSegment(segmentName(TODAY, 1));
 
-    await createSealer().sealAfterAppend(undefined);
+    await createSealer().sealAfterAppend(NO_ROTATION);
 
     expect(await sealedNames()).toEqual([stale]);
   });
@@ -473,7 +493,7 @@ describe("the cold-start sweep", () => {
     await writeSegment(segmentName(TODAY, 2));
     await writeSegment(segmentName(TODAY, 3));
 
-    await createSealer().sealAfterAppend(undefined);
+    await createSealer().sealAfterAppend(NO_ROTATION);
 
     expect(await sealedNames()).toEqual([]);
   });
@@ -486,7 +506,7 @@ describe("the cold-start sweep", () => {
     await writeSegment(segmentName(TODAY, 1));
     await writeSegment(segmentName(TODAY, 2));
 
-    await createSealer().sealAfterAppend(undefined);
+    await createSealer().sealAfterAppend(NO_ROTATION);
 
     expect(segmentOpens()).toEqual([]);
   });
@@ -498,7 +518,7 @@ describe("the cold-start sweep", () => {
     const unsealed = await writeSegment(segmentName(YESTERDAY, 2));
     await writeSegment(segmentName(TODAY, 1));
 
-    await createSealer().sealAfterAppend(undefined);
+    await createSealer().sealAfterAppend(NO_ROTATION);
 
     expect(await sealedNames()).toEqual([sealed, unsealed]);
     expect(segmentOpens().map((file) => path.basename(file))).toEqual([
@@ -514,7 +534,7 @@ describe("the cold-start sweep", () => {
     const afterBaseline = await writeSegment(segmentName(YESTERDAY, 2));
     await seedBaseline(legacyBoundary);
 
-    await createSealer().sealAfterAppend(undefined);
+    await createSealer().sealAfterAppend(NO_ROTATION);
 
     expect(await sealedNames()).toEqual([afterBaseline]);
     expect(segmentOpens().map((file) => path.basename(file))).not.toContain(
@@ -531,7 +551,7 @@ describe("the cold-start sweep", () => {
     await seedSeal(sealed);
     await writeSegment(segmentName(TODAY, 1));
 
-    await createSealer().sealAfterAppend(undefined);
+    await createSealer().sealAfterAppend(NO_ROTATION);
 
     expect(segmentOpens()).toEqual([]);
     expect(manifestOpens()).toHaveLength(1);
@@ -543,13 +563,13 @@ describe("the cold-start sweep", () => {
     await writeSegment(segmentName(TODAY, 1));
     const sealer = createSealer();
 
-    await sealer.sealAfterAppend(undefined);
+    await sealer.sealAfterAppend(NO_ROTATION);
     const afterFirst = segmentOpens().length;
     // A second unsealed old segment appears between the two appends: a
     // per-append sweep would find and seal it; a per-instance one never
     // looks again.
     await writeSegment(segmentName(YESTERDAY, 2));
-    await sealer.sealAfterAppend(undefined);
+    await sealer.sealAfterAppend(NO_ROTATION);
 
     expect(afterFirst).toBeGreaterThan(0);
     expect(segmentOpens()).toHaveLength(afterFirst);
@@ -564,9 +584,9 @@ describe("the cold-start sweep", () => {
     const stale = await writeSegment(segmentName(YESTERDAY, 1));
     await writeSegment(segmentName(TODAY, 1));
 
-    await createSealer().sealAfterAppend(undefined);
+    await createSealer().sealAfterAppend(NO_ROTATION);
     await writeSegment(segmentName(YESTERDAY, 2));
-    await createSealer().sealAfterAppend(undefined);
+    await createSealer().sealAfterAppend(NO_ROTATION);
 
     expect(await sealedNames()).toEqual([stale, segmentName(YESTERDAY, 2)]);
   });
@@ -585,7 +605,7 @@ describe("the per-instance sweep ceiling", () => {
     }
     await writeSegment(segmentName(TODAY, 1));
 
-    await createSealer({ maxSweepSeals: 2 }).sealAfterAppend(undefined);
+    await createSealer({ maxSweepSeals: 2 }).sealAfterAppend(NO_ROTATION);
 
     expect(await sealedNames()).toHaveLength(2);
   });
@@ -601,7 +621,7 @@ describe("the per-instance sweep ceiling", () => {
     }
     await writeSegment(segmentName(TODAY, 1));
 
-    await createSealer({ maxSweepSeals: 4 }).sealAfterAppend(undefined);
+    await createSealer({ maxSweepSeals: 4 }).sealAfterAppend(NO_ROTATION);
 
     expect((await sealedNames()).toSorted()).toEqual([
       segmentName(LAST_WEEK, 1),
@@ -621,7 +641,7 @@ describe("the per-instance sweep ceiling", () => {
     }
     await writeSegment(segmentName(TODAY, 1));
 
-    await createSealer({ maxSweepSeals: 1 }).sealAfterAppend(undefined);
+    await createSealer({ maxSweepSeals: 1 }).sealAfterAppend(NO_ROTATION);
 
     expect(segmentOpens().map((file) => path.basename(file))).toEqual([
       segmentName(YESTERDAY, 1),
@@ -638,7 +658,9 @@ describe("the per-instance sweep ceiling", () => {
     const rotated = await writeSegment(segmentName(TODAY, 1));
     await writeSegment(segmentName(TODAY, 2));
 
-    await createSealer({ maxSweepSeals: 1 }).sealAfterAppend(rotated);
+    await createSealer({ maxSweepSeals: 1 }).sealAfterAppend(
+      await rotationRequest(rotated),
+    );
 
     expect((await sealedNames()).toSorted()).toEqual([
       segmentName(YESTERDAY, 1),
@@ -653,8 +675,88 @@ describe("the per-instance sweep ceiling", () => {
     const stale = await writeSegment(segmentName(YESTERDAY, 1));
     await writeSegment(segmentName(TODAY, 1));
 
-    await createSealer({ maxSweepSeals: NaN }).sealAfterAppend(undefined);
+    await createSealer({ maxSweepSeals: NaN }).sealAfterAppend(NO_ROTATION);
 
     expect(await sealedNames()).toEqual([stale]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The rotation byte-length guard (the second-writer guard)
+// ---------------------------------------------------------------------------
+
+/**
+ * `M3LAppendOnlyStream` supports two writers over one directory: each tracks
+ * its own segment size as a LOCAL counter and never re-`stat`s, so writer A
+ * can rotate off a segment on its own local counter while writer B is still
+ * appending to it. `#sealSegment`'s `expectedByteLength` guard re-measures
+ * the segment at seal time and compares it against what the rotating writer
+ * BELIEVED — the `byteLength` on the request — before ever claiming a
+ * digest. This block pins that comparison from the outside.
+ */
+describe("the rotation byte-length guard", () => {
+  test("defers a rotation seal when the segment on disk is larger than the writer's belief", async () => {
+    // Simulates a second writer: the rotating writer's own local counter
+    // (captured BEFORE the extra bytes land) disagrees with the segment's
+    // real, current size.
+    await seedBaseline(null);
+    const rotated = await writeSegment(segmentName(TODAY, 1));
+    const believedByWriter = await segmentByteLength(rotated);
+    await writeFile(path.join(sandbox, rotated), "writer-b-appended-this\n", {
+      flag: "a",
+    });
+
+    await createSealer().sealAfterAppend({
+      rotatedFrom: { name: rotated, byteLength: believedByWriter },
+    });
+
+    // MUTATION THIS CATCHES: dropping
+    // `measurement.value.byteLength !== expectedByteLength` in
+    // `AppendOnlySealer`'s `#sealSegment` would seal here instead of
+    // deferring, durably claiming a digest over a prefix of the file.
+    expect(await sealedNames()).not.toContain(rotated);
+  });
+
+  test("seals as normal when the segment on disk matches the writer's belief", async () => {
+    // The pairing case: without it, the test above could pass merely because
+    // rotation sealing was broken for some unrelated reason, not because the
+    // guard fired.
+    await seedBaseline(null);
+    const rotated = await writeSegment(segmentName(TODAY, 1));
+
+    await createSealer().sealAfterAppend(await rotationRequest(rotated));
+
+    expect(await sealedNames()).toEqual([rotated]);
+  });
+
+  test("the cold-start sweep seals its candidates with no byte-count expectation at all", async () => {
+    // Contrast with the two tests above: `#sweep` never supplies
+    // `expectedByteLength` to `#sealSegment`, because its own
+    // `datePrefix < today` rule already guarantees no conforming writer can
+    // still be on the segment. The guard is rotation-only.
+    await seedBaseline(null);
+    const stale = await writeSegment(segmentName(YESTERDAY, 1));
+    await writeSegment(segmentName(TODAY, 1));
+
+    await createSealer().sealAfterAppend(NO_ROTATION);
+
+    expect(await sealedNames()).toEqual([stale]);
+  });
+
+  test("also defers a rotation seal when the segment on disk is smaller than the writer's belief", async () => {
+    // The comparison is a strict `!==`, not "grew past" alone: a writer
+    // whose local counter overshoots the real bytes for any reason also
+    // defers, since the fresh digest could not otherwise correspond to the
+    // byte count a claim would record. This test is the smaller-than-believed
+    // half of that pair.
+    await seedBaseline(null);
+    const rotated = await writeSegment(segmentName(TODAY, 1));
+    const realSize = await segmentByteLength(rotated);
+
+    await createSealer().sealAfterAppend({
+      rotatedFrom: { name: rotated, byteLength: realSize + 1 },
+    });
+
+    expect(await sealedNames()).not.toContain(rotated);
   });
 });
