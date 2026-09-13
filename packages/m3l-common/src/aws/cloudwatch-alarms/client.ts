@@ -237,7 +237,7 @@ function buildDescribeAlarmsInput(
  *
  * @example
  * ```ts
- * import { M3LCloudWatchAlarmsOperations } from "@m3l-automation/m3l-common/aws";
+ * import { M3LCloudWatchAlarmsOperations } from "@monte3l/m3l-common/aws";
  *
  * const cloudWatchAlarmsOperations = new M3LCloudWatchAlarmsOperations(script.aws.clients.cloudWatch);
  * const { alarms } = await cloudWatchAlarmsOperations.describeAlarms({ alarmNamePrefix: "nightly-" });

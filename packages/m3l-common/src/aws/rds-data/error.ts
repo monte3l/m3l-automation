@@ -31,7 +31,7 @@ interface M3LRDSDataOperationErrorOptions {
  *
  * @example
  * ```ts
- * import { M3LRDSDataOperationError } from "@m3l-automation/m3l-common/aws";
+ * import { M3LRDSDataOperationError } from "@monte3l/m3l-common/aws";
  *
  * try {
  *   await rdsDataOperations.executeStatement(input);
@@ -72,7 +72,7 @@ export class M3LRDSDataOperationError extends M3LError {
  *
  * @example
  * ```ts
- * import { M3LRDSDataResultTooLargeError } from "@m3l-automation/m3l-common/aws";
+ * import { M3LRDSDataResultTooLargeError } from "@monte3l/m3l-common/aws";
  *
  * try {
  *   await rdsDataOperations.executeStatement(input);

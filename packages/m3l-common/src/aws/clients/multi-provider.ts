@@ -42,7 +42,7 @@ interface AWSMultiClientSettledEntry<T> {
  * import {
  *   AWSMultiClientProvider,
  *   parseAWSProfile,
- * } from "@m3l-automation/m3l-common/aws";
+ * } from "@monte3l/m3l-common/aws";
  *
  * const multi = new AWSMultiClientProvider({
  *   profiles: [parseAWSProfile("profile-a"), parseAWSProfile("profile-b")],
@@ -89,7 +89,7 @@ export class AWSMultiClientProvider {
    * import {
    *   AWSMultiClientProvider,
    *   parseAWSProfile,
-   * } from "@m3l-automation/m3l-common/aws";
+   * } from "@monte3l/m3l-common/aws";
    *
    * const multi = new AWSMultiClientProvider({
    *   profiles: [parseAWSProfile("a"), parseAWSProfile("b")],
@@ -120,7 +120,7 @@ export class AWSMultiClientProvider {
    * import {
    *   AWSMultiClientProvider,
    *   parseAWSProfile,
-   * } from "@m3l-automation/m3l-common/aws";
+   * } from "@monte3l/m3l-common/aws";
    *
    * const multi = new AWSMultiClientProvider({
    *   profiles: [parseAWSProfile("a"), parseAWSProfile("b")],

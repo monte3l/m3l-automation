@@ -48,7 +48,7 @@ import type { AWSClientProvider } from "./provider.js";
  *
  * @example
  * ```ts
- * import { AWSProvider, parseAWSProfile } from "@m3l-automation/m3l-common/aws";
+ * import { AWSProvider, parseAWSProfile } from "@monte3l/m3l-common/aws";
  *
  * const provider = new AWSProvider({
  *   profile: parseAWSProfile("my-profile"),
@@ -386,7 +386,7 @@ export class AWSServiceProvider {
    *
    * @example
    * ```ts
-   * import { AWSProvider } from "@m3l-automation/m3l-common/aws";
+   * import { AWSProvider } from "@monte3l/m3l-common/aws";
    *
    * const provider = new AWSProvider();
    * void provider.services.athena;

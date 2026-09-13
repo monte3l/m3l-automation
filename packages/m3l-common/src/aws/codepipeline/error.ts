@@ -33,7 +33,7 @@ interface M3LCodePipelineOperationErrorOptions {
  *
  * @example
  * ```ts
- * import { M3LCodePipelineOperationError } from "@m3l-automation/m3l-common/aws";
+ * import { M3LCodePipelineOperationError } from "@monte3l/m3l-common/aws";
  *
  * try {
  *   await codePipelineOperations.startPipelineExecution(name);

@@ -40,7 +40,7 @@ import type { M3LBedrockToolExecution } from "./tool-ledger.js";
  *
  * @example
  * ```ts
- * import type { M3LBedrockToolContext } from "@m3l-automation/m3l-common/aws";
+ * import type { M3LBedrockToolContext } from "@monte3l/m3l-common/aws";
  *
  * function logCall(context: M3LBedrockToolContext): void {
  *   console.log(context.toolUseId, context.name);
@@ -76,7 +76,7 @@ export interface M3LBedrockToolContext {
 
  * @example
  * ```ts
- * import type { M3LBedrockToolHandler } from "@m3l-automation/m3l-common/aws";
+ * import type { M3LBedrockToolHandler } from "@monte3l/m3l-common/aws";
  *
  * const getWeather: M3LBedrockToolHandler = async (input, context) => {
  *   console.log(context.toolUseId);
@@ -96,7 +96,7 @@ export type M3LBedrockToolHandler = (
  *
  * @example
  * ```ts
- * import type { M3LBedrockToolRegistration } from "@m3l-automation/m3l-common/aws";
+ * import type { M3LBedrockToolRegistration } from "@monte3l/m3l-common/aws";
  *
  * const registration: M3LBedrockToolRegistration = {
  *   inputSchema: { type: "object", properties: {} },
@@ -127,7 +127,7 @@ export interface M3LBedrockToolRegistration {
  *
  * @example
  * ```ts
- * import type { M3LBedrockToolRegistration, M3LBedrockToolRegistry } from "@m3l-automation/m3l-common/aws";
+ * import type { M3LBedrockToolRegistration, M3LBedrockToolRegistry } from "@monte3l/m3l-common/aws";
  *
  * const tools: M3LBedrockToolRegistry = new Map<string, M3LBedrockToolRegistration>([
  *   ["get_weather", { inputSchema: {}, handler: async () => [{ type: "text", text: "sunny" }] }],

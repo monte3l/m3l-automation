@@ -29,7 +29,7 @@ interface M3LLogsInsightsStartQueryErrorOptions {
  *
  * @example
  * ```ts
- * import { M3LLogsInsightsStartQueryError } from "@m3l-automation/m3l-common/aws";
+ * import { M3LLogsInsightsStartQueryError } from "@monte3l/m3l-common/aws";
  *
  * try {
  *   await client.startQuery(input);
@@ -92,7 +92,7 @@ interface M3LLogsInsightsQueryFailedErrorOptions {
  *
  * @example
  * ```ts
- * import { M3LLogsInsightsQueryFailedError } from "@m3l-automation/m3l-common/aws";
+ * import { M3LLogsInsightsQueryFailedError } from "@monte3l/m3l-common/aws";
  *
  * try {
  *   await client.awaitResults(queryId);

@@ -8,32 +8,32 @@
         {
           "file": "packages/m3l-common/src/aws/codepipeline/client.ts",
           "symbol": "M3LCodePipelineOperations",
-          "blob": "0ae0859d4e7b2d1d6a43922710b9ea8847b1159a"
+          "blob": "efe287ebd4674b44772b87d478b3378253878c1f"
         },
         {
           "file": "packages/m3l-common/src/aws/codepipeline/client.ts",
           "symbol": "M3LCodePipelineListPipelinesOptions",
-          "blob": "0ae0859d4e7b2d1d6a43922710b9ea8847b1159a"
+          "blob": "efe287ebd4674b44772b87d478b3378253878c1f"
         },
         {
           "file": "packages/m3l-common/src/aws/codepipeline/client.ts",
           "symbol": "M3LCodePipelineListExecutionsOptions",
-          "blob": "0ae0859d4e7b2d1d6a43922710b9ea8847b1159a"
+          "blob": "efe287ebd4674b44772b87d478b3378253878c1f"
         },
         {
           "file": "packages/m3l-common/src/aws/codepipeline/client.ts",
           "symbol": "M3LCodePipelineGetPipelineOptions",
-          "blob": "0ae0859d4e7b2d1d6a43922710b9ea8847b1159a"
+          "blob": "efe287ebd4674b44772b87d478b3378253878c1f"
         },
         {
           "file": "packages/m3l-common/src/aws/codepipeline/client.ts",
           "symbol": "M3LCodePipelineStartExecutionOptions",
-          "blob": "0ae0859d4e7b2d1d6a43922710b9ea8847b1159a"
+          "blob": "efe287ebd4674b44772b87d478b3378253878c1f"
         },
         {
           "file": "packages/m3l-common/src/aws/codepipeline/error.ts",
           "symbol": "M3LCodePipelineOperationError",
-          "blob": "4e95fb1eec16368611d3070feca9a6b8b54f3b33"
+          "blob": "075887800363490e0ce6b2273fcb2d5b08640408"
         },
         {
           "file": "packages/m3l-common/src/aws/codepipeline/types.ts",
@@ -181,7 +181,7 @@
           "blob": "1b524074440643c76e06b928163f0429bb36368f"
         }
       ],
-      "retrieved": "2026-07-27"
+      "retrieved": "2026-09-13"
     },
     {
       "heading": "`M3LCodePipelineOperations`",
@@ -189,10 +189,10 @@
         {
           "file": "packages/m3l-common/src/aws/codepipeline/client.ts",
           "symbol": "M3LCodePipelineOperations",
-          "blob": "0ae0859d4e7b2d1d6a43922710b9ea8847b1159a"
+          "blob": "efe287ebd4674b44772b87d478b3378253878c1f"
         }
       ],
-      "retrieved": "2026-07-27"
+      "retrieved": "2026-09-13"
     },
     {
       "heading": "Plain types (field-by-field)",
@@ -351,10 +351,10 @@
         {
           "file": "packages/m3l-common/src/aws/codepipeline/error.ts",
           "symbol": "M3LCodePipelineOperationError",
-          "blob": "4e95fb1eec16368611d3070feca9a6b8b54f3b33"
+          "blob": "075887800363490e0ce6b2273fcb2d5b08640408"
         }
       ],
-      "retrieved": "2026-07-27"
+      "retrieved": "2026-09-13"
     }
   ]
 }

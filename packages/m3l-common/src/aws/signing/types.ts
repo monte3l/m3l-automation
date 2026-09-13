@@ -17,8 +17,8 @@ import type { M3LAWSProfile, M3LAWSRegion } from "../models/index.js";
  * import {
  *   parseAWSProfile,
  *   parseAWSRegion,
- * } from "@m3l-automation/m3l-common/aws";
- * import type { M3LRequestSignerOptions } from "@m3l-automation/m3l-common/aws";
+ * } from "@monte3l/m3l-common/aws";
+ * import type { M3LRequestSignerOptions } from "@monte3l/m3l-common/aws";
  *
  * const options: M3LRequestSignerOptions = {
  *   profile: parseAWSProfile("my-profile"),
@@ -48,7 +48,7 @@ export interface M3LRequestSignerOptions {
  *
  * @example
  * ```ts
- * import type { M3LSignableRequest } from "@m3l-automation/m3l-common/aws";
+ * import type { M3LSignableRequest } from "@monte3l/m3l-common/aws";
  *
  * const request: M3LSignableRequest = {
  *   method: "POST",

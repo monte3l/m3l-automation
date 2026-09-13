@@ -36,7 +36,7 @@ import {
  *
  * @example
  * ```ts
- * import { M3LS3Operations } from "@m3l-automation/m3l-common/aws";
+ * import { M3LS3Operations } from "@monte3l/m3l-common/aws";
  *
  * const s3Operations = new M3LS3Operations(script.aws.clients.s3);
  * const { body } = await s3Operations.getObject("reports", "2026/07/summary.json");

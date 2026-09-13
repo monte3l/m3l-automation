@@ -220,7 +220,7 @@ function profileSuffix(profile: M3LAWSProfile | undefined): string {
  * import {
  *   M3LAWSCredentialsManager,
  *   parseAWSProfile,
- * } from "@m3l-automation/m3l-common/aws";
+ * } from "@monte3l/m3l-common/aws";
  *
  * const manager = new M3LAWSCredentialsManager({
  *   profile: parseAWSProfile("my-profile"),
@@ -291,7 +291,7 @@ export class M3LAWSCredentialsManager {
    * import {
    *   M3LAWSCredentialsManager,
    *   parseAWSProfile,
-   * } from "@m3l-automation/m3l-common/aws";
+   * } from "@monte3l/m3l-common/aws";
    *
    * const manager = new M3LAWSCredentialsManager({
    *   profile: parseAWSProfile("my-profile"),
@@ -344,7 +344,7 @@ export class M3LAWSCredentialsManager {
    * import {
    *   M3LAWSCredentialsManager,
    *   parseAWSProfile,
-   * } from "@m3l-automation/m3l-common/aws";
+   * } from "@monte3l/m3l-common/aws";
    *
    * const manager = new M3LAWSCredentialsManager();
    * await manager.ensureValidCredentialsMultiple([
@@ -427,7 +427,7 @@ export class M3LAWSCredentialsManager {
    * import {
    *   M3LAWSCredentialsManager,
    *   parseAWSProfile,
-   * } from "@m3l-automation/m3l-common/aws";
+   * } from "@monte3l/m3l-common/aws";
    *
    * const manager = new M3LAWSCredentialsManager({
    *   profile: parseAWSProfile("my-profile"),
@@ -528,7 +528,7 @@ export class M3LAWSCredentialsManager {
    *   recover the failure, and the original `error` verbatim as `cause`.
    * @example
    * ```ts
-   * import { M3LAWSCredentialsManager } from "@m3l-automation/m3l-common/aws";
+   * import { M3LAWSCredentialsManager } from "@monte3l/m3l-common/aws";
    *
    * const manager = new M3LAWSCredentialsManager();
    * const analysis = manager.analyzeError(new Error("Token has expired"));

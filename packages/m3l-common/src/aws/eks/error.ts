@@ -31,7 +31,7 @@ interface M3LEKSOperationErrorOptions {
  *
  * @example
  * ```ts
- * import { M3LEKSOperationError } from "@m3l-automation/m3l-common/aws";
+ * import { M3LEKSOperationError } from "@monte3l/m3l-common/aws";
  *
  * try {
  *   await eksOperations.describeCluster("my-cluster");

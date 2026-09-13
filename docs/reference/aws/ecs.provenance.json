@@ -8,65 +8,65 @@
         {
           "file": "packages/m3l-common/src/aws/ecs/client.ts",
           "symbol": "M3LECSOperations",
-          "blob": "4c56b6ac4f80b83f686e27b7264ab6da9f28e9e3"
+          "blob": "a12925f0408fac428d8c59b07dc3c97abcd73614"
         },
         {
           "file": "packages/m3l-common/src/aws/ecs/error.ts",
           "symbol": "M3LECSOperationError",
-          "blob": "39c5e14481837a3dc648e1eb297bcd4d2ff26a94"
+          "blob": "d377259ec2385a5c3c899a2283b5c70e4cfda1ff"
         },
         {
           "file": "packages/m3l-common/src/aws/ecs/types.ts",
           "symbol": "M3LECSListServicesResult",
-          "blob": "aff8a28f9b5ec1bb8a34884dc2b99317479b9f55"
+          "blob": "11f48f2dd233c60e6bc01dfda487e72da2a71d14"
         },
         {
           "file": "packages/m3l-common/src/aws/ecs/types.ts",
           "symbol": "M3LECSServiceDescription",
-          "blob": "aff8a28f9b5ec1bb8a34884dc2b99317479b9f55"
+          "blob": "11f48f2dd233c60e6bc01dfda487e72da2a71d14"
         },
         {
           "file": "packages/m3l-common/src/aws/ecs/types.ts",
           "symbol": "M3LECSCreateServiceInput",
-          "blob": "aff8a28f9b5ec1bb8a34884dc2b99317479b9f55"
+          "blob": "11f48f2dd233c60e6bc01dfda487e72da2a71d14"
         },
         {
           "file": "packages/m3l-common/src/aws/ecs/types.ts",
           "symbol": "M3LECSUpdateServiceInput",
-          "blob": "aff8a28f9b5ec1bb8a34884dc2b99317479b9f55"
+          "blob": "11f48f2dd233c60e6bc01dfda487e72da2a71d14"
         },
         {
           "file": "packages/m3l-common/src/aws/ecs/types.ts",
           "symbol": "M3LECSWaiterResult",
-          "blob": "aff8a28f9b5ec1bb8a34884dc2b99317479b9f55"
+          "blob": "11f48f2dd233c60e6bc01dfda487e72da2a71d14"
         },
         {
           "file": "packages/m3l-common/src/aws/ecs/types.ts",
           "symbol": "M3LECSListClustersResult",
-          "blob": "aff8a28f9b5ec1bb8a34884dc2b99317479b9f55"
+          "blob": "11f48f2dd233c60e6bc01dfda487e72da2a71d14"
         },
         {
           "file": "packages/m3l-common/src/aws/ecs/types.ts",
           "symbol": "M3LECSClusterSummary",
-          "blob": "aff8a28f9b5ec1bb8a34884dc2b99317479b9f55"
+          "blob": "11f48f2dd233c60e6bc01dfda487e72da2a71d14"
         },
         {
           "file": "packages/m3l-common/src/aws/ecs/types.ts",
           "symbol": "M3LECSLoadBalancer",
-          "blob": "aff8a28f9b5ec1bb8a34884dc2b99317479b9f55"
+          "blob": "11f48f2dd233c60e6bc01dfda487e72da2a71d14"
         },
         {
           "file": "packages/m3l-common/src/aws/ecs/types.ts",
           "symbol": "M3LECSNetworkConfiguration",
-          "blob": "aff8a28f9b5ec1bb8a34884dc2b99317479b9f55"
+          "blob": "11f48f2dd233c60e6bc01dfda487e72da2a71d14"
         },
         {
           "file": "packages/m3l-common/src/aws/ecs/types.ts",
           "symbol": "M3LECSWaiterOptions",
-          "blob": "aff8a28f9b5ec1bb8a34884dc2b99317479b9f55"
+          "blob": "11f48f2dd233c60e6bc01dfda487e72da2a71d14"
         }
       ],
-      "retrieved": "2026-08-18"
+      "retrieved": "2026-09-13"
     },
     {
       "heading": "`M3LECSOperations`",
@@ -74,10 +74,10 @@
         {
           "file": "packages/m3l-common/src/aws/ecs/client.ts",
           "symbol": "M3LECSOperations",
-          "blob": "4c56b6ac4f80b83f686e27b7264ab6da9f28e9e3"
+          "blob": "a12925f0408fac428d8c59b07dc3c97abcd73614"
         }
       ],
-      "retrieved": "2026-08-18"
+      "retrieved": "2026-09-13"
     },
     {
       "heading": "Plain types (field-by-field)",
@@ -85,55 +85,55 @@
         {
           "file": "packages/m3l-common/src/aws/ecs/types.ts",
           "symbol": "M3LECSListServicesResult",
-          "blob": "aff8a28f9b5ec1bb8a34884dc2b99317479b9f55"
+          "blob": "11f48f2dd233c60e6bc01dfda487e72da2a71d14"
         },
         {
           "file": "packages/m3l-common/src/aws/ecs/types.ts",
           "symbol": "M3LECSServiceDescription",
-          "blob": "aff8a28f9b5ec1bb8a34884dc2b99317479b9f55"
+          "blob": "11f48f2dd233c60e6bc01dfda487e72da2a71d14"
         },
         {
           "file": "packages/m3l-common/src/aws/ecs/types.ts",
           "symbol": "M3LECSCreateServiceInput",
-          "blob": "aff8a28f9b5ec1bb8a34884dc2b99317479b9f55"
+          "blob": "11f48f2dd233c60e6bc01dfda487e72da2a71d14"
         },
         {
           "file": "packages/m3l-common/src/aws/ecs/types.ts",
           "symbol": "M3LECSUpdateServiceInput",
-          "blob": "aff8a28f9b5ec1bb8a34884dc2b99317479b9f55"
+          "blob": "11f48f2dd233c60e6bc01dfda487e72da2a71d14"
         },
         {
           "file": "packages/m3l-common/src/aws/ecs/types.ts",
           "symbol": "M3LECSWaiterResult",
-          "blob": "aff8a28f9b5ec1bb8a34884dc2b99317479b9f55"
+          "blob": "11f48f2dd233c60e6bc01dfda487e72da2a71d14"
         },
         {
           "file": "packages/m3l-common/src/aws/ecs/types.ts",
           "symbol": "M3LECSListClustersResult",
-          "blob": "aff8a28f9b5ec1bb8a34884dc2b99317479b9f55"
+          "blob": "11f48f2dd233c60e6bc01dfda487e72da2a71d14"
         },
         {
           "file": "packages/m3l-common/src/aws/ecs/types.ts",
           "symbol": "M3LECSClusterSummary",
-          "blob": "aff8a28f9b5ec1bb8a34884dc2b99317479b9f55"
+          "blob": "11f48f2dd233c60e6bc01dfda487e72da2a71d14"
         },
         {
           "file": "packages/m3l-common/src/aws/ecs/types.ts",
           "symbol": "M3LECSLoadBalancer",
-          "blob": "aff8a28f9b5ec1bb8a34884dc2b99317479b9f55"
+          "blob": "11f48f2dd233c60e6bc01dfda487e72da2a71d14"
         },
         {
           "file": "packages/m3l-common/src/aws/ecs/types.ts",
           "symbol": "M3LECSNetworkConfiguration",
-          "blob": "aff8a28f9b5ec1bb8a34884dc2b99317479b9f55"
+          "blob": "11f48f2dd233c60e6bc01dfda487e72da2a71d14"
         },
         {
           "file": "packages/m3l-common/src/aws/ecs/types.ts",
           "symbol": "M3LECSWaiterOptions",
-          "blob": "aff8a28f9b5ec1bb8a34884dc2b99317479b9f55"
+          "blob": "11f48f2dd233c60e6bc01dfda487e72da2a71d14"
         }
       ],
-      "retrieved": "2026-08-18"
+      "retrieved": "2026-09-13"
     },
     {
       "heading": "`M3LECSOperationError`",
@@ -141,10 +141,10 @@
         {
           "file": "packages/m3l-common/src/aws/ecs/error.ts",
           "symbol": "M3LECSOperationError",
-          "blob": "39c5e14481837a3dc648e1eb297bcd4d2ff26a94"
+          "blob": "d377259ec2385a5c3c899a2283b5c70e4cfda1ff"
         }
       ],
-      "retrieved": "2026-07-24"
+      "retrieved": "2026-09-13"
     }
   ]
 }

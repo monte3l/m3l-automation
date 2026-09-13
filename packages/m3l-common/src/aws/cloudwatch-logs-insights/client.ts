@@ -97,7 +97,7 @@ export interface LogsInsightsAwaitOptions {
  *
  * @example
  * ```ts
- * import { M3LLogsInsightsClient } from "@m3l-automation/m3l-common/aws";
+ * import { M3LLogsInsightsClient } from "@monte3l/m3l-common/aws";
  *
  * const insights = new M3LLogsInsightsClient(script.aws.cloudWatchLogs);
  * const result = await insights.runQuery({

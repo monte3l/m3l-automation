@@ -287,7 +287,7 @@ function joinRemoveTargetsResult(
  *
  * @example
  * ```ts
- * import { M3LEventBridgeOperations } from "@m3l-automation/m3l-common/aws";
+ * import { M3LEventBridgeOperations } from "@monte3l/m3l-common/aws";
  *
  * const eventBridgeOperations = new M3LEventBridgeOperations(script.aws.clients.eventBridge);
  * const { rules } = await eventBridgeOperations.listRules({ namePrefix: "nightly-" });

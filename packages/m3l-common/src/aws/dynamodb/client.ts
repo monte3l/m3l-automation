@@ -46,7 +46,7 @@ import {
  *
  * @example
  * ```ts
- * import { M3LDynamoDBOperations } from "@m3l-automation/m3l-common/aws";
+ * import { M3LDynamoDBOperations } from "@monte3l/m3l-common/aws";
  *
  * const dynamoDBOperations = new M3LDynamoDBOperations(
  *   script.aws.clients.dynamoDBDocument,

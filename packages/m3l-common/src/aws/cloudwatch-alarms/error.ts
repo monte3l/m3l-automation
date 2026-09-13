@@ -31,7 +31,7 @@ interface M3LCloudWatchAlarmsOperationErrorOptions {
  *
  * @example
  * ```ts
- * import { M3LCloudWatchAlarmsOperationError } from "@m3l-automation/m3l-common/aws";
+ * import { M3LCloudWatchAlarmsOperationError } from "@monte3l/m3l-common/aws";
  *
  * try {
  *   await cloudWatchAlarmsOperations.deleteAlarms(["high-cpu"]);

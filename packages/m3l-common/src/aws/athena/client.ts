@@ -91,7 +91,7 @@ export interface AthenaAwaitOptions {
  *
  * @example
  * ```ts
- * import { M3LAthenaClient } from "@m3l-automation/m3l-common/aws";
+ * import { M3LAthenaClient } from "@monte3l/m3l-common/aws";
  *
  * const athena = new M3LAthenaClient(script.aws.athena);
  * const result = await athena.runQuery({

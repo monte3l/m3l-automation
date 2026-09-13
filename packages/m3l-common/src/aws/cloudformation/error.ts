@@ -35,7 +35,7 @@ interface M3LCloudFormationOperationErrorOptions {
  *
  * @example
  * ```ts
- * import { M3LCloudFormationOperationError } from "@m3l-automation/m3l-common/aws";
+ * import { M3LCloudFormationOperationError } from "@monte3l/m3l-common/aws";
  *
  * try {
  *   await cloudFormationOperations.createStack(input);

@@ -20,7 +20,7 @@ import type { M3LAWSRegion } from "../models/index.js";
  *
  * @example
  * ```ts
- * import { AWS_REGION } from "@m3l-automation/m3l-common/aws";
+ * import { AWS_REGION } from "@monte3l/m3l-common/aws";
  *
  * console.log(AWS_REGION); // "eu-south-1"
  * ```

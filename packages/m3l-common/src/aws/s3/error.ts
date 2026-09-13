@@ -36,7 +36,7 @@ interface M3LS3OperationErrorOptions {
  *
  * @example
  * ```ts
- * import { M3LS3OperationError } from "@m3l-automation/m3l-common/aws";
+ * import { M3LS3OperationError } from "@monte3l/m3l-common/aws";
  *
  * try {
  *   // ... send an S3 command ...

@@ -31,7 +31,7 @@ import type {
  *
  * @example
  * ```ts
- * import type { M3LBedrockModelRate } from "@m3l-automation/m3l-common/aws";
+ * import type { M3LBedrockModelRate } from "@monte3l/m3l-common/aws";
  *
  * const rate: M3LBedrockModelRate = { inputPer1kTokens: 3, outputPer1kTokens: 15 };
  * ```
@@ -60,7 +60,7 @@ export interface M3LBedrockModelRate {
  *
  * @example
  * ```ts
- * import type { M3LBedrockToolExecution } from "@m3l-automation/m3l-common/aws";
+ * import type { M3LBedrockToolExecution } from "@monte3l/m3l-common/aws";
  *
  * const execution: M3LBedrockToolExecution = {
  *   toolUseId: "t1",
@@ -106,7 +106,7 @@ export type M3LBedrockToolExecution =
  *
  * @example
  * ```ts
- * import type { M3LBedrockToolLoopIteration } from "@m3l-automation/m3l-common/aws";
+ * import type { M3LBedrockToolLoopIteration } from "@monte3l/m3l-common/aws";
  *
  * const iteration: M3LBedrockToolLoopIteration = {
  *   index: 1,
@@ -140,7 +140,7 @@ export interface M3LBedrockToolLoopIteration {
  *
  * @example
  * ```ts
- * import type { M3LBedrockToolLoopOutcome } from "@m3l-automation/m3l-common/aws";
+ * import type { M3LBedrockToolLoopOutcome } from "@monte3l/m3l-common/aws";
  *
  * function summarize(outcome: M3LBedrockToolLoopOutcome): string {
  *   return `${outcome.stopReason} after ${outcome.iterations.length} iteration(s)`;

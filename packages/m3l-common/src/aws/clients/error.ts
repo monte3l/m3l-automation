@@ -41,7 +41,7 @@ interface M3LAWSClientErrorOptions {
  *
  * @example
  * ```ts
- * import { M3LAWSClientError } from "@m3l-automation/m3l-common/aws";
+ * import { M3LAWSClientError } from "@monte3l/m3l-common/aws";
  *
  * try {
  *   // ... construct an AWS SDK client ...

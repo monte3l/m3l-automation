@@ -27,8 +27,8 @@ import { M3LError } from "../../core/errors/index.js";
  *
  * @example
  * ```ts
- * import { parseAWSRegion } from "@m3l-automation/m3l-common/aws";
- * import type { M3LAWSRegion } from "@m3l-automation/m3l-common/aws";
+ * import { parseAWSRegion } from "@monte3l/m3l-common/aws";
+ * import type { M3LAWSRegion } from "@monte3l/m3l-common/aws";
  *
  * const region: M3LAWSRegion = parseAWSRegion("eu-south-1");
  * ```
@@ -46,8 +46,8 @@ export type M3LAWSRegion = string & {
  *
  * @example
  * ```ts
- * import { parseAWSProfile } from "@m3l-automation/m3l-common/aws";
- * import type { M3LAWSProfile } from "@m3l-automation/m3l-common/aws";
+ * import { parseAWSProfile } from "@monte3l/m3l-common/aws";
+ * import type { M3LAWSProfile } from "@monte3l/m3l-common/aws";
  *
  * const profile: M3LAWSProfile = parseAWSProfile("my-profile");
  * ```
@@ -87,7 +87,7 @@ interface M3LAWSIdentityErrorOptions {
  * import {
  *   M3LAWSIdentityError,
  *   parseAWSRegion,
- * } from "@m3l-automation/m3l-common/aws";
+ * } from "@monte3l/m3l-common/aws";
  *
  * try {
  *   parseAWSRegion("not-a-region");
@@ -182,7 +182,7 @@ function isValidProfileString(value: string): boolean {
  *   `value` does not match the AWS region shape.
  * @example
  * ```ts
- * import { parseAWSRegion } from "@m3l-automation/m3l-common/aws";
+ * import { parseAWSRegion } from "@monte3l/m3l-common/aws";
  *
  * const region = parseAWSRegion("eu-south-1");
  * ```
@@ -208,7 +208,7 @@ export function parseAWSRegion(value: string): M3LAWSRegion {
  *   whitespace/control character.
  * @example
  * ```ts
- * import { parseAWSProfile } from "@m3l-automation/m3l-common/aws";
+ * import { parseAWSProfile } from "@monte3l/m3l-common/aws";
  *
  * const profile = parseAWSProfile("my-profile");
  * ```
@@ -232,7 +232,7 @@ export function parseAWSProfile(value: string): M3LAWSProfile {
  *   {@link parseAWSRegion} would not throw for the same input.
  * @example
  * ```ts
- * import { isAWSRegion } from "@m3l-automation/m3l-common/aws";
+ * import { isAWSRegion } from "@monte3l/m3l-common/aws";
  *
  * if (isAWSRegion("eu-south-1")) {
  *   console.log("valid region");
@@ -252,7 +252,7 @@ export function isAWSRegion(value: string): value is M3LAWSRegion {
  *   {@link parseAWSProfile} would not throw for the same input.
  * @example
  * ```ts
- * import { isAWSProfile } from "@m3l-automation/m3l-common/aws";
+ * import { isAWSProfile } from "@monte3l/m3l-common/aws";
  *
  * if (isAWSProfile("my-profile")) {
  *   console.log("valid profile");
@@ -271,7 +271,7 @@ export function isAWSProfile(value: string): value is M3LAWSProfile {
  *
  * @example
  * ```ts
- * import { M3LAWSCredentialsErrorType } from "@m3l-automation/m3l-common/aws";
+ * import { M3LAWSCredentialsErrorType } from "@monte3l/m3l-common/aws";
  * const type = M3LAWSCredentialsErrorType.SSO_SESSION_EXPIRED; // "SSO_SESSION_EXPIRED"
  * ```
  */
@@ -288,7 +288,7 @@ export const M3LAWSCredentialsErrorType = {
  *
  * @example
  * ```ts
- * import type { M3LAWSCredentialsErrorType } from "@m3l-automation/m3l-common/aws";
+ * import type { M3LAWSCredentialsErrorType } from "@monte3l/m3l-common/aws";
  * function describe(type: M3LAWSCredentialsErrorType): string {
  *   return `credential error category: ${type}`;
  * }
@@ -313,7 +313,7 @@ export type M3LAWSCredentialsErrorType =
  * import {
  *   M3LAWSCredentialsErrorType,
  *   type M3LAWSCredentialsErrorAnalysis,
- * } from "@m3l-automation/m3l-common/aws";
+ * } from "@monte3l/m3l-common/aws";
  *
  * const analysis: M3LAWSCredentialsErrorAnalysis = {
  *   recoverable: true,
@@ -359,7 +359,7 @@ export type M3LAWSCredentialsErrorAnalysis =
  * import {
  *   M3LAWSCredentialsErrorType,
  *   type M3LAWSRetryContext,
- * } from "@m3l-automation/m3l-common/aws";
+ * } from "@monte3l/m3l-common/aws";
  *
  * const context: M3LAWSRetryContext = {
  *   attempt: 1,
@@ -394,7 +394,7 @@ export interface M3LAWSRetryContext {
  * import {
  *   parseAWSProfile,
  *   type M3LAWSLoginResult,
- * } from "@m3l-automation/m3l-common/aws";
+ * } from "@monte3l/m3l-common/aws";
  *
  * const result: M3LAWSLoginResult = {
  *   outcome: "success",
@@ -450,8 +450,8 @@ export type M3LAWSLoginResult =
  *
  * @example
  * ```ts
- * import { parseAWSProfile } from "@m3l-automation/m3l-common/aws";
- * import type { M3LAWSCredentialsManagerOptions } from "@m3l-automation/m3l-common/aws";
+ * import { parseAWSProfile } from "@monte3l/m3l-common/aws";
+ * import type { M3LAWSCredentialsManagerOptions } from "@monte3l/m3l-common/aws";
  *
  * const options: M3LAWSCredentialsManagerOptions = {
  *   profile: parseAWSProfile("default"),

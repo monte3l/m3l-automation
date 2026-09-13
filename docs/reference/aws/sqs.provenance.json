@@ -8,12 +8,12 @@
         {
           "file": "packages/m3l-common/src/aws/sqs/client.ts",
           "symbol": "M3LSQSOperations",
-          "blob": "2e3a657ec5f84b0b5b4486b2d4f0ee177d13d1b9"
+          "blob": "8ab97bebe72dc375ea4b8eee1e0ca74e1dc64f08"
         },
         {
           "file": "packages/m3l-common/src/aws/sqs/error.ts",
           "symbol": "M3LSQSOperationError",
-          "blob": "427eb41e69589b2bb982c3f18049b3b689a3a705"
+          "blob": "b9c59c8cf036751ae819204f073f9908341ae947"
         },
         {
           "file": "packages/m3l-common/src/aws/sqs/types.ts",
@@ -81,7 +81,7 @@
           "blob": "9e5382c477836a333df9425f58274fc486bad275"
         }
       ],
-      "retrieved": "2026-08-27"
+      "retrieved": "2026-09-13"
     },
     {
       "heading": "`M3LSQSOperations`",
@@ -89,10 +89,10 @@
         {
           "file": "packages/m3l-common/src/aws/sqs/client.ts",
           "symbol": "M3LSQSOperations",
-          "blob": "2e3a657ec5f84b0b5b4486b2d4f0ee177d13d1b9"
+          "blob": "8ab97bebe72dc375ea4b8eee1e0ca74e1dc64f08"
         }
       ],
-      "retrieved": "2026-08-27"
+      "retrieved": "2026-09-13"
     },
     {
       "heading": "`redrive` — the receive→process→move flow",
@@ -100,10 +100,10 @@
         {
           "file": "packages/m3l-common/src/aws/sqs/client.ts",
           "symbol": "M3LSQSOperations",
-          "blob": "2e3a657ec5f84b0b5b4486b2d4f0ee177d13d1b9"
+          "blob": "8ab97bebe72dc375ea4b8eee1e0ca74e1dc64f08"
         }
       ],
-      "retrieved": "2026-08-27"
+      "retrieved": "2026-09-13"
     },
     {
       "heading": "`M3LSQSOperationError`",
@@ -111,10 +111,10 @@
         {
           "file": "packages/m3l-common/src/aws/sqs/error.ts",
           "symbol": "M3LSQSOperationError",
-          "blob": "427eb41e69589b2bb982c3f18049b3b689a3a705"
+          "blob": "b9c59c8cf036751ae819204f073f9908341ae947"
         }
       ],
-      "retrieved": "2026-07-12"
+      "retrieved": "2026-09-13"
     },
     {
       "heading": "Plain types",
@@ -213,10 +213,10 @@
         {
           "file": "packages/m3l-common/src/aws/sqs/client.ts",
           "symbol": "M3LSQSOperations",
-          "blob": "2e3a657ec5f84b0b5b4486b2d4f0ee177d13d1b9"
+          "blob": "8ab97bebe72dc375ea4b8eee1e0ca74e1dc64f08"
         }
       ],
-      "retrieved": "2026-08-27"
+      "retrieved": "2026-09-13"
     },
     {
       "heading": "Notes and behavior",
@@ -224,10 +224,10 @@
         {
           "file": "packages/m3l-common/src/aws/sqs/client.ts",
           "symbol": "M3LSQSOperations",
-          "blob": "2e3a657ec5f84b0b5b4486b2d4f0ee177d13d1b9"
+          "blob": "8ab97bebe72dc375ea4b8eee1e0ca74e1dc64f08"
         }
       ],
-      "retrieved": "2026-08-27"
+      "retrieved": "2026-09-13"
     }
   ]
 }

@@ -181,7 +181,7 @@ function parseSignableUrl(url: string): URL {
  *
  * @example
  * ```ts
- * import { M3LRequestSigner } from "@m3l-automation/m3l-common/aws";
+ * import { M3LRequestSigner } from "@monte3l/m3l-common/aws";
  *
  * const signer = new M3LRequestSigner();
  * const headers = await signer.signedHeaders({

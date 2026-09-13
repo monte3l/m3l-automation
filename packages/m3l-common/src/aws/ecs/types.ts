@@ -103,7 +103,7 @@ export interface M3LECSWaiterResult {
  *
  * @example
  * ```ts
- * import { M3LECSOperations } from "@m3l-automation/m3l-common/aws";
+ * import { M3LECSOperations } from "@monte3l/m3l-common/aws";
  *
  * const controller = new AbortController();
  * const ecs = new M3LECSOperations(client);

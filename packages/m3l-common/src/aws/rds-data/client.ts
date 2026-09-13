@@ -398,7 +398,7 @@ function attachRollbackFailure(
  *
  * @example
  * ```ts
- * import { M3LRDSDataOperations } from "@m3l-automation/m3l-common/aws";
+ * import { M3LRDSDataOperations } from "@monte3l/m3l-common/aws";
  *
  * const rdsData = new M3LRDSDataOperations(script.aws.clients.rdsData);
  * const result = await rdsData.executeStatement({

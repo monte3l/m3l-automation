@@ -62,7 +62,7 @@ function mapDatapoint(datapoint: Datapoint): M3LCloudWatchDatapoint {
  *
  * @example
  * ```ts
- * import { M3LCloudWatchMetricsOperations } from "@m3l-automation/m3l-common/aws";
+ * import { M3LCloudWatchMetricsOperations } from "@monte3l/m3l-common/aws";
  *
  * const cloudWatchMetricsOperations = new M3LCloudWatchMetricsOperations(script.aws.clients.cloudWatch);
  * await cloudWatchMetricsOperations.putMetricData({

@@ -174,7 +174,7 @@ function mapSecretTimestampFields(
  *
  * @example
  * ```ts
- * import { M3LSecretsManagerOperations } from "@m3l-automation/m3l-common/aws";
+ * import { M3LSecretsManagerOperations } from "@monte3l/m3l-common/aws";
  *
  * const secretsManagerOperations = new M3LSecretsManagerOperations(script.aws.clients.secretsManager);
  * const { secretString } = await secretsManagerOperations.getSecretValue("db-password");

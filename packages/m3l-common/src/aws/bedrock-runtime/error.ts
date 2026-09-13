@@ -51,7 +51,7 @@ interface M3LBedrockRuntimeOperationErrorOptions {
  *
  * @example
  * ```ts
- * import { M3LBedrockRuntimeOperationError } from "@m3l-automation/m3l-common/aws";
+ * import { M3LBedrockRuntimeOperationError } from "@monte3l/m3l-common/aws";
  *
  * try {
  *   await ops.invoke(request);
@@ -117,7 +117,7 @@ interface M3LBedrockRuntimeModelErrorOptions {
  *
  * @example
  * ```ts
- * import { M3LBedrockRuntimeModelError } from "@m3l-automation/m3l-common/aws";
+ * import { M3LBedrockRuntimeModelError } from "@monte3l/m3l-common/aws";
  *
  * try {
  *   await ops.invoke(request);
@@ -191,7 +191,7 @@ interface M3LBedrockRuntimeNoModelErrorOptions {
  *
  * @example
  * ```ts
- * import { M3LBedrockRuntimeNoModelError } from "@m3l-automation/m3l-common/aws";
+ * import { M3LBedrockRuntimeNoModelError } from "@monte3l/m3l-common/aws";
  *
  * try {
  *   await ops.invoke(request);
@@ -284,7 +284,7 @@ interface M3LBedrockRuntimeStreamErrorOptions {
  *
  * @example
  * ```ts
- * import { M3LBedrockRuntimeStreamError } from "@m3l-automation/m3l-common/aws";
+ * import { M3LBedrockRuntimeStreamError } from "@monte3l/m3l-common/aws";
  *
  * try {
  *   for await (const event of ops.invokeStream(request)) {
@@ -399,7 +399,7 @@ interface M3LBedrockToolLoopErrorOptions {
  *
  * @example
  * ```ts
- * import { M3LBedrockToolLoopError } from "@m3l-automation/m3l-common/aws";
+ * import { M3LBedrockToolLoopError } from "@monte3l/m3l-common/aws";
  *
  * try {
  *   await runBedrockToolLoop(ops, conversation, { tools });

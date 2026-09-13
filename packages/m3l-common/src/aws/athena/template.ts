@@ -274,7 +274,7 @@ function readParameterValue(
  *
  * @example
  * ```ts
- * import { compileAthenaQueryTemplate } from "@m3l-automation/m3l-common/aws";
+ * import { compileAthenaQueryTemplate } from "@monte3l/m3l-common/aws";
  *
  * const compiled = compileAthenaQueryTemplate(
  *   "SELECT * FROM logs WHERE region = :region AND day = :day",

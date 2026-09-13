@@ -8,22 +8,22 @@
         {
           "file": "packages/m3l-common/src/aws/cloudformation/client.ts",
           "symbol": "M3LCloudFormationOperations",
-          "blob": "0ce11e3d7a2a9882752ee65f91ab407a7272642e"
+          "blob": "583d956fe5f678cec71976db7b77c636942956e8"
         },
         {
           "file": "packages/m3l-common/src/aws/cloudformation/client.ts",
           "symbol": "M3LCloudFormationListStacksOptions",
-          "blob": "0ce11e3d7a2a9882752ee65f91ab407a7272642e"
+          "blob": "583d956fe5f678cec71976db7b77c636942956e8"
         },
         {
           "file": "packages/m3l-common/src/aws/cloudformation/client.ts",
           "symbol": "M3LCloudFormationDescribeStackEventsOptions",
-          "blob": "0ce11e3d7a2a9882752ee65f91ab407a7272642e"
+          "blob": "583d956fe5f678cec71976db7b77c636942956e8"
         },
         {
           "file": "packages/m3l-common/src/aws/cloudformation/error.ts",
           "symbol": "M3LCloudFormationOperationError",
-          "blob": "15fb3900e9c586f87a61eb1a361827aef21316fb"
+          "blob": "cf9678e5d8e31e8a0b8278f6699f3847aac02f37"
         },
         {
           "file": "packages/m3l-common/src/aws/cloudformation/types.ts",
@@ -101,7 +101,7 @@
           "blob": "bf2e89b6adaabaf723c8f407ceb55e0982ce0cc1"
         }
       ],
-      "retrieved": "2026-08-18"
+      "retrieved": "2026-09-13"
     },
     {
       "heading": "`M3LCloudFormationOperations`",
@@ -109,10 +109,10 @@
         {
           "file": "packages/m3l-common/src/aws/cloudformation/client.ts",
           "symbol": "M3LCloudFormationOperations",
-          "blob": "0ce11e3d7a2a9882752ee65f91ab407a7272642e"
+          "blob": "583d956fe5f678cec71976db7b77c636942956e8"
         }
       ],
-      "retrieved": "2026-08-18"
+      "retrieved": "2026-09-13"
     },
     {
       "heading": "Plain types (field-by-field)",
@@ -196,10 +196,10 @@
         {
           "file": "packages/m3l-common/src/aws/cloudformation/error.ts",
           "symbol": "M3LCloudFormationOperationError",
-          "blob": "15fb3900e9c586f87a61eb1a361827aef21316fb"
+          "blob": "cf9678e5d8e31e8a0b8278f6699f3847aac02f37"
         }
       ],
-      "retrieved": "2026-07-26"
+      "retrieved": "2026-09-13"
     }
   ]
 }
