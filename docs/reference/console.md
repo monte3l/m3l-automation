@@ -1356,7 +1356,9 @@ An entry is `{ driver, code, errno }`. `driver` is the section (`telemetry`,
 own `code` of the first error in the `cause` chain that is not an M3L error —
 a Node errno such as `ENOTDIR` or `EACCES` for a filesystem failure, or a Node
 error code such as `ERR_SQLITE_ERROR` for a store failure — and `undefined`
-when that error carries none. On failure the command prints the message, then
+when that error carries none. The thrown error itself counts as the chain's
+first link, and at most ten links are checked. On failure the command prints
+the message, then
 one line per entry, to stderr (`-` stands for `undefined`):
 
 ```text

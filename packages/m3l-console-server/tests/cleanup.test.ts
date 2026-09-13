@@ -305,12 +305,13 @@ describe("runCleanup — failing first driver (telemetry)", () => {
     expect(ctx).toHaveProperty("runOutputs");
     expect(ctx).toHaveProperty("sessionArtifacts");
 
-    // [X8c regression] `context.failures`' telemetry entry's `errno` must be
-    // the underlying mock error's own code ("ESIMULATED"), not a duplicate of
-    // the wrapping M3LConsoleError's own `code` ("ERR_CONSOLE_INTERNAL").
-    // `toCleanupFailure` currently calls the un-chain-walking `errnoCodeOf`
-    // directly on `result.cause` (the M3LConsoleError from `pruneTelemetry`),
-    // so today `errno` just duplicates `code` — this is the X8c defect.
+    // [X8c regression] `context.failures`' telemetry entry's `errno` names
+    // the underlying mock repository error's own code ("ESIMULATED"), not a
+    // duplicate of the wrapping M3LConsoleError's own `code`
+    // ("ERR_CONSOLE_INTERNAL"). `toCleanupFailure` calls the chain-walking
+    // `underlyingErrnoCodeOf`, which walks past the M3LConsoleError
+    // wrapper(s) `pruneTelemetry` raises to reach the mock repository
+    // error's own code — this locks in the X8c fix (issue #1058).
     const failures = ctx?.["failures"];
     expect(Array.isArray(failures)).toBe(true);
     const telemetryFailure = (

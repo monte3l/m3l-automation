@@ -13,8 +13,10 @@ const subcommand = process.argv[2];
 
 if (subcommand === "cleanup") {
   // Operator-triggered retention sweep (ADR-0070 slice 5c). Orchestration
-  // lives entirely in `src/cleanup.ts`; this branch only prints the outcome
-  // or the failure message, matching the wrapper's existing failure convention.
+  // lives entirely in `src/cleanup.ts`; this branch prints the outcome, or
+  // on failure the failure message followed by one line per
+  // `context.failures` entry, matching the wrapper's existing failure
+  // convention.
   const { runCleanup } = await import("../dist/cleanup.js");
   try {
     const outcome = await runCleanup();

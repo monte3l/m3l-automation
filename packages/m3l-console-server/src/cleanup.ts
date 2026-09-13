@@ -162,8 +162,9 @@ function inRunOrder(results: CleanupResults): readonly DriverResult<unknown>[] {
 /**
  * Narrow per-driver failure published in a thrown error's `context.failures`,
  * mirroring `AccumulatedFailure<T>` in `retention-walk.ts`. No absolute path
- * appears here — only the driver identity and the error code/errno extracted
- * from the caught value.
+ * appears here — only the driver identity, the caught value's
+ * `M3LConsoleError` code when present, and the errno found by walking the
+ * cause chain to the first non-`Core.M3LError` (see `underlyingErrnoCodeOf`).
  */
 interface CleanupDriverFailure {
   /** Which driver failed. */
@@ -270,7 +271,7 @@ function buildDriverFailureContext(results: CleanupResults): {
  * - `bestEffort === true`: a close() failure is swallowed — the driver error
  *   that already occurred is the real signal, and a close() failure on top of
  *   it is noise.
- * - `bestEffort === false`: all three drivers succeeded, so a close() failure
+ * - `bestEffort === false`: all four sections succeeded, so a close() failure
  *   is a genuine fault the supervisor must see; it is raised as
  *   {@link M3LConsoleError} with code `"ERR_CONSOLE_INTERNAL"`.
  *
@@ -321,7 +322,9 @@ function anyDriverFailed(results: CleanupResults): boolean {
  * project's cyclomatic-complexity limit.
  *
  * **`context` never contains an absolute root path** — only the count/flag
- * objects the three retention drivers return, which carry no path strings.
+ * objects each successful driver returns (including the audit-trail
+ * observation outcome), plus `context.failures`, whose entries carry only a
+ * driver name, `code`, and `errno` — none of them path strings.
  * **`context.failures` mirrors `AccumulatedFailure<T>` in
  * `retention-walk.ts`**: a second simultaneous failure is never lost.
  */
@@ -454,8 +457,8 @@ function resolveCleanupConfig(env: NodeJS.ProcessEnv): ResolvedCleanupConfig {
  * @returns The combined {@link M3LConsoleCleanupOutcome}.
  * @throws {@link M3LConsoleError} with code `"ERR_CONSOLE_INTERNAL"` when
  *   one or more sections fail; `context.failures` lists each failed
- *   section's name and error code, and `context` also carries each
- *   successful section's outcome. When all four sections succeed but
+ *   section's driver name, `code`, and `errno`, and `context` also carries
+ *   each successful section's outcome. When all four sections succeed but
  *   `store.close()` subsequently throws, this code is also raised with the
  *   close failure as `cause`.
  * @throws {@link M3LConsoleError} with code `"ERR_CONSOLE_CONFIG_INVALID"`
