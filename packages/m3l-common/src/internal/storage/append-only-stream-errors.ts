@@ -37,8 +37,14 @@
  * error built here is a **chained filesystem `cause`** — Node's own
  * `ENOENT`/`EACCES`/`ELOOP` errors quote the path they failed on. That cause
  * is deliberately kept: it is the only diagnostic an operator has for a
- * broken stream directory, it is Node's error rather than one composed here,
- * and it is reached only by code that walks `error.cause` explicitly.
+ * broken stream directory, and it is Node's error rather than one composed
+ * here. It is reachable through two different channels that behave
+ * differently: `JSON.stringify` stays clean, because `M3LError.toJSON`
+ * collapses a foreign `cause` down to a name and message, but `util.inspect`
+ * — what `console.log`/`console.warn` uses, on the error directly or on any
+ * report that embeds one — recurses into `cause` on its own. Logging an
+ * error this module built, by either function, can print the path; walking
+ * `error.cause` by hand is not the only way to reach it.
  *
  * @packageDocumentation
  */

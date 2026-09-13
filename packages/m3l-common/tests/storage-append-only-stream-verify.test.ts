@@ -240,20 +240,17 @@ describe("verify() wiring: sealed-vs-unsealed classification over a real rotated
 
     const report = await stream.verify();
     const verdict = findVerdict(report, sealedSegment);
-    expect(verdict.status).toBe("sealed");
-    const sealed = definedOrThrow(verdict.sealed, "the sealed claim");
-    const observed = definedOrThrow(
-      verdict.observed,
-      "the observed measurement",
-    );
+    if (verdict.status !== "sealed") {
+      throw new Error(`expected status "sealed", got "${verdict.status}"`);
+    }
 
     // Computed directly with node:crypto over the file's raw bytes — never
     // obtained from the library — so this is an independent oracle for the
     // documented "plain sha256, reproducible with sha256sum" contract.
     const bytes = await readFile(path.join(dir, sealedSegment));
     const expectedSha256 = createHash("sha256").update(bytes).digest("hex");
-    expect(sealed.sha256).toBe(expectedSha256);
-    expect(observed.sha256).toBe(expectedSha256);
+    expect(verdict.sealed.sha256).toBe(expectedSha256);
+    expect(verdict.observed.sha256).toBe(expectedSha256);
   });
 });
 
@@ -286,10 +283,14 @@ describe("verify() never throws, even where read() would", () => {
     const report = await stream.verify();
     for (const name of sealedNames) {
       const verdict = findVerdict(report, name);
-      expect(verdict.status).toBe("archived");
-      const sealed = definedOrThrow(verdict.sealed, "the archived claim");
-      expect(sealed.sha256).toMatch(/^[0-9a-f]{64}$/u);
-      expect(verdict.observed).toBeUndefined();
+      if (verdict.status !== "archived") {
+        throw new Error(`expected status "archived", got "${verdict.status}"`);
+      }
+      expect(verdict.sealed.sha256).toMatch(/^[0-9a-f]{64}$/u);
+      // The `"archived"` arm carries no `observed` field at all — never
+      // digested — so absence is an own-key check, not a `.toBeUndefined()`
+      // read the type no longer permits.
+      expect(Object.hasOwn(verdict, "observed")).toBe(false);
     }
     expect(report.failures).toEqual([]);
   });
@@ -307,11 +308,11 @@ describe("verify() never throws, even where read() would", () => {
 
     const report = await stream.verify();
     const verdict = findVerdict(report, sealedSegment);
-    expect(verdict.status).toBe("mismatched");
-    const sealed = definedOrThrow(verdict.sealed, "the stale claim");
-    const observed = definedOrThrow(verdict.observed, "the re-digested bytes");
-    expect(observed.byteLength).toBe(sealed.byteLength + 1);
-    expect(observed.sha256).not.toBe(sealed.sha256);
+    if (verdict.status !== "mismatched") {
+      throw new Error(`expected status "mismatched", got "${verdict.status}"`);
+    }
+    expect(verdict.observed.byteLength).toBe(verdict.sealed.byteLength + 1);
+    expect(verdict.observed.sha256).not.toBe(verdict.sealed.sha256);
   });
 
   test("a malformed mid-file manifest line resolves with a failures entry rather than a rejection", async () => {

@@ -50,8 +50,8 @@ Exported from `@monte3l/m3l-common/core` (`storage` subpath):
 | `M3LAppendOnlySegmentListing`        | type   | What `listSegments()` returns: the `segments` array plus a `skipped` count of segment-named entries it refused to inventory.                                                           |
 | `M3LAppendOnlySegment`               | type   | One segment as `listSegments()` reports it: `name`, `datePrefix`, `sequence`, `byteLength`, `modifiedAtMs`. Carries no path.                                                           |
 | `M3LAppendOnlyStream.verify`         | method | Re-digests every segment the `manifest.jsonl` sidecar makes a claim about and reports what it finds. Never throws on a finding (X8b slice 4b).                                         |
-| `M3LAppendOnlyVerification`          | type   | What `verify()` returns: `verdicts`, `failures`, per-status `totals`, and the `unprovenBefore` boundary.                                                                               |
-| `M3LAppendOnlySegmentVerdict`        | type   | One segment's finding: its `status`, the manifest's claim, and what re-digesting observed.                                                                                             |
+| `M3LAppendOnlyVerification`          | type   | What `verify()` returns: `verdicts`, `failures`, per-status `totals`, a `skipped` count, and the `unprovenBefore` boundary.                                                            |
+| `M3LAppendOnlySegmentVerdict`        | type   | One segment's finding, as a union discriminated on `status` — so narrowing yields the claim and the observation, and an illegal pairing will not compile.                              |
 | `M3LAppendOnlyVerificationStatus`    | type   | The five findings a segment can receive: `sealed`, `unsealed`, `archived`, `mismatched`, `legacy`.                                                                                     |
 | `M3LAppendOnlySealedSegment`         | type   | One segment's sealed claim as the manifest states it: the measurement, plus `segment` and the `at` it was stamped.                                                                     |
 | `M3LAppendOnlySegmentMeasurement`    | type   | The three numbers a seal records and a verification recomputes: `entryCount`, `byteLength`, plain `sha256`.                                                                            |
@@ -235,21 +235,31 @@ import { M3LAppendOnlyStream } from "@monte3l/m3l-common/core";
 const stream = new M3LAppendOnlyStream({ directory: "/var/lib/m3l/audit" });
 const report = await stream.verify();
 
-if (report.totals.mismatched > 0) {
-  // a sealed segment's bytes no longer match what was sealed -- escalate
+// A positive finding. Necessary, NOT sufficient -- see below.
+if (report.totals.mismatched > 0 || report.failures.length > 0) {
+  // escalate
 }
+
+// The absence of evidence is its own finding. Compare against what you
+// expect this trail to hold, from a record kept OUTSIDE the directory.
+if (report.unprovenBefore === undefined || report.skipped > 0) {
+  // the manifest is gone or unreadable, or the directory holds
+  // segment-named entries this writer did not leave behind
+}
+
 for (const verdict of report.verdicts) {
-  if (verdict.status === "archived" && verdict.sealed !== undefined) {
+  if (verdict.status === "archived") {
     // sha256sum the archive copy and compare against verdict.sealed.sha256
     console.log(verdict.segment, verdict.sealed.sha256);
   }
 }
-if (report.failures.length > 0) {
-  // could not be checked at all -- not the same as "checked and wrong"
-}
 ```
 
 `verify()` is `listSegments()`'s evidentiary half. It re-digests every segment the sidecar makes a claim about, without parsing a line or handing back a single entry, and returns a report rather than throwing. That posture is the whole point: it is what an operator reaches for once `read()` has already started throwing, and a verification that itself throws on a damaged trail is unavailable exactly when the damage is why it was called. It is also the only in-library way to re-verify an archive.
+
+**No single field on the report is an alarm, and treating one as an alarm is the mistake this section exists to prevent.** `verify()` reasons from evidence inside the stream directory, and the attacker this primitive is bounded against — anyone who can write that directory, since `0o700` is the only thing in the way — can remove evidence as easily as they can alter it. Both moves are one `rm`. Tamper with a sealed segment and it reports `mismatched`; then delete that segment and the same trail reports `archived`, because a sealed segment that is not on disk is exactly what an honest archival looks like. Delete `manifest.jsonl` instead and every segment reports `unsealed`, because a trail that never sealed anything is exactly what that looks like too. A check on `totals.mismatched` alone returns clean in both cases, and so does a check on `totals.mismatched` plus `failures.length`.
+
+What closes the gap is the one thing the directory cannot supply: an expectation held elsewhere. `unprovenBefore` reading `undefined` where it previously read a segment name or `null` is the manifest-deletion signal — and if `failures` is non-empty at the same time, the manifest was unreadable rather than absent, which is a different incident. `skipped` above zero means the directory holds segment-named entries this writer did not leave behind. An `archived` verdict is only as good as your knowledge of which dates you actually archived, which is why the verdict carries the full `sha256`: it lets you prove the archive copy is the real bytes, and nothing in the library can prove the archival was authorised. ADR-0102 records this as a deliberate limit rather than a gap to engineer away — closing it needs state outside the directory, which this primitive does not have.
 
 Each segment receives one of five verdicts. `sealed` means the manifest claims it and re-digesting reproduces all three numbers. `mismatched` means the claim and the bytes disagree, and the verdict carries both so an operator can see which number moved. `archived` means the manifest claims it and it is not on disk — the library cannot tell a deliberate archival from a deletion, which is exactly why the verdict carries the full claim including `sha256`: that is what makes the archive copy checkable off-host with nothing but `sha256sum`. `unsealed` means no claim exists, the normal state of the segment currently being appended to. `legacy` means the segment sits at or before the baseline's stated boundary and carries no seal — bytes written before sealing was in force, which a digest taken now cannot vouch for.
 
@@ -257,7 +267,9 @@ Each segment receives one of five verdicts. `sealed` means the manifest claims i
 
 **`unprovenBefore` is three-valued and the three must not be collapsed.** A segment name is the baseline's stated boundary. `null` is the baseline's positive assertion that sealing has been in force since the stream's first segment. `undefined` means the manifest states no baseline at all — either nothing was ever sealed, or the manifest was deleted, which is the silent downgrade noted below and the only way it becomes visible after the fact.
 
-**`failures` is not a sixth verdict.** None of the five can express "unknown", and folding, say, an `EACCES` on a sealed segment into `mismatched` would let a broken filesystem read as tampering — the same conflation `skipped` already refuses to make for the inventory. A per-segment failure carries that segment's name and an `M3LAppendOnlyStreamReadError`; a manifest-level or directory-level one carries `undefined` and an `M3LAppendOnlyStreamManifestError`. A manifest that cannot be read yields **no verdicts at all** rather than a directory's worth of `unsealed`, because "the claims could not be read" is not "no claim exists". Every segment considered appears in `verdicts` or in `failures`, never both and never neither.
+**`failures` is not a sixth verdict.** None of the five can express "unknown", and folding, say, an `EACCES` on a sealed segment into `mismatched` would let a broken filesystem read as tampering — the same conflation `skipped` already refuses to make for the inventory. A per-segment failure carries that segment's name and an `M3LAppendOnlyStreamReadError`; a manifest-level or directory-level one carries `undefined` and an `M3LAppendOnlyStreamManifestError`. A manifest that cannot be read yields **no verdicts at all** rather than a directory's worth of `unsealed`, because "the claims could not be read" is not "no claim exists". One malformed line appended anywhere in the sidecar has that effect, so a report naming no segment at all, with a single failure, is itself a finding: the trail is disputed and the sidecar can no longer say which segment.
+
+Every segment considered appears in `verdicts` or in `failures`, never both and never neither — but note the boundary of that word. An entry the inventory refused as not-a-segment (a planted symlink or hardlink at a segment-shaped name) was never considered, and is counted only in `skipped`. The invariant partitions what was checked; it is not a completeness guarantee over the directory, and `skipped` is what keeps that difference visible.
 
 ## Notes & behavior
 

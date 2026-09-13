@@ -63,7 +63,7 @@
         {
           "file": "packages/m3l-common/src/core/storage/M3LAppendOnlyStream.ts",
           "symbol": "M3LAppendOnlyStream",
-          "blob": "ee2ea393c684a2efb3b3a18e1707355bf7950ecc"
+          "blob": "c1a7c6efda349e861faf858592d3926ae6826e96"
         },
         {
           "file": "packages/m3l-common/src/core/storage/append-only-write-types.ts",
@@ -73,7 +73,7 @@
         {
           "file": "packages/m3l-common/src/core/storage/append-only-manifest-types.ts",
           "symbol": "M3LAppendOnlySealFailure",
-          "blob": "428767a046ea5f818be240e139e5ca1bdf55c758"
+          "blob": "18624a27ff229dc84e20c6526906ae149f838cf2"
         },
         {
           "file": "packages/m3l-common/src/core/storage/M3LAppendOnlyStreamManifestError.ts",
@@ -83,47 +83,47 @@
         {
           "file": "packages/m3l-common/src/core/storage/append-only-manifest-types.ts",
           "symbol": "M3L_APPEND_ONLY_MANIFEST_NAME",
-          "blob": "428767a046ea5f818be240e139e5ca1bdf55c758"
+          "blob": "18624a27ff229dc84e20c6526906ae149f838cf2"
         },
         {
-          "file": "packages/m3l-common/src/core/storage/append-only-manifest-types.ts",
+          "file": "packages/m3l-common/src/core/storage/append-only-verify-types.ts",
           "symbol": "M3LAppendOnlySegmentMeasurement",
-          "blob": "428767a046ea5f818be240e139e5ca1bdf55c758"
+          "blob": "cd44759d3b6248910f42c6bec1f97df1c3d77ce7"
         },
         {
-          "file": "packages/m3l-common/src/core/storage/append-only-manifest-types.ts",
+          "file": "packages/m3l-common/src/core/storage/append-only-verify-types.ts",
           "symbol": "M3LAppendOnlySealedSegment",
-          "blob": "428767a046ea5f818be240e139e5ca1bdf55c758"
+          "blob": "cd44759d3b6248910f42c6bec1f97df1c3d77ce7"
         },
         {
-          "file": "packages/m3l-common/src/core/storage/append-only-manifest-types.ts",
+          "file": "packages/m3l-common/src/core/storage/append-only-verify-types.ts",
           "symbol": "M3LAppendOnlyVerificationStatus",
-          "blob": "428767a046ea5f818be240e139e5ca1bdf55c758"
+          "blob": "cd44759d3b6248910f42c6bec1f97df1c3d77ce7"
         },
         {
-          "file": "packages/m3l-common/src/core/storage/append-only-manifest-types.ts",
+          "file": "packages/m3l-common/src/core/storage/append-only-verify-types.ts",
           "symbol": "M3LAppendOnlySegmentVerdict",
-          "blob": "428767a046ea5f818be240e139e5ca1bdf55c758"
+          "blob": "cd44759d3b6248910f42c6bec1f97df1c3d77ce7"
         },
         {
-          "file": "packages/m3l-common/src/core/storage/append-only-manifest-types.ts",
+          "file": "packages/m3l-common/src/core/storage/append-only-verify-types.ts",
           "symbol": "M3LAppendOnlyVerificationFailure",
-          "blob": "428767a046ea5f818be240e139e5ca1bdf55c758"
+          "blob": "cd44759d3b6248910f42c6bec1f97df1c3d77ce7"
         },
         {
-          "file": "packages/m3l-common/src/core/storage/append-only-manifest-types.ts",
+          "file": "packages/m3l-common/src/core/storage/append-only-verify-types.ts",
           "symbol": "M3LAppendOnlyVerification",
-          "blob": "428767a046ea5f818be240e139e5ca1bdf55c758"
+          "blob": "cd44759d3b6248910f42c6bec1f97df1c3d77ce7"
         },
         {
           "file": "packages/m3l-common/src/core/storage/append-only-entry-types.ts",
           "symbol": "M3LAppendOnlyEntry",
-          "blob": "d940eae3057814ba059398e32de1d3f90a9009e5"
+          "blob": "19ccc81e31e0e61a6484d704f618158ce6bef0c5"
         },
         {
           "file": "packages/m3l-common/src/core/storage/append-only-entry-types.ts",
           "symbol": "M3LAppendOnlyValue",
-          "blob": "d940eae3057814ba059398e32de1d3f90a9009e5"
+          "blob": "19ccc81e31e0e61a6484d704f618158ce6bef0c5"
         },
         {
           "file": "packages/m3l-common/src/core/storage/append-only-read-types.ts",
@@ -199,7 +199,7 @@
         {
           "file": "packages/m3l-common/src/core/storage/M3LAppendOnlyStream.ts",
           "symbol": "M3LAppendOnlyStream",
-          "blob": "ee2ea393c684a2efb3b3a18e1707355bf7950ecc"
+          "blob": "c1a7c6efda349e861faf858592d3926ae6826e96"
         },
         {
           "file": "packages/m3l-common/src/core/storage/M3LAppendOnlyStreamError.ts",

@@ -76,7 +76,7 @@ import type {
   M3LAppendOnlyReadOptions,
   M3LAppendOnlySegmentListing,
 } from "./append-only-read-types.js";
-import type { M3LAppendOnlyVerification } from "./append-only-manifest-types.js";
+import type { M3LAppendOnlyVerification } from "./append-only-verify-types.js";
 import type { M3LAppendOnlyStreamOptions } from "./append-only-write-types.js";
 import {
   APPEND_ONLY_STREAM_WRITE_ERRORS,
@@ -378,7 +378,7 @@ export class M3LAppendOnlyStream {
    * a claim about, and classifies every segment — claimed or not — into one
    * of five verdicts: `"sealed"`, `"mismatched"`, `"archived"`, `"legacy"`,
    * or `"unsealed"` (see
-   * {@link "./append-only-manifest-types.js".M3LAppendOnlyVerificationStatus}).
+   * {@link "./append-only-verify-types.js".M3LAppendOnlyVerificationStatus}).
    *
    * **Never rejects.** That is the entire reason an operator reaches for
    * this method: `read()` has typically already started throwing by the
@@ -393,6 +393,11 @@ export class M3LAppendOnlyStream {
    * {@link "../../internal/storage/append-only-verify.js".verifyAppendOnlySegments}'s
    * to state; this method only wires this stream's own directory and
    * ceilings to that engine.
+   *
+   * **The returned report is not a simple pass/fail.** Read it through
+   * {@link "./append-only-verify-types.js".M3LAppendOnlyVerification}, which
+   * documents what each field can — and cannot — prove about this stream's
+   * directory; no single field on it is a clean bill of health by itself.
    *
    * The digest bound handed to the engine is `maxSegmentBytes + maxLineBytes`,
    * never `maxSegmentBytes` alone: `shouldRotate` fires at
@@ -410,8 +415,19 @@ export class M3LAppendOnlyStream {
    *
    * const stream = new M3LAppendOnlyStream({ directory: "data/output/audit" });
    * const report = await stream.verify();
-   * if (report.totals.mismatched > 0 || report.failures.length > 0) {
-   *   console.warn("audit trail failed verification", report);
+   *
+   * // A positive finding, but not sufficient alone — see M3LAppendOnlyVerification.
+   * const disputed = report.verdicts.length === 0 && report.failures.length > 0;
+   * if (report.totals.mismatched > 0 || disputed) {
+   *   // escalate: at least one claim disagrees with its bytes, or the
+   *   // sidecar itself could not be read
+   * }
+   *
+   * // Absence of evidence is a finding too, judged against what this trail
+   * // is expected to hold — a record kept OUTSIDE this directory.
+   * if (report.unprovenBefore === undefined || report.skipped > 0) {
+   *   // escalate: the manifest is gone, or the directory holds entries
+   *   // this writer never left behind
    * }
    * ```
    */

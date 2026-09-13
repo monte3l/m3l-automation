@@ -56,13 +56,13 @@ import {
 } from "vitest";
 
 import { M3LError } from "../src/core/errors/index.js";
+import { M3L_APPEND_ONLY_MANIFEST_NAME } from "../src/core/storage/append-only-manifest-types.js";
 import type {
   M3LAppendOnlySegmentVerdict,
   M3LAppendOnlyVerification,
   M3LAppendOnlyVerificationFailure,
   M3LAppendOnlyVerificationStatus,
-} from "../src/core/storage/append-only-manifest-types.js";
-import { M3L_APPEND_ONLY_MANIFEST_NAME } from "../src/core/storage/append-only-manifest-types.js";
+} from "../src/core/storage/append-only-verify-types.js";
 import type { AppendOnlyReadFailure } from "../src/internal/storage/append-only-lines.js";
 import { MANIFEST_FORMAT_VERSION } from "../src/internal/storage/append-only-manifest.js";
 // The module under test does not exist yet — this import is expected to fail
@@ -356,7 +356,9 @@ describe("C2 classification", () => {
     expect(result.verdicts).toHaveLength(1);
     const verdict = definedOrThrow(result.verdicts[0], "the verdict");
     expect(verdict.segment).toBe(SEG);
-    expect(verdict.status).toBe("sealed");
+    if (verdict.status !== "sealed") {
+      throw new Error(`expected status "sealed", got "${verdict.status}"`);
+    }
     expect(verdict.sealed).toMatchObject(measurement);
     expect(verdict.observed).toEqual(measurement);
     expect(result.failures).toEqual([]);
@@ -379,12 +381,14 @@ describe("C2 classification", () => {
     const result = await verifyAppendOnlySegments(options);
 
     const verdict = definedOrThrow(result.verdicts[0], "the verdict");
-    expect(verdict.status).toBe("mismatched");
+    if (verdict.status !== "mismatched") {
+      throw new Error(`expected status "mismatched", got "${verdict.status}"`);
+    }
     expect(verdict.sealed).toMatchObject(trueMeasurement);
     expect(verdict.observed).toEqual(observedMeasurement);
-    expect(verdict.observed?.entryCount).toBe(trueMeasurement.entryCount);
-    expect(verdict.observed?.byteLength).not.toBe(trueMeasurement.byteLength);
-    expect(verdict.observed?.sha256).not.toBe(trueMeasurement.sha256);
+    expect(verdict.observed.entryCount).toBe(trueMeasurement.entryCount);
+    expect(verdict.observed.byteLength).not.toBe(trueMeasurement.byteLength);
+    expect(verdict.observed.sha256).not.toBe(trueMeasurement.sha256);
   });
 
   test("a sealed segment absent from disk classifies archived, carrying the full claim including sha256, with observed undefined", async () => {
@@ -395,13 +399,18 @@ describe("C2 classification", () => {
     const result = await verifyAppendOnlySegments(options);
 
     const verdict = definedOrThrow(result.verdicts[0], "the verdict");
-    expect(verdict.status).toBe("archived");
+    if (verdict.status !== "archived") {
+      throw new Error(`expected status "archived", got "${verdict.status}"`);
+    }
     expect(verdict.sealed).toMatchObject(measurement);
     // `sha256` explicitly, not just "the claim": this is the field that lets
     // an operator holding an archive copy run `sha256sum` against it — the
     // whole point of `archived` carrying the full claim.
-    expect(verdict.sealed?.sha256).toBe(measurement.sha256);
-    expect(verdict.observed).toBeUndefined();
+    expect(verdict.sealed.sha256).toBe(measurement.sha256);
+    // The `"archived"` arm carries no `observed` field at all — never
+    // digested — so absence is an own-key check, not a `.toBeUndefined()`
+    // read the type no longer permits.
+    expect(Object.hasOwn(verdict, "observed")).toBe(false);
   });
 
   test("an on-disk segment with no seal and no baseline classifies unsealed, with sealed and observed both undefined", async () => {
@@ -411,9 +420,13 @@ describe("C2 classification", () => {
     const result = await verifyAppendOnlySegments(options);
 
     const verdict = definedOrThrow(result.verdicts[0], "the verdict");
-    expect(verdict.status).toBe("unsealed");
-    expect(verdict.sealed).toBeUndefined();
-    expect(verdict.observed).toBeUndefined();
+    if (verdict.status !== "unsealed") {
+      throw new Error(`expected status "unsealed", got "${verdict.status}"`);
+    }
+    // The `"unsealed"` arm carries neither field at all — own-key checks,
+    // not `.toBeUndefined()` reads the type no longer permits.
+    expect(Object.hasOwn(verdict, "sealed")).toBe(false);
+    expect(Object.hasOwn(verdict, "observed")).toBe(false);
   });
 
   test("a segment at or before the baseline boundary, with no seal, classifies legacy and is never digested", async () => {
@@ -426,9 +439,13 @@ describe("C2 classification", () => {
 
     const verdict = definedOrThrow(result.verdicts[0], "the verdict");
     expect(verdict.segment).toBe(legacySegment);
-    expect(verdict.status).toBe("legacy");
-    expect(verdict.sealed).toBeUndefined();
-    expect(verdict.observed).toBeUndefined();
+    if (verdict.status !== "legacy") {
+      throw new Error(`expected status "legacy", got "${verdict.status}"`);
+    }
+    // The `"legacy"` arm carries neither field at all — own-key checks, not
+    // `.toBeUndefined()` reads the type no longer permits.
+    expect(Object.hasOwn(verdict, "sealed")).toBe(false);
+    expect(Object.hasOwn(verdict, "observed")).toBe(false);
   });
 });
 
@@ -739,9 +756,11 @@ describe("C5 failure routing", () => {
 
       expect(result.failures).toEqual([]);
       const verdict = definedOrThrow(result.verdicts[0], "the verdict");
-      expect(verdict.status).toBe("archived");
+      if (verdict.status !== "archived") {
+        throw new Error(`expected status "archived", got "${verdict.status}"`);
+      }
       expect(verdict.sealed).toMatchObject(measurement);
-      expect(verdict.observed).toBeUndefined();
+      expect(Object.hasOwn(verdict, "observed")).toBe(false);
     });
   });
 });
@@ -887,6 +906,68 @@ describe("C5/C6 invariants", () => {
     }
     expect(result.failures).toHaveLength(1);
     expect(result.failures[0]?.segment).toBe(failureSeg);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// C7 — the skipped inventory
+// ---------------------------------------------------------------------------
+
+describe("C7 skipped inventory", () => {
+  test("a planted link at an UNCLAIMED segment name raises skipped, appearing in neither verdicts nor failures, while the healthy segment still verifies sealed", async () => {
+    const healthySegment = "2026-09-01-0001.jsonl";
+    const plantedLinkName = "2026-09-02-0001.jsonl";
+    const healthyBuffer = await writeSegment(healthySegment, "{}\n");
+    const healthyMeasurement = measureBytes(healthyBuffer);
+    await writeManifestBytes(sealLine(healthySegment, healthyMeasurement));
+    // A symlink at a segment-shaped name this writer never sealed and never
+    // claimed in the manifest: `listSegmentFiles` refuses it during
+    // inventory (not `isFile()`), so it was never a segment in the first
+    // place — never CONSIDERED at all, per this module's own doc. It
+    // therefore cannot appear in either `verdicts` or `failures`; `skipped`
+    // is the ONLY place its presence can surface.
+    await symlink(
+      path.join(sandbox, "nowhere-in-particular"),
+      path.join(sandbox, plantedLinkName),
+    );
+    const { options } = harness();
+
+    const result = await verifyAppendOnlySegments(options);
+
+    expect(result.skipped).toBe(1);
+    expect(
+      result.verdicts.some(
+        (verdict: M3LAppendOnlySegmentVerdict) =>
+          verdict.segment === plantedLinkName,
+      ),
+    ).toBe(false);
+    expect(
+      result.failures.some(
+        (failure: M3LAppendOnlyVerificationFailure) =>
+          failure.segment === plantedLinkName,
+      ),
+    ).toBe(false);
+    const healthyVerdict = definedOrThrow(
+      result.verdicts.find(
+        (verdict: M3LAppendOnlySegmentVerdict) =>
+          verdict.segment === healthySegment,
+      ),
+      "the healthy segment's verdict",
+    );
+    expect(healthyVerdict.status).toBe("sealed");
+  });
+
+  test("an untouched trail reports skipped: 0", async () => {
+    const buffer = await writeSegment(SEG, "{}\n");
+    const measurement = measureBytes(buffer);
+    await writeManifestBytes(sealLine(SEG, measurement));
+    const { options } = harness();
+
+    const result = await verifyAppendOnlySegments(options);
+
+    // Falsifiable counterpart to the test above: without this, a `skipped`
+    // field that was always `1` would pass that test too.
+    expect(result.skipped).toBe(0);
   });
 });
 

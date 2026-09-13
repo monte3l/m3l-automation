@@ -7,9 +7,9 @@
  * only in their own TSDoc: the value type an append-only entry may carry,
  * and the entry shape itself.
  *
- * This sits alongside `core/storage`'s three other public-type modules —
+ * This sits alongside `core/storage`'s four other public-type modules —
  * `append-only-read-types.ts`, `append-only-write-types.ts`,
- * `append-only-manifest-types.ts` — none of which are part of the class file
+ * `append-only-manifest-types.ts`, `append-only-verify-types.ts` — none of which are part of the class file
  * either. The entry vocabulary living inside `M3LAppendOnlyStream.ts` was the
  * one holdout: it describes what a caller *hands* the stream, not the class's
  * own behavior, so it belongs here with its siblings rather than in the class

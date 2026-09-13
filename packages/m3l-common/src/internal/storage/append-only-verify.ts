@@ -25,7 +25,7 @@
  * claims is verified against that claim regardless of where the baseline's
  * boundary falls, and `"legacy"` requires both at-or-before the boundary AND
  * the absence of a claim. See
- * {@link "../../core/storage/append-only-manifest-types.js".M3LAppendOnlyVerificationStatus}'s
+ * {@link "../../core/storage/append-only-verify-types.js".M3LAppendOnlyVerificationStatus}'s
  * own TSDoc for the attack this closes; this module holds the precedence by
  * construction — the claimed-segment loop below and the unclaimed-segment
  * loop are two disjoint passes over two disjoint name sets (every claimed
@@ -59,7 +59,7 @@ import type {
   M3LAppendOnlyVerification,
   M3LAppendOnlyVerificationFailure,
   M3LAppendOnlyVerificationStatus,
-} from "../../core/storage/append-only-manifest-types.js";
+} from "../../core/storage/append-only-verify-types.js";
 import type { M3LAppendOnlySegment } from "../../core/storage/append-only-read-types.js";
 import type { SegmentDigestResult } from "./append-only-digest.js";
 import { digestSegmentFile } from "./append-only-digest.js";
@@ -190,13 +190,25 @@ function tallyTotals(
   return totals;
 }
 
-/** The report shape for a manifest- or directory-level failure: nothing could be classified at all. */
-function emptyReport(error: M3LError): M3LAppendOnlyVerification {
+/**
+ * The report shape for a manifest- or directory-level failure: nothing could
+ * be classified at all. `skipped` is the caller's honest count for the
+ * failure at hand — `0` when the directory listing itself is what failed (no
+ * inventory was ever taken, so nothing could have been skipped), or the
+ * listing's own `skipped` count when the listing succeeded and it was the
+ * manifest read that failed afterward (the count is already known and must
+ * not be discarded).
+ */
+function emptyReport(
+  error: M3LError,
+  skipped: number,
+): M3LAppendOnlyVerification {
   return {
     verdicts: [],
     failures: [{ segment: undefined, error }],
     totals: tallyTotals([]),
     unprovenBefore: undefined,
+    skipped,
   };
 }
 
@@ -231,22 +243,17 @@ function archivedVerdict(
   segment: string,
   claim: ManifestSealRecord,
 ): M3LAppendOnlySegmentVerdict {
-  return { segment, status: "archived", sealed: claim, observed: undefined };
+  return { segment, status: "archived", sealed: claim };
 }
 
 /** At or before the baseline, unclaimed: deliberately never digested. */
 function legacyVerdict(segment: string): M3LAppendOnlySegmentVerdict {
-  return { segment, status: "legacy", sealed: undefined, observed: undefined };
+  return { segment, status: "legacy" };
 }
 
 /** After the boundary (or no boundary at all), unclaimed: nothing to check yet. */
 function unsealedVerdict(segment: string): M3LAppendOnlySegmentVerdict {
-  return {
-    segment,
-    status: "unsealed",
-    sealed: undefined,
-    observed: undefined,
-  };
+  return { segment, status: "unsealed" };
 }
 
 /**
@@ -328,7 +335,7 @@ async function classifyClaimedSegment(
 /**
  * Classifies one unclaimed on-disk segment: `"legacy"` at or before the
  * baseline boundary, `"unsealed"` otherwise. Never digested either way — see
- * {@link "../../core/storage/append-only-manifest-types.js".M3LAppendOnlyVerificationStatus}
+ * {@link "../../core/storage/append-only-verify-types.js".M3LAppendOnlyVerificationStatus}
  * for why.
  */
 function classifyUnclaimedSegment(
@@ -426,6 +433,7 @@ async function buildVerificationReport(
   segments: readonly M3LAppendOnlySegment[],
   contents: ManifestContents,
   options: AppendOnlyVerifyOptions,
+  skipped: number,
 ): Promise<M3LAppendOnlyVerification> {
   const boundaryKey = baselineBoundaryKey(contents);
   const unclaimed = classifyUnclaimedSegments(segments, contents, boundaryKey);
@@ -438,6 +446,7 @@ async function buildVerificationReport(
     failures: claimed.failures,
     totals: tallyTotals(verdicts),
     unprovenBefore: contents.baseline?.upTo,
+    skipped,
   };
 }
 
@@ -446,7 +455,7 @@ async function buildVerificationReport(
  * about, and classifies every segment — claimed or not — into one of five
  * verdicts: `"sealed"`, `"mismatched"`, `"archived"`, `"legacy"`, or
  * `"unsealed"` (see
- * {@link "../../core/storage/append-only-manifest-types.js".M3LAppendOnlyVerificationStatus}).
+ * {@link "../../core/storage/append-only-verify-types.js".M3LAppendOnlyVerificationStatus}).
  *
  * **Never rejects** except for a `maxDigestBytes` or `maxManifestBytes` that
  * is not a positive integer, refused before either the directory listing or
@@ -459,7 +468,7 @@ async function buildVerificationReport(
  * failures: `listSegmentFiles` reports an empty inventory for a missing
  * directory, and `readManifest` reports empty contents for an absent
  * manifest — the manifest-deletion signal
- * {@link "../../core/storage/append-only-manifest-types.js".M3LAppendOnlyVerification.unprovenBefore}
+ * {@link "../../core/storage/append-only-verify-types.js".M3LAppendOnlyVerification.unprovenBefore}
  * documents relies on exactly this: a deleted manifest reads as "nothing
  * ever claimed", not as an error.
  *
@@ -492,11 +501,14 @@ export async function verifyAppendOnlySegments(
   assertValidCeilings(options);
 
   let segments: readonly M3LAppendOnlySegment[];
+  let skipped: number;
   try {
-    ({ segments } = await listSegmentFiles(options.directory));
+    ({ segments, skipped } = await listSegmentFiles(options.directory));
   } catch (cause) {
+    // No inventory was ever taken, so nothing could have been skipped.
     return emptyReport(
       options.buildManifestError(LISTING_FAILURE_MESSAGE, { cause }),
+      0,
     );
   }
 
@@ -508,13 +520,16 @@ export async function verifyAppendOnlySegments(
       options.buildManifestError,
     );
   } catch (cause) {
+    // The listing succeeded, so its skipped count is already known and must
+    // survive even though the manifest read failed afterward.
     return emptyReport(
       options.buildManifestError(MANIFEST_READ_FAILURE_MESSAGE, {
         cause,
         context: { maxManifestBytes: options.maxManifestBytes },
       }),
+      skipped,
     );
   }
 
-  return await buildVerificationReport(segments, contents, options);
+  return await buildVerificationReport(segments, contents, options, skipped);
 }
