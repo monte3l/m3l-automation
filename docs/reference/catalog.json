@@ -680,6 +680,8 @@
       "M3LAppendOnlyStream",
       "M3LAppendOnlyStreamOptions",
       "M3LAppendOnlySealFailure",
+      "M3LAppendOnlyStreamManifestError",
+      "M3L_APPEND_ONLY_MANIFEST_NAME",
       "M3LAppendOnlyEntry",
       "M3LAppendOnlyValue",
       "M3L_APPEND_ONLY_MAX_SEGMENT_BYTES",

@@ -58,6 +58,7 @@ import { appendFile, open } from "node:fs/promises";
 import path from "node:path";
 
 import { M3LError } from "../../core/errors/index.js";
+import { M3L_APPEND_ONLY_MANIFEST_NAME } from "../../core/storage/append-only-manifest-types.js";
 import {
   APPEND_FLAGS,
   assertSegmentIsReadable,
@@ -89,16 +90,6 @@ import {
  */
 export { MANIFEST_FORMAT_VERSION };
 export type { ManifestContents, SegmentSealClaim };
-
-/**
- * The manifest's file name within a stream directory.
- *
- * Not date-shaped on purpose — see this module's header: a date glob cannot
- * match it, so ADR-0070's whole-date archival leaves the proof behind by
- * construction, and `SEGMENT_NAME_PATTERN` cannot match it either, so no
- * inventory, byte total or `skipped` count ever sees it.
- */
-export const M3L_APPEND_ONLY_MANIFEST_NAME: string = "manifest.jsonl";
 
 // Re-exported for import stability; the declaration and its rationale now
 // live in `./append-only-sealer-types.js`, beside the option it defaults.

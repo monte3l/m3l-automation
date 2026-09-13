@@ -67,10 +67,10 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 import { M3LError } from "../src/core/errors/index.js";
+import { M3L_APPEND_ONLY_MANIFEST_NAME } from "../src/core/storage/index.js";
 import { APPEND_FLAGS } from "../src/internal/storage/append-only-fs.js";
 import type { AppendOnlyReadFailure } from "../src/internal/storage/append-only-lines.js";
 import {
-  M3L_APPEND_ONLY_MANIFEST_NAME,
   MANIFEST_FORMAT_VERSION,
   readManifest,
 } from "../src/internal/storage/append-only-manifest.js";

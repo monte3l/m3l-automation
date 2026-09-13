@@ -42,11 +42,11 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 import { M3LError } from "../src/core/errors/index.js";
 import {
+  M3L_APPEND_ONLY_MANIFEST_NAME,
   M3LAppendOnlyStream,
   type M3LAppendOnlyEntry,
   type M3LAppendOnlySealFailure,
 } from "../src/core/storage/index.js";
-import { M3L_APPEND_ONLY_MANIFEST_NAME } from "../src/internal/storage/append-only-manifest.js";
 
 // ---------------------------------------------------------------------------
 // Fixture helpers

@@ -83,11 +83,13 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 import { M3LError } from "../src/core/errors/index.js";
-import { M3LAppendOnlyStream } from "../src/core/storage/index.js";
+import {
+  M3L_APPEND_ONLY_MANIFEST_NAME,
+  M3LAppendOnlyStream,
+} from "../src/core/storage/index.js";
 import type { M3LAppendOnlyEntry } from "../src/core/storage/index.js";
 import type { AppendOnlyReadFailure } from "../src/internal/storage/append-only-lines.js";
 import {
-  M3L_APPEND_ONLY_MANIFEST_NAME,
   MANIFEST_FORMAT_VERSION,
   appendSeal,
   loadOrInitializeManifest,

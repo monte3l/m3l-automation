@@ -12,6 +12,14 @@
  * nothing here opens, reads or writes a file, so the format can be reasoned
  * about (and exercised) without a filesystem in the picture at all.
  *
+ * The record-agnostic untrusted-field readers (`ownProperty`, `ownString`,
+ * `ownInteger`, `ownMeasurement`, `ownDigest`) live one file over, in
+ * `./append-only-manifest-fields.js`, for the same file-budget reason. What
+ * stays here is record-SPECIFIC: `ownSealSegment` and `ownBaselineUpTo`
+ * reach for this format's own `parseSegmentName`/`currentDatePrefix` rules
+ * and so belong with the shapes they validate, not with the generic
+ * primitives.
+ *
  * **The integrity rules are deliberately asymmetric, and the asymmetry is the
  * design.** A torn LAST line is ignored unconditionally (a half-written seal
  * claims nothing; its segment simply reads as unsealed) — the one rule
@@ -30,17 +38,27 @@
  * {@link "./append-only-lines.js".AppendOnlyReadFailure} port, and no message
  * or `context` built here carries caller data — no directory path, no entry
  * key, no entry value, not one byte of a malformed line. A segment NAME is
- * the one sanctioned exception: it derives from the writer's clock and
- * counter, carries zero caller bytes, and is already public through
- * `listSegments()`. A chained `cause` is held to a different standard and is
- * documented at {@link parseRecordObject}, the single place one is chained
- * here.
+ * the one sanctioned exception, and only once it has been required to pass
+ * `parseSegmentName` at the parse boundary (`ownSealSegment`, a sibling of
+ * `ownBaselineUpTo`): that acceptance constrains the name's SHAPE — a date
+ * prefix and a counter in a fixed format — not its provenance, so it carries
+ * no bytes an attacker could have chosen freely, even though a name of that
+ * shape is not on its own proof the writer's clock and counter produced it.
+ * A chained `cause` is held to a different standard and is documented at
+ * {@link parseRecordObject}, the single place one is chained here.
  *
  * @packageDocumentation
  */
 
 import type { SegmentDigestResult } from "./append-only-digest.js";
 import type { AppendOnlyReadFailure } from "./append-only-lines.js";
+import {
+  ownDigest,
+  ownInteger,
+  ownMeasurement,
+  ownProperty,
+  ownString,
+} from "./append-only-manifest-fields.js";
 import { currentDatePrefix, parseSegmentName } from "./append-only-segments.js";
 
 /**
@@ -136,83 +154,6 @@ export interface ManifestContents {
 export type ManifestRecord = ManifestBaselineRecord | ManifestSealRecord;
 
 /**
- * Reads one OWN property into a value, or `undefined` when the object does
- * not itself carry it.
- *
- * The `Object.hasOwn` gate is a security control, not tidiness. A gadget
- * planted on `Object.prototype` is inherited by every object `JSON.parse`
- * produces, so an implementation reading `record.sha256` directly would find
- * the gadget's value and accept a seal that claims nothing — a forged proof
- * assembled out of a record that never stated it. Each field is read exactly
- * once, into a local, and validated there; the property is never read again
- * afterwards, so there is no window in which a second read could answer
- * differently from the one that was checked.
- */
-function ownProperty(record: object, property: string): unknown {
-  return Object.hasOwn(record, property)
-    ? Reflect.get(record, property)
-    : undefined;
-}
-
-/** The own `property` of `record` when it is a string, else `undefined`. */
-function ownString(record: object, property: string): string | undefined {
-  const value = ownProperty(record, property);
-  return typeof value === "string" ? value : undefined;
-}
-
-/** The own `property` of `record` when it is an integer, else `undefined`. */
-function ownInteger(record: object, property: string): number | undefined {
-  const value = ownProperty(record, property);
-  return typeof value === "number" && Number.isInteger(value)
-    ? value
-    : undefined;
-}
-
-/**
- * The own `property` of `record` when it is a MEASUREMENT count — an integer
- * that is not negative — else `undefined`.
- *
- * `./append-only-digest.js` counts newline bytes and sums chunk lengths, so
- * neither an entry count nor a byte length it produced can be below zero. A
- * negative one was written by something else, and admitting it would parse a
- * record no honest writer could have produced into a well-formed seal. The
- * bound is checked on the local {@link ownInteger} already read, never by
- * reading the property a second time.
- */
-function ownMeasurement(record: object, property: string): number | undefined {
-  const value = ownInteger(record, property);
-  return value !== undefined && value >= 0 ? value : undefined;
-}
-
-/**
- * The shape `createHash("sha256").digest("hex")` produces, and the shape
- * `sha256sum` reproduces off-host: exactly 64 LOWERCASE hex characters.
- *
- * Anchored and fixed-length, so it has no backtracking behaviour to reason
- * about. Uppercase is refused rather than folded: a digest this family wrote
- * is lowercase by construction, and normalising instead of refusing would
- * admit a value under a shape the manifest never states.
- */
-const SHA256_HEX_PATTERN = /^[0-9a-f]{64}$/;
-
-/**
- * The own `property` of `record` when it is a sha256 digest, else
- * `undefined`.
- *
- * The manifest is the validation boundary for its own bytes, and a `seal`'s
- * whole worth is that its digest is one `./append-only-digest.js` could have
- * produced. Accepting any string at all would parse `""` into a well-formed
- * seal that proves nothing while reading as proof. Checked on the local
- * {@link ownString} already read, never by reading the property again.
- */
-function ownDigest(record: object, property: string): string | undefined {
-  const value = ownString(record, property);
-  return value !== undefined && SHA256_HEX_PATTERN.test(value)
-    ? value
-    : undefined;
-}
-
-/**
  * Parses one terminated line into a plain JSON object, or fails.
  *
  * The `SyntaxError` **is** chained as `cause`, in the same register as
@@ -282,18 +223,56 @@ function requireFormatVersion(
 }
 
 /**
+ * The own `segment` of `record` when it is a name
+ * {@link "./append-only-segments.js".parseSegmentName} accepts, else
+ * `undefined`.
+ *
+ * Sibling of {@link ownBaselineUpTo}, solving the same problem for the
+ * `seal` record's own field: a string is admitted only when it is a name
+ * this writer's own segment layer could have produced, on exactly the
+ * reasoning {@link "./append-only-manifest-fields.js".ownDigest} and
+ * {@link "./append-only-manifest-fields.js".ownMeasurement} already apply to
+ * a seal's other fields. A value `parseSegmentName` declines was not written
+ * by this trail's writer, so it must be refused here rather than admitted
+ * and later handed back through {@link admitSeal}'s `context` — the one
+ * sanctioned exception to this module's "no caller data" rule, sanctioned
+ * only because a name the parser accepted carries no bytes an attacker chose
+ * freely.
+ *
+ * Deliberately narrower than {@link ownBaselineUpTo}: that sibling also
+ * bounds the parsed date prefix to no later than today, a rule that exists
+ * because an over-future `upTo` would reclassify segments and disable the
+ * cold-start sweep. A seal's own `segment` decides no such classification,
+ * so that bound is not ported here — only `parseSegmentName` acceptance is.
+ *
+ * Checked on the local
+ * {@link "./append-only-manifest-fields.js".ownString} already read, never
+ * by reading the `segment` property, or re-parsing it, a second time.
+ */
+function ownSealSegment(record: object): string | undefined {
+  const value = ownString(record, "segment");
+  return value !== undefined && parseSegmentName(value) !== undefined
+    ? value
+    : undefined;
+}
+
+/**
  * Parses one `seal` record, or fails if it is incomplete, out of shape, or too
  * new.
  *
  * The measurement is admitted on its SHAPE, never on its type alone: a
- * `sha256` must be {@link SHA256_HEX_PATTERN}'s 64 lowercase hex characters,
- * and both counts must be non-negative ({@link ownMeasurement}). A value
- * outside those shapes is reported through {@link MALFORMED_RECORD_MESSAGE},
- * the same fatal path a missing field takes — exactly as
- * {@link parseBaselineRecord} treats a wrongly-shaped `upTo` (see
- * {@link ownBaselineUpTo}), and on the same grounds: a measurement
- * `./append-only-digest.js` could not have produced is not a measurement, so
- * the record states nothing rather than states it badly.
+ * `sha256` must be `./append-only-manifest-fields.js`'s `SHA256_HEX_PATTERN`
+ * — 64 lowercase hex characters — and both counts must be non-negative
+ * ({@link "./append-only-manifest-fields.js".ownMeasurement}). `segment`
+ * is admitted only when {@link "./append-only-segments.js".parseSegmentName}
+ * accepts it (see {@link ownSealSegment}). A value outside those shapes is
+ * reported through {@link MALFORMED_RECORD_MESSAGE}, the same fatal path a
+ * missing field takes — exactly as {@link parseBaselineRecord} treats a
+ * wrongly-shaped `upTo` (see {@link ownBaselineUpTo}), and on the same
+ * grounds: a measurement `./append-only-digest.js` could not have produced,
+ * or a name this writer's own segment layer could not have produced, is not
+ * a measurement or a segment, so the record states nothing rather than
+ * states it badly.
  */
 function parseSealRecord(
   record: object,
@@ -301,7 +280,7 @@ function parseSealRecord(
 ): ManifestSealRecord {
   const formatVersion = requireFormatVersion(record, buildError);
   const at = ownString(record, "at");
-  const segment = ownString(record, "segment");
+  const segment = ownSealSegment(record);
   const sha256 = ownDigest(record, "sha256");
   const entryCount = ownMeasurement(record, "entryCount");
   const byteLength = ownMeasurement(record, "byteLength");
@@ -333,10 +312,13 @@ function parseSealRecord(
  *
  * `null` is admitted unchanged — the positive assertion "sealed since the
  * first segment". A string is admitted only when it is a name this writer's
- * own segment layer could have produced; this module already refuses a
- * `sha256` of the wrong shape ({@link ownDigest}) and a count outside its
- * possible range ({@link ownMeasurement}) on exactly this reasoning, and
- * `upTo` is no different: a string of some other shape is not a segment name,
+ * own segment layer could have produced; the field readers in
+ * `./append-only-manifest-fields.js` already refuse a `sha256` of the wrong
+ * shape ({@link "./append-only-manifest-fields.js".ownDigest}) and a count
+ * outside its possible range
+ * ({@link "./append-only-manifest-fields.js".ownMeasurement}) on exactly
+ * this reasoning, and `upTo` is no different: a string of some other shape
+ * is not a segment name,
  * so a forged boundary such as `"archive-2026-09.tar"` is refused here rather
  * than accepted and left to reshape which segments classify `legacy`
  * downstream.
@@ -367,9 +349,10 @@ function parseSealRecord(
  * the only fold that neither manufactures a false proof nor silently disables
  * the guard.
  *
- * Checked on the local {@link ownProperty} already read, and on
- * {@link parseSegmentName}'s own returned `datePrefix` — never by reading the
- * `upTo` property, or re-parsing it, a second time.
+ * Checked on the local
+ * {@link "./append-only-manifest-fields.js".ownProperty} already read, and
+ * on {@link parseSegmentName}'s own returned `datePrefix` — never by reading
+ * the `upTo` property, or re-parsing it, a second time.
  */
 function ownBaselineUpTo(record: object): string | null | undefined {
   const value = ownProperty(record, "upTo");
@@ -469,8 +452,14 @@ function admitSeal(
   if (existing !== undefined && !statesSameMeasurement(existing, record)) {
     throw buildError(CONFLICTING_SEAL_MESSAGE, {
       // A segment NAME is the sanctioned exception to the no-caller-data
-      // rule: it derives from the writer's clock and counter, carries zero
-      // caller bytes, and is already public through `listSegments()`. An
+      // rule — but only because `ownSealSegment` (above) has already
+      // required `parseSegmentName` to accept it before this record could
+      // reach the index at all. That parse-boundary check constrains the
+      // SHAPE, not the provenance: an attacker with directory write can
+      // still plant a well-formed-looking name, so this does not prove the
+      // writer's clock and counter produced it. What it does prove is that
+      // the name carries no bytes the attacker chose freely — only a date
+      // and a counter in the fixed shape this writer could have rendered. An
       // operator cannot act on this failure without knowing which segment is
       // disputed.
       context: { segment: record.segment },

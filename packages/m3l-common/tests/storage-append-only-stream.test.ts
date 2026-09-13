@@ -69,6 +69,7 @@ import {
 } from "../src/core/agent/index.js";
 import { M3LError } from "../src/core/errors/index.js";
 import {
+  M3L_APPEND_ONLY_MANIFEST_NAME,
   M3L_APPEND_ONLY_MAX_LINE_BYTES,
   M3L_APPEND_ONLY_MAX_SEGMENT_AGE_MS,
   M3L_APPEND_ONLY_MAX_SEGMENT_BYTES,
@@ -81,7 +82,6 @@ import type {
   M3LAppendOnlyStreamOptions,
   M3LAppendOnlyValue,
 } from "../src/core/storage/index.js";
-import { M3L_APPEND_ONLY_MANIFEST_NAME } from "../src/internal/storage/append-only-manifest.js";
 
 // ---------------------------------------------------------------------------
 // The one seam where a real filesystem cannot reach

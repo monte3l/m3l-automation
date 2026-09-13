@@ -63,7 +63,7 @@
         {
           "file": "packages/m3l-common/src/core/storage/M3LAppendOnlyStream.ts",
           "symbol": "M3LAppendOnlyStream",
-          "blob": "29e9941e76635f73737f46e17f46bba55b774b87"
+          "blob": "afe283c7626b677322df4031b6f6808851bc9429"
         },
         {
           "file": "packages/m3l-common/src/core/storage/append-only-write-types.ts",
@@ -73,17 +73,27 @@
         {
           "file": "packages/m3l-common/src/core/storage/append-only-manifest-types.ts",
           "symbol": "M3LAppendOnlySealFailure",
-          "blob": "962fb6b59e5575cf6ee02cd2ec72fd9f0b224d7f"
+          "blob": "323e171fa9e1a07c721fa8ae4140dfd0bd8eded0"
+        },
+        {
+          "file": "packages/m3l-common/src/core/storage/M3LAppendOnlyStreamManifestError.ts",
+          "symbol": "M3LAppendOnlyStreamManifestError",
+          "blob": "e017e6d2cd094fa520b4ec96ba27994fb7d820da"
+        },
+        {
+          "file": "packages/m3l-common/src/core/storage/append-only-manifest-types.ts",
+          "symbol": "M3L_APPEND_ONLY_MANIFEST_NAME",
+          "blob": "323e171fa9e1a07c721fa8ae4140dfd0bd8eded0"
         },
         {
           "file": "packages/m3l-common/src/core/storage/M3LAppendOnlyStream.ts",
           "symbol": "M3LAppendOnlyEntry",
-          "blob": "29e9941e76635f73737f46e17f46bba55b774b87"
+          "blob": "afe283c7626b677322df4031b6f6808851bc9429"
         },
         {
           "file": "packages/m3l-common/src/core/storage/M3LAppendOnlyStream.ts",
           "symbol": "M3LAppendOnlyValue",
-          "blob": "29e9941e76635f73737f46e17f46bba55b774b87"
+          "blob": "afe283c7626b677322df4031b6f6808851bc9429"
         },
         {
           "file": "packages/m3l-common/src/core/storage/append-only-read-types.ts",
@@ -159,7 +169,7 @@
         {
           "file": "packages/m3l-common/src/core/storage/M3LAppendOnlyStream.ts",
           "symbol": "M3LAppendOnlyStream",
-          "blob": "29e9941e76635f73737f46e17f46bba55b774b87"
+          "blob": "afe283c7626b677322df4031b6f6808851bc9429"
         },
         {
           "file": "packages/m3l-common/src/core/storage/M3LAppendOnlyStreamError.ts",

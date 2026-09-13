@@ -49,6 +49,7 @@ import type { M3LAgentDecisionLogEntry } from "../../core/agent/decision-log-typ
 import { M3L_AGENT_MAX_LOG_ENTRY_BYTES } from "../../core/agent/decision-log-types.js";
 import { M3LError } from "../../core/errors/index.js";
 import type { M3LAppendOnlySealFailure } from "../../core/storage/append-only-manifest-types.js";
+import { M3LAppendOnlyStreamManifestError } from "../../core/storage/M3LAppendOnlyStreamManifestError.js";
 import { isNumber, isPlainObject } from "../../core/utils/guards.js";
 import { DEFAULT_MAX_MANIFEST_BYTES } from "../storage/append-only-manifest.js";
 import { readOnSealFailed } from "../storage/append-only-options.js";
@@ -325,17 +326,15 @@ export class AgentDecisionLogWriter {
       maxSegmentBytes: options.maxSegmentBytes,
       maxLineBytes: M3L_AGENT_MAX_LOG_ENTRY_BYTES,
       maxManifestBytes: DEFAULT_MAX_MANIFEST_BYTES,
-      // Known limitation: this single `AppendOnlyReadFailure` builder serves
-      // BOTH the sealer's manifest reads and its manifest appends, so the
-      // class name never discriminates direction. For this owner it is the
-      // READ side that is misnamed — a failed manifest read (e.g.
-      // `append-only-manifest.ts`'s baseline/listing reads) still surfaces as
-      // a "Write" error. The `cause` and `message` carry the accurate
-      // operational detail regardless, so nothing but the class name is
-      // wrong. X8b4 introduces a dedicated `M3LAppendOnlyStreamManifestError`
-      // (code `ERR_APPEND_ONLY_STREAM_MANIFEST`) that actually resolves this.
+      // The manifest is a storage-layer artifact shared by both of its
+      // owners, so a direction-neutral error class is what makes a seal
+      // failure mean the same thing wherever it surfaces —
+      // `M3LAgentDecisionLogWriteError` has no read counterpart and could
+      // never have discriminated direction on its own. This reaches a
+      // caller only through `onSealFailed` (still-unreleased 4.8.0), so no
+      // released behaviour changes.
       buildError: (message, errorOptions) =>
-        new M3LAgentDecisionLogWriteError(message, errorOptions),
+        new M3LAppendOnlyStreamManifestError(message, errorOptions),
       // Conditional spread, not a direct assignment: `exactOptionalPropertyTypes`
       // forbids setting an optional property to a value typed `T | undefined`.
       ...(options.onSealFailed !== undefined && {

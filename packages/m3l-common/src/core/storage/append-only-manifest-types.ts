@@ -11,6 +11,19 @@
 import type { M3LError } from "../errors/index.js";
 
 /**
+ * The manifest's file name within an append-only stream's directory.
+ *
+ * Deliberately NOT date-prefixed: an archival glob like `rm 2026-09-*`
+ * matches only date-named segments, so it cannot also delete the sidecar
+ * that proves them — the proof survives ADR-0070's archival procedure by
+ * construction, not because an operator remembered to spare it. It also does
+ * not match the writer's segment-name pattern, so the sidecar is invisible
+ * to segment discovery and listing: it enters no inventory, contributes to
+ * no byte total, and never raises a `skipped` count.
+ */
+export const M3L_APPEND_ONLY_MANIFEST_NAME: string = "manifest.jsonl";
+
+/**
  * Reported to a caller-supplied `onSealFailed` handler when
  * {@link M3LAppendOnlyStream}'s best-effort sealing could not write an entry
  * to the directory's `manifest.jsonl` sidecar.

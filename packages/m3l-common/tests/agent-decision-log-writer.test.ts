@@ -63,7 +63,10 @@ vi.mock("node:fs/promises", async () => {
 });
 
 import { M3LError } from "../src/core/errors/index.js";
-import type { M3LAppendOnlySealFailure } from "../src/core/storage/index.js";
+import {
+  M3L_APPEND_ONLY_MANIFEST_NAME,
+  type M3LAppendOnlySealFailure,
+} from "../src/core/storage/index.js";
 import { M3LPaths } from "../src/core/utils/index.js";
 import {
   agentDecisionLogEntry,
@@ -80,11 +83,6 @@ import type {
   M3LAgentDecisionLogOptions,
   M3LAgentIdentity,
 } from "../src/core/agent/index.js";
-// Internal-only: the manifest sidecar's file name is not on the public
-// `core/storage` barrel, so it is imported directly from its module — the
-// sidecar must be filtered out of "which segments are on disk" below (see
-// listSegments()), never treated as a segment itself.
-import { M3L_APPEND_ONLY_MANIFEST_NAME } from "../src/internal/storage/append-only-manifest.js";
 
 // ---------------------------------------------------------------------------
 // Fixture helpers

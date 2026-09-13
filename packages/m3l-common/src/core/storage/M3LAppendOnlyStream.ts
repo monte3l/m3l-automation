@@ -74,6 +74,7 @@ import type {
 } from "./append-only-read-types.js";
 import type { M3LAppendOnlyStreamOptions } from "./append-only-write-types.js";
 import { M3LAppendOnlyStreamError } from "./M3LAppendOnlyStreamError.js";
+import { M3LAppendOnlyStreamManifestError } from "./M3LAppendOnlyStreamManifestError.js";
 import { M3LAppendOnlyStreamReadError } from "./M3LAppendOnlyStreamReadError.js";
 
 /**
@@ -241,17 +242,15 @@ export class M3LAppendOnlyStream {
       maxSegmentBytes: resolved.maxSegmentBytes,
       maxLineBytes: resolved.maxLineBytes,
       maxManifestBytes: DEFAULT_MAX_MANIFEST_BYTES,
-      // Known limitation: this single `AppendOnlyReadFailure` builder serves
-      // BOTH the sealer's manifest reads and its manifest appends, so the
-      // class name never discriminates direction. For this owner it is the
-      // APPEND side that is misnamed — a failed manifest write (e.g.
-      // `append-only-manifest.ts`'s `appendRecord`) still surfaces as a
-      // "Read" error. The `cause` and `message` carry the accurate
-      // operational detail regardless, so nothing but the class name is
-      // wrong. X8b4 introduces a dedicated `M3LAppendOnlyStreamManifestError`
-      // (code `ERR_APPEND_ONLY_STREAM_MANIFEST`) that actually resolves this.
+      // The manifest is a storage-layer artifact shared by both owners of
+      // the append-only writer, so one direction-neutral error class makes a
+      // seal failure mean the same thing wherever it surfaces — this sealer
+      // previously built `M3LAppendOnlyStreamReadError`, so a failed
+      // manifest *write* was reported as a read error. This reaches a
+      // caller only through `onSealFailed` (still-unreleased 4.8.0), so no
+      // released behaviour changes.
       buildError: (message, errorOptions) =>
-        new M3LAppendOnlyStreamReadError(message, errorOptions),
+        new M3LAppendOnlyStreamManifestError(message, errorOptions),
       // Conditional spread, not a direct assignment: `exactOptionalPropertyTypes`
       // forbids setting an optional property to a value typed `T | undefined`.
       ...(resolved.onSealFailed !== undefined && {
