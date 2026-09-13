@@ -56,6 +56,7 @@ import {
   mkdtemp,
   readFile,
   rm,
+  stat,
   symlink,
   unlink,
   writeFile,
@@ -78,6 +79,7 @@ import type {
   AppendOnlySealFailure,
   AppendOnlySealerOptions,
 } from "../src/internal/storage/append-only-sealer.js";
+import type { AppendOnlySealRequest } from "../src/internal/storage/append-only-sealer-types.js";
 
 // ---------------------------------------------------------------------------
 // The two injected faults
@@ -265,6 +267,25 @@ function definedOrThrow<T>(value: T | undefined, label: string): T {
   return value;
 }
 
+/** The real, current size of `name` on disk — never a hard-coded number. */
+async function segmentByteLength(name: string): Promise<number> {
+  const { size } = await stat(inSandbox(name));
+  return size;
+}
+
+/**
+ * A rotation request naming `name`, with `byteLength` read from its real
+ * current size on disk. Callers that need to snapshot the size BEFORE a test
+ * mutates or deletes the file read it via {@link segmentByteLength} directly,
+ * before the mutation, instead of calling this helper.
+ */
+async function rotationRequest(name: string): Promise<AppendOnlySealRequest> {
+  return { rotatedFrom: { name, byteLength: await segmentByteLength(name) } };
+}
+
+/** No rotation happened on this append. */
+const NO_ROTATION: AppendOnlySealRequest = { rotatedFrom: undefined };
+
 /** A real failure port building a genuine `M3LError`, as an owner would. */
 function failurePort(): AppendOnlyReadFailure {
   return (message, options) =>
@@ -315,18 +336,12 @@ async function seedHealthyTrail(): Promise<void> {
 // The property: the sealer never throws
 // ---------------------------------------------------------------------------
 
-/** One constructible fault, and the option overrides it needs. */
-interface FaultScenario {
+/** Fields every fault row carries, regardless of which `rotatedFrom` variant below it picks. */
+interface FaultScenarioBase {
   readonly name: string;
   readonly arm: () =>
     | Partial<AppendOnlySealerOptions>
     | Promise<Partial<AppendOnlySealerOptions>>;
-  /**
-   * What the writer claims to have rotated away from, when the fault IS that
-   * claim. Defaults to {@link ROTATED}, the real segment every other row
-   * damages some other way.
-   */
-  readonly rotatedFrom?: string;
   /**
    * `false` marks a row whose fault damages only {@link ROTATED} (or a
    * caller-supplied `rotatedFrom` the sweep-only variant below never passes)
@@ -336,6 +351,31 @@ interface FaultScenario {
    */
   readonly sweepReachable?: boolean;
 }
+
+/** The common row shape: no custom `rotatedFrom`, so the believed byte count is {@link ROTATED}'s real, current size. */
+interface DefaultRotatedFaultScenario extends FaultScenarioBase {
+  readonly rotatedFrom?: undefined;
+}
+
+/**
+ * A row that claims to have rotated away from something other than
+ * {@link ROTATED}. `believedBytes` is **required** here, on purpose: a
+ * custom name may never have been written to disk at all (so there is no
+ * real size to read), and the row that names it is the only place that
+ * knows whether the rotation guard should ever see it. Leaving this to a
+ * shared fallback (e.g. "0 unless `rotatedFrom` is unset") would silently
+ * hand a future PARSEABLE custom name a byte count of 0 it never asked
+ * for, deferring it at the guard instead of reaching whichever fault it
+ * exists to exercise — green, and proving nothing.
+ */
+interface CustomRotatedFaultScenario extends FaultScenarioBase {
+  readonly rotatedFrom: string;
+  /** What the writer believed it had for `rotatedFrom`, stated by this row. */
+  readonly believedBytes: number;
+}
+
+/** One constructible fault, and the option overrides it needs. */
+type FaultScenario = CustomRotatedFaultScenario | DefaultRotatedFaultScenario;
 
 const NO_OVERRIDES: Partial<AppendOnlySealerOptions> = {};
 
@@ -466,6 +506,11 @@ const FAULTS: readonly FaultScenario[] = [
     name: "the rotated name is not one this writer would produce",
     arm: () => NO_OVERRIDES,
     rotatedFrom: "not-a-segment.txt",
+    // `parseSegmentName` rejects this name before any measurement runs, so
+    // there is no real file for a "believed" count to describe — 0 is a
+    // stated placeholder for THIS row, not a fallback a future row inherits
+    // by omission.
+    believedBytes: 0,
     // The no-rotation variant below never passes `rotatedFrom` at all, so
     // this row's only fault (a bad `rotatedFrom`) never reaches the sealer
     // there — `arm` itself stages `NO_OVERRIDES`.
@@ -485,12 +530,27 @@ const SWEEP_REACHABLE_FAULTS: readonly FaultScenario[] = FAULTS.filter(
 );
 
 describe("the sealer never throws", () => {
-  test.each(FAULTS)("resolves when $name", async ({ arm, rotatedFrom }) => {
+  test.each(FAULTS)("resolves when $name", async (fault) => {
     await seedHealthyTrail();
-    const overrides = await arm();
+    // Captured BEFORE `arm()` runs: several rows delete or replace ROTATED,
+    // and the believed byte count is what the writer knew AT ROTATION TIME,
+    // not whatever survives the fault. A row with a custom `rotatedFrom`
+    // states its own `believedBytes` (required by the `CustomRotatedFaultScenario`
+    // half of the union) rather than this runner assuming a value on its
+    // behalf — see that type's TSDoc for why a shared fallback is the trap.
+    const believedBytes =
+      fault.rotatedFrom === undefined
+        ? await segmentByteLength(ROTATED)
+        : fault.believedBytes;
+    const overrides = await fault.arm();
 
     await expect(
-      createSealer(overrides).sealAfterAppend(rotatedFrom ?? ROTATED),
+      createSealer(overrides).sealAfterAppend({
+        rotatedFrom: {
+          name: fault.rotatedFrom ?? ROTATED,
+          byteLength: believedBytes,
+        },
+      }),
     ).resolves.toBeUndefined();
   });
 
@@ -504,7 +564,7 @@ describe("the sealer never throws", () => {
       const overrides = await arm();
 
       await expect(
-        createSealer(overrides).sealAfterAppend(undefined),
+        createSealer(overrides).sealAfterAppend(NO_ROTATION),
       ).resolves.toBeUndefined();
     },
   );
@@ -520,9 +580,12 @@ describe("reporting a failed seal", () => {
     // and counter, carries zero caller bytes, and is already public through
     // `listSegments()`. A directory PATH is caller input and is not.
     await seedHealthyTrail();
+    const believedBytes = await segmentByteLength(ROTATED);
     await unlink(inSandbox(ROTATED));
 
-    await createSealer().sealAfterAppend(ROTATED);
+    await createSealer().sealAfterAppend({
+      rotatedFrom: { name: ROTATED, byteLength: believedBytes },
+    });
 
     const failure = definedOrThrow(reported.at(0), "a reported failure");
     expect(failure.segment).toBe(ROTATED);
@@ -530,9 +593,12 @@ describe("reporting a failed seal", () => {
 
   test("reports the failure the injected port built, with its raw cause chained", async () => {
     await seedHealthyTrail();
+    const believedBytes = await segmentByteLength(ROTATED);
     await unlink(inSandbox(ROTATED));
 
-    await createSealer().sealAfterAppend(ROTATED);
+    await createSealer().sealAfterAppend({
+      rotatedFrom: { name: ROTATED, byteLength: believedBytes },
+    });
 
     const failure = definedOrThrow(reported.at(0), "a reported failure");
     expect(failure.error).toBeInstanceOf(M3LError);
@@ -544,9 +610,12 @@ describe("reporting a failed seal", () => {
 
   test("carries no directory path in the reported message or context", async () => {
     await seedHealthyTrail();
+    const believedBytes = await segmentByteLength(ROTATED);
     await unlink(inSandbox(ROTATED));
 
-    await createSealer().sealAfterAppend(ROTATED);
+    await createSealer().sealAfterAppend({
+      rotatedFrom: { name: ROTATED, byteLength: believedBytes },
+    });
 
     const failure = definedOrThrow(reported.at(0), "a reported failure");
     const context = JSON.stringify(failure.error.context) ?? "";
@@ -559,7 +628,7 @@ describe("reporting a failed seal", () => {
   test("reports nothing at all on a healthy trail", async () => {
     await seedHealthyTrail();
 
-    await createSealer().sealAfterAppend(ROTATED);
+    await createSealer().sealAfterAppend(await rotationRequest(ROTATED));
 
     expect(reported).toEqual([]);
   });
@@ -573,7 +642,7 @@ describe("reporting a failed seal", () => {
     await appendManifestText("this is not a manifest record\n");
     await seedBaseline(null);
 
-    await createSealer().sealAfterAppend(ROTATED);
+    await createSealer().sealAfterAppend(await rotationRequest(ROTATED));
 
     expect(reported).toHaveLength(1);
   });
@@ -582,6 +651,7 @@ describe("reporting a failed seal", () => {
     // `onSealFailed` is optional, so the never-throws guard cannot depend on
     // a handler being there to absorb the failure.
     await seedHealthyTrail();
+    const believedBytes = await segmentByteLength(ROTATED);
     await unlink(inSandbox(ROTATED));
     const sealer = new AppendOnlySealer({
       directory: sandbox,
@@ -591,7 +661,11 @@ describe("reporting a failed seal", () => {
       buildError: failurePort(),
     });
 
-    await expect(sealer.sealAfterAppend(ROTATED)).resolves.toBeUndefined();
+    await expect(
+      sealer.sealAfterAppend({
+        rotatedFrom: { name: ROTATED, byteLength: believedBytes },
+      }),
+    ).resolves.toBeUndefined();
   });
 
   test("one unsealable segment does not stop the others being sealed", async () => {
@@ -608,7 +682,7 @@ describe("reporting a failed seal", () => {
         ? new Error("a permanent EIO on one segment only")
         : undefined;
 
-    await createSealer().sealAfterAppend(ROTATED);
+    await createSealer().sealAfterAppend(await rotationRequest(ROTATED));
 
     const contents = await readManifest(
       sandbox,
@@ -627,7 +701,12 @@ describe("reporting a failed seal", () => {
     await seedHealthyTrail();
     const foreignName = "../../../../etc/passwd";
 
-    await createSealer().sealAfterAppend(foreignName);
+    // `byteLength` is never reached here: `parseSegmentName` rejects the
+    // name before any measurement, so 0 is a placeholder, not a claim about
+    // a real file.
+    await createSealer().sealAfterAppend({
+      rotatedFrom: { name: foreignName, byteLength: 0 },
+    });
 
     const failure = definedOrThrow(reported.at(0), "a reported failure");
     expect(failure.segment).toBeUndefined();
@@ -651,9 +730,9 @@ describe("reporting a failed seal", () => {
     );
     const sealer = createSealer();
 
-    await sealer.sealAfterAppend(undefined);
-    await sealer.sealAfterAppend(undefined);
-    await sealer.sealAfterAppend(undefined);
+    await sealer.sealAfterAppend(NO_ROTATION);
+    await sealer.sealAfterAppend(NO_ROTATION);
+    await sealer.sealAfterAppend(NO_ROTATION);
 
     expect(reported).toHaveLength(1);
     expect(opensOf(M3L_APPEND_ONLY_MANIFEST_NAME)).toBe(1);
@@ -685,7 +764,7 @@ describe("reporting a failed seal", () => {
       },
     });
 
-    await sealer.sealAfterAppend(undefined);
+    await sealer.sealAfterAppend(NO_ROTATION);
 
     const contents = await readManifest(
       sandbox,
@@ -693,6 +772,73 @@ describe("reporting a failed seal", () => {
       failurePort(),
     );
     expect([...contents.seals.keys()]).toContain(goodStale);
+  });
+
+  test("reports a deferred rotation seal through onSealFailed, naming the writer-derived segment", async () => {
+    // The second-writer guard (`append-only-sealer-types.js`'s
+    // `AppendOnlyRotatedSegment.byteLength`): a fresh measurement
+    // disagreeing with the writer's belief defers the seal and reports it —
+    // never silent — through the same `onSealFailed` channel as any other
+    // seal failure.
+    await seedBaseline(null);
+    const rotated = await writeSegment(ROTATED);
+    const believedBytes = await segmentByteLength(rotated);
+    await writeFile(inSandbox(rotated), "second-writer-appended-more\n", {
+      flag: "a",
+    });
+
+    await createSealer().sealAfterAppend({
+      rotatedFrom: { name: rotated, byteLength: believedBytes },
+    });
+
+    const failure = definedOrThrow(reported.at(0), "a reported failure");
+    // The segment name is writer-derived — sanctioned by
+    // `AppendOnlySealFailure.segment`'s own carve-out — so it is reported
+    // directly, unlike the caller-supplied foreign-name case above.
+    expect(failure.segment).toBe(rotated);
+    expect(failure.error).toBeInstanceOf(M3LError);
+    expect(failure.error.message).toBe(
+      "append-only stream: deferred a rotation seal — segment size disagrees with the writer's count",
+    );
+    // No claim was appended for it: the manifest still holds nothing for
+    // this segment.
+    const contents = await readManifest(
+      sandbox,
+      AMPLE_MAX_BYTES,
+      failurePort(),
+    );
+    expect(contents.seals.has(rotated)).toBe(false);
+  });
+
+  test("reports a deferred rotation seal through onSealFailed when the segment is smaller than the writer believed", async () => {
+    // The other direction of the same guard, and the sibling suite's
+    // "smaller than the writer's belief" test (`storage-append-only-sealer.test.ts`)
+    // only pins that no seal was written — this closes that side's reporting
+    // half, matching the larger-than-believed case pinned just above.
+    // `AppendOnlyRotatedSegment.byteLength`'s TSDoc documents a disagreement
+    // in EITHER direction as deferring AND reporting, not merely the
+    // segment-grew-past-belief direction exercised above.
+    await seedBaseline(null);
+    const rotated = await writeSegment(ROTATED);
+    const realBytes = await segmentByteLength(rotated);
+
+    await createSealer().sealAfterAppend({
+      rotatedFrom: { name: rotated, byteLength: realBytes + 1 },
+    });
+
+    const failure = definedOrThrow(reported.at(0), "a reported failure");
+    expect(failure.segment).toBe(rotated);
+    expect(failure.error).toBeInstanceOf(M3LError);
+    expect(failure.error.message).toBe(
+      "append-only stream: deferred a rotation seal — segment size disagrees with the writer's count",
+    );
+    // No claim was appended for it, matching the larger-than-believed case.
+    const contents = await readManifest(
+      sandbox,
+      AMPLE_MAX_BYTES,
+      failurePort(),
+    );
+    expect(contents.seals.has(rotated)).toBe(false);
   });
 });
 
@@ -717,7 +863,7 @@ describe("corroborating a rotated segment against the manifest", () => {
     await seedSeal(ROTATED);
     await writeSegment(ROTATED);
 
-    await createSealer().sealAfterAppend(ROTATED);
+    await createSealer().sealAfterAppend(await rotationRequest(ROTATED));
 
     expect(reported.map((failure) => failure.segment)).toEqual([ROTATED]);
   });
@@ -731,7 +877,7 @@ describe("corroborating a rotated segment against the manifest", () => {
     await seedSeal(ROTATED);
     await writeSegment(ROTATED);
 
-    await createSealer().sealAfterAppend(ROTATED);
+    await createSealer().sealAfterAppend(await rotationRequest(ROTATED));
 
     const contents = await readManifest(
       sandbox,
@@ -748,7 +894,7 @@ describe("corroborating a rotated segment against the manifest", () => {
     await seedBaseline(null);
     await writeSegment(ROTATED);
     const sealer = createSealer();
-    await sealer.sealAfterAppend(ROTATED);
+    await sealer.sealAfterAppend(await rotationRequest(ROTATED));
     expect(reported).toEqual([]);
     const afterFirst = await readManifest(
       sandbox,
@@ -760,7 +906,7 @@ describe("corroborating a rotated segment against the manifest", () => {
     // A second rotation "away from" the very segment just sealed -- the
     // manifest now names it for real, so this exercises corroboration's
     // AGREEMENT branch rather than the "nothing recorded yet" delegation.
-    await sealer.sealAfterAppend(ROTATED);
+    await sealer.sealAfterAppend(await rotationRequest(ROTATED));
 
     expect(reported).toEqual([]);
     const afterSecond = await readManifest(
@@ -789,7 +935,7 @@ describe("corroborating a rotated segment against the manifest", () => {
     await writeSegment(STALE);
     await writeSegment(ROTATED);
 
-    await createSealer().sealAfterAppend(ROTATED);
+    await createSealer().sealAfterAppend(await rotationRequest(ROTATED));
 
     expect(reported.map((failure) => failure.segment)).not.toContain(STALE);
     const contents = await readManifest(
@@ -818,7 +964,9 @@ describe("bounded in-process retry", () => {
       return new Error("a transient EIO on the first digest attempt");
     };
 
-    await createSealer({ maxSealAttempts: 3 }).sealAfterAppend(ROTATED);
+    await createSealer({ maxSealAttempts: 3 }).sealAfterAppend(
+      await rotationRequest(ROTATED),
+    );
 
     const contents = await readManifest(
       sandbox,
@@ -836,7 +984,9 @@ describe("bounded in-process retry", () => {
         ? new Error("a permanent EIO on every digest attempt")
         : undefined;
 
-    await createSealer({ maxSealAttempts: 3 }).sealAfterAppend(ROTATED);
+    await createSealer({ maxSealAttempts: 3 }).sealAfterAppend(
+      await rotationRequest(ROTATED),
+    );
 
     expect(opensOf(ROTATED)).toBe(3);
     expect(reported.map((failure) => failure.segment)).toEqual([ROTATED]);
@@ -852,7 +1002,7 @@ describe("bounded in-process retry", () => {
         ? new Error("a permanent EIO on every digest attempt")
         : undefined;
 
-    await createSealer().sealAfterAppend(ROTATED);
+    await createSealer().sealAfterAppend(await rotationRequest(ROTATED));
 
     expect(opensOf(ROTATED)).toBeGreaterThan(1);
   });
@@ -872,6 +1022,10 @@ describe("bounded in-process retry", () => {
     const originalSha256 = createHash("sha256")
       .update(originalBytes)
       .digest("hex");
+    // Captured now, before the fault below mutates the file mid-retry: this
+    // is what the writer BELIEVED at rotation time, real bytes at the
+    // moment of the call — not whatever the fault later rewrites.
+    const request = await rotationRequest(rotated);
     let manifestAppendAttempts = 0;
     faults.openAsyncFault = async (file, flags) => {
       if (
@@ -891,7 +1045,7 @@ describe("bounded in-process retry", () => {
       return undefined;
     };
 
-    await createSealer({ maxSealAttempts: 3 }).sealAfterAppend(rotated);
+    await createSealer({ maxSealAttempts: 3 }).sealAfterAppend(request);
 
     const contents = await readManifest(
       sandbox,
@@ -914,7 +1068,9 @@ describe("bounded in-process retry", () => {
         ? new Error("a permanent EIO on every digest attempt")
         : undefined;
 
-    await createSealer({ maxSealAttempts: NaN }).sealAfterAppend(ROTATED);
+    await createSealer({ maxSealAttempts: NaN }).sealAfterAppend(
+      await rotationRequest(ROTATED),
+    );
 
     // The documented default (`DEFAULT_MAX_SEAL_ATTEMPTS`) is 3 — this
     // fixture proves the fallback lands there, not merely that it is >= 1.

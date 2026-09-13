@@ -30,10 +30,8 @@
  * there are: a synchronous `TypeError` from a name no writer renders, an
  * errno class unique to another filesystem, a throw after the last `await`
  * under concurrency. A guard scoped to the calls someone thought of leaves
- * exactly those bare. The sealer's private reporting step carries a `try` of
- * its own, subordinate to that guard, covering one further case — the failure
- * PORT and the caller's handler are themselves caller code, so neither may
- * break the sealer.
+ * exactly those bare. `./append-only-seal-report.js` carries a further `try`
+ * of its own, subordinate to that guard — see that module for why.
  *
  * **Two date rules, and they genuinely differ.** A ROTATION seal ignores the
  * at-or-before-baseline filter; the cold-start SWEEP obeys it. The baseline
@@ -48,19 +46,21 @@
  * @packageDocumentation
  */
 
-import { M3LError } from "../../core/errors/index.js";
 import type { M3LAppendOnlySegment } from "../../core/storage/append-only-read-types.js";
 import type { AppendOnlyReadFailure } from "./append-only-lines.js";
 import type { ManifestContents } from "./append-only-manifest.js";
 import { loadOrInitializeManifest } from "./append-only-manifest.js";
+import { reportSealFailure } from "./append-only-seal-report.js";
 import {
   appendClaim,
   corroborateClaim,
   measureSegment,
 } from "./append-only-seal-attempt.js";
 import type {
+  AppendOnlyRotatedSegment,
   AppendOnlySealFailure,
   AppendOnlySealerOptions,
+  AppendOnlySealRequest,
 } from "./append-only-sealer-types.js";
 import {
   currentDatePrefix,
@@ -96,18 +96,11 @@ const LISTING_FAILURE_MESSAGE =
 const FOREIGN_NAME_MESSAGE =
   "append-only stream: refused to seal a name this writer would not produce";
 
-/**
- * Reported for a failure that reached {@link AppendOnlySealer} as something
- * other than the caller's own typed error — a raw throw from the failure port
- * itself, or a defect on a path no `node:fs` call classified.
- */
-const SEAL_FAILURE_MESSAGE = "append-only stream: failed to seal a segment";
+/** Reported when {@link AppendOnlySealer.#sealSegment}'s `expectedByteLength` guard defers a rotation seal. */
+const ROTATION_DISAGREEMENT_MESSAGE =
+  "append-only stream: deferred a rotation seal — segment size disagrees with the writer's count";
 
-/**
- * Re-exported so every existing importer of this module keeps working
- * unchanged — see `./append-only-sealer-types.js` for the definitions and
- * their full TSDoc.
- */
+/** Re-exported for existing importers — see `./append-only-sealer-types.js`. */
 export type { AppendOnlySealFailure, AppendOnlySealerOptions };
 
 /**
@@ -179,7 +172,7 @@ function resolveSealerBound(
  *     unsealed.add(segment);
  *   },
  * });
- * await sealer.sealAfterAppend(rotatedFrom);
+ * await sealer.sealAfterAppend({ rotatedFrom });
  * ```
  */
 export class AppendOnlySealer {
@@ -267,11 +260,14 @@ export class AppendOnlySealer {
    * returns without touching the filesystem at all: the common case on the
    * append path is that there is nothing whatsoever to do.
    *
-   * @param rotatedFrom - The segment the append rotated away from, or
-   *   `undefined` when it did not rotate. A rotation seal ignores the
-   *   at-or-before-baseline filter the sweep obeys — see this module's header.
+   * @param request - Whether this append rotated, and if so, the rotated
+   *   segment plus what the writer believes it holds — see
+   *   {@link "./append-only-sealer-types.js".AppendOnlySealRequest}. Ignores the sweep's
+   *   at-or-before-baseline filter (this module's header); guarded instead
+   *   by {@link AppendOnlySealer.#sealSegment}'s `expectedByteLength` check.
    */
-  async sealAfterAppend(rotatedFrom: string | undefined): Promise<void> {
+  async sealAfterAppend(request: AppendOnlySealRequest): Promise<void> {
+    const { rotatedFrom } = request;
     if (rotatedFrom === undefined && this.#swept) {
       return;
     }
@@ -300,7 +296,9 @@ export class AppendOnlySealer {
    * the first time just now": both read `true` off the field by the time the
    * sweep step is reached, and only the local remembers which.
    */
-  async #sealAndSweep(rotatedFrom: string | undefined): Promise<void> {
+  async #sealAndSweep(
+    rotatedFrom: AppendOnlyRotatedSegment | undefined,
+  ): Promise<void> {
     const alreadySwept = this.#swept;
     this.#swept = true;
     const contents = await loadOrInitializeManifest(
@@ -381,19 +379,21 @@ export class AppendOnlySealer {
    * trusting membership: a claim forged before any genuine seal exists is
    * otherwise never contradicted. Both outcomes write nothing; disagreement
    * is reported, since two seals per segment are fatal to read. Delegates
-   * to {@link AppendOnlySealer.#sealSegment} when nothing is recorded yet.
-   * The sweep stays membership-only (corroborating its backlog would make
-   * cold start unbounded), so a forgery on a SWEPT segment stays
-   * undetected until `verify()`.
+   * to {@link AppendOnlySealer.#sealSegment} when nothing is recorded yet —
+   * carrying `rotated.byteLength` along, which is where the second-writer
+   * guard actually lives. The sweep stays membership-only (corroborating its
+   * backlog would make cold start unbounded), so a forgery on a SWEPT
+   * segment stays undetected until `verify()`.
    */
   async #sealRotatedSegment(
-    segment: string,
+    rotated: AppendOnlyRotatedSegment,
     contents: ManifestContents,
     sealed: Set<string>,
   ): Promise<void> {
+    const { name: segment, byteLength: expectedByteLength } = rotated;
     const existing = contents.seals.get(segment);
     if (existing === undefined) {
-      await this.#sealSegment(segment, sealed);
+      await this.#sealSegment(segment, sealed, expectedByteLength);
       return;
     }
     if (parseSegmentName(segment) === undefined) {
@@ -451,8 +451,20 @@ export class AppendOnlySealer {
    * provably did NOT come from either trusted source —
    * `"../../../../etc/passwd"` parses as declined precisely because it is
    * attacker-shaped, and a failure channel is not the place to hand it back.
+   *
+   * **`expectedByteLength`, when given, is the second-writer guard**: only
+   * `#sealRotatedSegment` supplies it, and a mismatch against the fresh
+   * measurement DEFERS this seal (no claim appended) rather than risk one
+   * over a prefix — see
+   * {@link "./append-only-sealer-types.js".AppendOnlyRotatedSegment.byteLength} for the full reasoning, why no
+   * cross-process coordination is needed, and why this is reported through
+   * `onSealFailed` rather than silent.
    */
-  async #sealSegment(segment: string, sealed: Set<string>): Promise<void> {
+  async #sealSegment(
+    segment: string,
+    sealed: Set<string>,
+    expectedByteLength?: number,
+  ): Promise<void> {
     if (sealed.has(segment)) {
       return;
     }
@@ -475,6 +487,16 @@ export class AppendOnlySealer {
       this.#report(segment, measurement.failure);
       return;
     }
+    if (
+      expectedByteLength !== undefined &&
+      measurement.value.byteLength !== expectedByteLength
+    ) {
+      // Second writer detected (or a stale counter for some other reason) —
+      // see this method's TSDoc. Defer: append no claim, leave the segment
+      // for the next cold-start sweep once its date has passed.
+      this.#report(segment, this.#buildError(ROTATION_DISAGREEMENT_MESSAGE));
+      return;
+    }
     const append = await appendClaim({
       directory: this.#directory,
       claim: measurement.value,
@@ -488,29 +510,8 @@ export class AppendOnlySealer {
     sealed.add(segment);
   }
 
-  /**
-   * Hands one failure to the owner, in the owner's own vocabulary.
-   *
-   * A failure that is already an {@link M3LError} came out of the port
-   * already and is passed through unchanged rather than double-wrapped, so
-   * `cause` still carries the raw filesystem error underneath it.
-   *
-   * Subordinate to {@link AppendOnlySealer.sealAfterAppend}'s total guard,
-   * and needed even so: the port and the handler are the OWNER's code, called
-   * from inside the sealer, so a port that cannot build an error or a handler
-   * that cannot handle one would otherwise abandon a backlog the sealer could
-   * still have worked through. Nothing is left to report a reporting failure
-   * to, which is precisely why it ends here.
-   */
+  /** Delegates to {@link "./append-only-seal-report.js".reportSealFailure}. */
   #report(segment: string | undefined, cause: unknown): void {
-    try {
-      const error =
-        cause instanceof M3LError
-          ? cause
-          : this.#buildError(SEAL_FAILURE_MESSAGE, { cause });
-      this.#onSealFailed?.({ segment, error });
-    } catch {
-      // Best-effort by construction: see this method's TSDoc.
-    }
+    reportSealFailure(this.#onSealFailed, this.#buildError, segment, cause);
   }
 }
