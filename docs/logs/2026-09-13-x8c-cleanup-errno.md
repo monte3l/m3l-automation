@@ -208,6 +208,55 @@ don't fully harmonize — treat it as a stop-and-ask case rather than picking
 a default, and record the PR-comment-only acknowledgment path as the
 accepted alternative when the user chooses not to spend the round.
 
+### 6. The work log's own commit couldn't land the way `finishing-work` Step 6 says it should
+
+Step 6 instructs committing a work log "immediately... its own small `docs:`
+commit" with no mention of branching. Committing directly to `main` (already
+returned to by Step 2) and pushing was rejected server-side —
+`GH013: ... Changes must be made through a pull request` — only after the
+full multi-minute pre-push hook had already run to completion twice (the
+first attempt also hit an unrelated transient module-resolution failure in
+a concurrent-session race, described below). `docs/contributing/branch-protection.md`
+already documents this precisely: "Never push directly to `main`; branch and
+open a PR even for a trivial docs fix" — the policy was already written
+down, just not propagated into this skill's own Step 6 wording. Recovered by
+branching off the failed commit, hard-resetting local `main` back to
+`origin/main`, and opening a normal PR from the branch.
+
+**Why it happened:** `finishing-work`'s Step 6 was written assuming a
+narrower branch-protection posture (guarded-path-only, matching the local
+`guard-branch-isolation.mjs` hook's scope) than what this repo's server-side
+ruleset actually enforces (a PR for _every_ change to `main`, no path
+exception). The two protections cover different scopes and the skill only
+accounted for one.
+
+**Fix for future:** Fixed in this same change set — Step 6 now says to
+branch first, matching every other commit-to-main path in this repo.
+
+### 7. A concurrent session on the same shared checkout caused a transient module-resolution failure mid-push
+
+The first push attempt's pre-push `test` lane failed two files with
+`Error: Failed to resolve entry for package "@monte3l/m3l-common"` after
+otherwise passing every other lane clean. The specific failing test passed
+instantly in isolation immediately afterward (54/54, correct resolution),
+and the retry's full pre-push run — including the same `test` lane — passed
+clean with no code change in between. This is the shared-checkout
+concurrency risk `pnpm check:host-resources` warned about at the very start
+of the session ("2 claude processes are already running... confirm the host
+has headroom"): a ~13-minute test run on a shared checkout is a wide window
+for a concurrent session's `pnpm build`/`pnpm install` to leave `dist`
+momentarily inconsistent.
+
+**Why it happened:** The pre-push hook's `test` lane ran against a live,
+shared `node_modules`/`dist` tree that a different concurrent process could
+mutate mid-run — nothing in this session's own diff caused it.
+
+**Fix for future:** When a pre-push (or any long-running) test failure names
+a module-resolution error unrelated to the diff being pushed, re-run just
+that failing file in isolation before assuming a real regression — a clean
+isolated pass is strong evidence of a transient shared-checkout race, and
+the fix is simply to retry the full push rather than debug the diff.
+
 ## Insights
 
 - **A conflict-free rebase is not a safety signal across a specifier/rename
@@ -245,3 +294,14 @@ accepted alternative when the user chooses not to spend the round.
   `~/.config/git/local.gitconfig`), matching CLAUDE.md's documented
   "must be created by hand on the Ubuntu/WSL box" gap. Left for the repo
   owner to fix permanently, since it's outside this task's scope.
+- **`main`'s branch protection has no path exception — a docs-only commit
+  needs a PR too, the same as a `src/` change.** The local
+  `guard-branch-isolation.mjs` hook only blocks guarded paths on `main`, but
+  the server-side ruleset requires a PR for every change; treat "back on
+  `main`" as never a place to commit, full stop, not just for guarded paths.
+  _(promoted → .claude/skills/finishing-work/SKILL.md)_
+- **A module-resolution failure with no corresponding diff change is a
+  concurrency-race signal, not a regression to chase.** Re-run the single
+  failing file in isolation before investigating further; a clean isolated
+  pass means retry the whole operation rather than debug code that didn't
+  change.
