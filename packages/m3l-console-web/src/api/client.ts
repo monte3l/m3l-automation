@@ -1,7 +1,7 @@
 import type {
   M3LErrorOrigin,
   M3LErrorRetryable,
-} from "@m3l-automation/m3l-common/core";
+} from "@monte3l/m3l-common/core";
 
 /**
  * Shape of a fetch failure surfaced by {@link fetchConsoleJson}. Every

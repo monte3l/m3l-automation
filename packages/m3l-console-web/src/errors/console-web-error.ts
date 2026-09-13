@@ -7,7 +7,7 @@
  * a machine-readable code alongside the human-readable message, matching the
  * pattern used by the console server's own error hierarchy.
  *
- * Imports `M3LError` from the `@m3l-automation/m3l-common/core/errors` leaf
+ * Imports `M3LError` from the `@monte3l/m3l-common/core/errors` leaf
  * subpath rather than the `/core` namespace barrel — that subpath's whole
  * transitive import graph is machine-proven free of `node:`/third-party
  * imports (`docs/adr/0004-exports-map-contract.md`'s dated Update), so this
@@ -17,7 +17,7 @@
  * @packageDocumentation
  */
 
-import { M3LError } from "@m3l-automation/m3l-common/core/errors";
+import { M3LError } from "@monte3l/m3l-common/core/errors";
 
 /**
  * The closed set of machine-readable error codes the console web frontend
@@ -49,7 +49,7 @@ interface M3LConsoleWebErrorOptions {
 /**
  * The single error class the console web frontend raises, discriminated by
  * {@link M3LConsoleWebErrorCode}. Extends `M3LError` (from the
- * `@m3l-automation/m3l-common/core/errors` leaf subpath), so callers can
+ * `@monte3l/m3l-common/core/errors` leaf subpath), so callers can
  * still narrow via `instanceof M3LError`.
  *
  * Every instance is classified `origin: "caller"` and `retryable: false`:
@@ -62,7 +62,7 @@ interface M3LConsoleWebErrorOptions {
  *
  * @example
  * ```ts
- * import { M3LError } from "@m3l-automation/m3l-common/core/errors";
+ * import { M3LError } from "@monte3l/m3l-common/core/errors";
  *
  * import { M3LConsoleWebError } from "./errors/console-web-error.js";
  *

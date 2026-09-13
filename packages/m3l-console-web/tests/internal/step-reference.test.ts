@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 
-import { M3LStepReferenceError } from "@m3l-automation/m3l-common/core";
+import { M3LStepReferenceError } from "@monte3l/m3l-common/core";
 
 import type { M3LTreePathSegment } from "../../src/internal/step-reference.js";
 import { buildStepReference } from "../../src/internal/step-reference.js";
