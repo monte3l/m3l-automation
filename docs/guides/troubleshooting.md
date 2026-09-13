@@ -18,11 +18,11 @@ Every built-in error carries a stable `code` (see the
 [`origin`](../reference/core/errors.md#fault-origin) field, defaulted from that
 catalog. Classify first, then act:
 
-| `origin`   | It means                                                    | You should                                                                                                                    |
-| ---------- | ----------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| `caller`   | The script or its configuration is wrong                    | Fix the script/config: check the parameter named in `context`, the config resolution order, the API contract in the reference |
-| `external` | An external system (AWS, HTTP endpoint, remote job) failed  | Check the external system's status/permissions/limits; often retryable — see the catalog's `retryable` column                 |
-| `library`  | An internal invariant of `@m3l-automation/m3l-common` broke | File a [failure report](#7-filing-a-failure-report) — this is a library bug                                                   |
+| `origin`   | It means                                                   | You should                                                                                                                    |
+| ---------- | ---------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `caller`   | The script or its configuration is wrong                   | Fix the script/config: check the parameter named in `context`, the config resolution order, the API contract in the reference |
+| `external` | An external system (AWS, HTTP endpoint, remote job) failed | Check the external system's status/permissions/limits; often retryable — see the catalog's `retryable` column                 |
+| `library`  | An internal invariant of `@monte3l/m3l-common` broke       | File a [failure report](#7-filing-a-failure-report) — this is a library bug                                                   |
 
 When `origin` is absent — a thrown value that is not an `M3LError`, or one
 carrying a code the catalog does not classify — the same triage works through

@@ -1,6 +1,6 @@
 # Core / errors
 
-Structured error handling for `@m3l-automation/m3l-common`: a typed error base class and a Rust-style `M3LResult<T, E>` for exception-free, chainable error propagation.
+Structured error handling for `@monte3l/m3l-common`: a typed error base class and a Rust-style `M3LResult<T, E>` for exception-free, chainable error propagation.
 
 ## Overview
 
@@ -24,7 +24,7 @@ Public surface (`errors/index.ts`):
   `M3LErrorRetryable`, `M3LErrorClassification`, `M3L_ERROR_CATALOG`,
   `classifyErrorCode`, `isM3LErrorCode`
 
-### Browser-safe import: `@m3l-automation/m3l-common/core/errors`
+### Browser-safe import: `@monte3l/m3l-common/core/errors`
 
 This submodule's whole transitive import graph is free of `node:` builtins
 and third-party dependencies, so — unlike every other Core/AWS submodule,
@@ -38,7 +38,7 @@ package that needs a real _value_ import — `extends M3LError`,
 in the rest of the Node-oriented library imports it directly:
 
 ```typescript
-import { M3LError } from "@m3l-automation/m3l-common/core/errors";
+import { M3LError } from "@monte3l/m3l-common/core/errors";
 
 class M3LFrontendError extends M3LError {}
 ```
@@ -46,7 +46,7 @@ class M3LFrontendError extends M3LError {}
 A _type-only_ reference (`M3LErrorOrigin`, `M3LErrorRetryable`, …) does not
 need this subpath at all: this repo's `verbatimModuleSyntax: true` setting
 erases `import type` at build time, so `import type { M3LErrorOrigin } from
-"@m3l-automation/m3l-common/core"` already costs zero bundle bytes through
+"@monte3l/m3l-common/core"` already costs zero bundle bytes through
 the ordinary `./core` barrel. Every other consumer keeps importing via
 `Core.M3LError` from `.`/`./core` as shown below — this subpath exists for
 the one case that barrel can't serve cheaply.
@@ -139,7 +139,7 @@ on (with autocomplete and typo-protection) plus a runtime list to validate an
 unknown string against:
 
 ```ts
-import type { M3LErrorCode } from "@m3l-automation/m3l-common/core";
+import type { M3LErrorCode } from "@monte3l/m3l-common/core";
 
 function isRetryable(code: M3LErrorCode): boolean {
   // `code === "ERR_TYPO"` here is a compile error — only real codes are members.
@@ -166,7 +166,7 @@ meaning):
   failure. `caller`: the script/config author (bad config, invalid argument,
   API misuse). `external`: an external system (AWS, HTTP, remote job state,
   unreadable input data). `library`: an internal invariant violation — a bug
-  in `@m3l-automation/m3l-common` itself.
+  in `@monte3l/m3l-common` itself.
 - `retryable: boolean | "situational"` — whether re-running without changes
   can plausibly succeed. `"situational"` means it depends on the terminal
   status or context carried by the specific instance.
@@ -384,7 +384,7 @@ report. The message is a fixed, library-constructed string instead.
 ### Typed errors with `code`, `context`, and `cause`
 
 ```typescript
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 class RecordNotFoundError extends Core.M3LError {}
 
@@ -411,7 +411,7 @@ try {
 ### Wrapping an underlying failure
 
 ```typescript
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 try {
   await writeOutput(data);
@@ -426,8 +426,8 @@ try {
 ### Chainable, exception-free results
 
 ```typescript
-import { Core } from "@m3l-automation/m3l-common";
-import type { M3LResult } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
+import type { M3LResult } from "@monte3l/m3l-common";
 
 function parsePort(raw: string): M3LResult<number, M3LError> {
   const n = Number(raw);
@@ -448,7 +448,7 @@ if (Core.isOk(result)) {
 ### Bridging promises and try/catch into results
 
 ```typescript
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 // fromPromise turns a rejecting promise into an err(...) result.
 const fetched = await Core.fromPromise(loadRemoteConfig());

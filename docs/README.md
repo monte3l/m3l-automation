@@ -1,6 +1,6 @@
-# `@m3l-automation/m3l-common` Documentation
+# `@monte3l/m3l-common` Documentation
 
-`@m3l-automation/m3l-common` is a shared infrastructure library for every automation script, Lambda handler, and tool that needs enterprise-grade building blocks — application scaffolding, multi-source configuration, structured logging, interactive prompts, file import/export, full-text search, polling/retry resilience, and AWS credential and client management. It is written in TypeScript (strict), ships ESM-only, targets Node.js 24+, and keeps runtime dependencies minimal.
+`@monte3l/m3l-common` is a shared infrastructure library for every automation script, Lambda handler, and tool that needs enterprise-grade building blocks — application scaffolding, multi-source configuration, structured logging, interactive prompts, file import/export, full-text search, polling/retry resilience, and AWS credential and client management. It is written in TypeScript (strict), ships ESM-only, targets Node.js 24+, and keeps runtime dependencies minimal.
 
 > **Development status:** Published as `@monte3l/m3l-common` to a private GitHub Packages registry (`version` is hand-managed) — no release has been dispatched yet. 46 submodules documented;
 > <!-- BEGIN GENERATED SUBMODULE-LIST -->
@@ -14,14 +14,14 @@
 
 The package exposes exactly three import paths:
 
-| Path                              | What you get                                |
-| --------------------------------- | ------------------------------------------- |
-| `@m3l-automation/m3l-common`      | Both top-level namespaces: `Core` and `AWS` |
-| `@m3l-automation/m3l-common/core` | The `Core` namespace directly               |
-| `@m3l-automation/m3l-common/aws`  | The `AWS` namespace directly                |
+| Path                       | What you get                                |
+| -------------------------- | ------------------------------------------- |
+| `@monte3l/m3l-common`      | Both top-level namespaces: `Core` and `AWS` |
+| `@monte3l/m3l-common/core` | The `Core` namespace directly               |
+| `@monte3l/m3l-common/aws`  | The `AWS` namespace directly                |
 
 ```typescript
-import { Core, AWS } from "@m3l-automation/m3l-common";
+import { Core, AWS } from "@monte3l/m3l-common";
 ```
 
 ## Table of contents

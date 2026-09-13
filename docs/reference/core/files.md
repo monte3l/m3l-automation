@@ -9,8 +9,8 @@ Execution-directory file archival: register files during a run, then finalize th
 ## Public API
 
 ```typescript
-import { Core } from "@m3l-automation/m3l-common";
-// or: import { ... } from "@m3l-automation/m3l-common/core";
+import { Core } from "@monte3l/m3l-common";
+// or: import { ... } from "@monte3l/m3l-common/core";
 ```
 
 Exported symbols:
@@ -34,7 +34,7 @@ Exported symbols:
 ## Usage
 
 ```typescript
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 const copier = new Core.M3LFileCopier({
   // options validated against M3L_FILE_COPIER_DEFAULTS
@@ -61,7 +61,7 @@ console.log(report.summary);
 ### Default subdirectory for a path type
 
 ```typescript
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 const subdir = Core.getDefaultSubdirForPathType("input");
 copier.registerFile("./data/inputs/source.csv", { subdir });
@@ -206,7 +206,7 @@ literally named `"__proto__"`) would otherwise silently resolve an inherited
 ### Example
 
 ```typescript
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 const input = new Core.M3LInputFileReader({
   paths: script.paths,

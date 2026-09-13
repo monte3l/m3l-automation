@@ -18,7 +18,7 @@ function. You construct the script exactly as before; only the entry call
 differs.
 
 ```typescript
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 interface MyEvent {
   reportId: string;
@@ -119,7 +119,7 @@ this id when it resolves the invocation's correlation id — the explicit call
 below matters when your handler does not go through `createLambdaHandler()`).
 
 ```typescript
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 export const handler = script.createLambdaHandler<MyEvent, MyResult>(
   async (event, context) => {
@@ -157,7 +157,7 @@ under the writable `/tmp` mount. See the
 ## 6. Putting it together
 
 ```typescript
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 interface ReportEvent {
   reportId: string;

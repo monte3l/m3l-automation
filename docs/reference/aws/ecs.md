@@ -3,7 +3,7 @@
 `M3LECSOperations` is a typed wrapper over a raw `ECSClient`, so callers never
 import `@aws-sdk/client-ecs` command classes directly. Surfaced by
 `scripts/ecs-ops` (roadmap W3) needing to avoid importing the SDK directly
-(ADR-0029 — scripts depend only on `@m3l-automation/m3l-common`).
+(ADR-0029 — scripts depend only on `@monte3l/m3l-common`).
 
 ## Overview
 

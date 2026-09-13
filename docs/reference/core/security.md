@@ -8,7 +8,7 @@ The `security` module guards against prototype-pollution attacks, where attacker
 
 ## Public API
 
-Exported from `@m3l-automation/m3l-common/core` (and the `Core` namespace):
+Exported from `@monte3l/m3l-common/core` (and the `Core` namespace):
 
 - `isDangerousKey`
 - `formatUnsafeKeyLocation`
@@ -24,7 +24,7 @@ Exported from `@m3l-automation/m3l-common/core` (and the `Core` namespace):
 Any other key returns `false`. Use it as a gate before assigning untrusted keys onto a target object.
 
 ```typescript
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 function assignSafely(
   target: Record<string, unknown>,

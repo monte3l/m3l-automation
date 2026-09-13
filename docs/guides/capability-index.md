@@ -4,7 +4,7 @@ A quick "which class do I use for X?" map. Find the need on the left, use
 the listed M3L class or function, and follow the link to its reference
 page for the full API. Everything here lives under the `Core` namespace
 unless noted as `AWS`; import from the namespace
-(`import { Core, AWS } from "@m3l-automation/m3l-common";`) or from the
+(`import { Core, AWS } from "@monte3l/m3l-common";`) or from the
 `./core` / `./aws` subpaths.
 
 ## Application framework

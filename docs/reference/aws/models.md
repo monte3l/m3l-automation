@@ -18,7 +18,7 @@ fields are defined here, and the component pages ([AWS credentials](./credential
 
 ## Public API
 
-Exported from `@m3l-automation/m3l-common/aws` (and re-exported under the `AWS`
+Exported from `@monte3l/m3l-common/aws` (and re-exported under the `AWS`
 namespace):
 
 - `M3LAWSRegion` / `M3LAWSProfile` — branded AWS identity strings (mutually non-assignable).

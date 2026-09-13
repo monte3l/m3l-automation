@@ -104,7 +104,7 @@ sum?, minimum?, maximum?, unit? }` — every field omitted (not defaulted)
 
 **`M3LCloudWatchDimension`** (used by `dimensions` above) is declared in this
 submodule's own `types.ts` but **not** re-exported through the public
-`@m3l-automation/m3l-common/aws` barrel from here — it is re-exported once,
+`@monte3l/m3l-common/aws` barrel from here — it is re-exported once,
 from [CloudWatch Alarms](./cloudwatch-alarms.md), to avoid an ambiguous
 duplicate export. The two submodules' copies are structurally identical
 (`{ name, value }`); import it from either module's TypeScript perspective,
@@ -140,7 +140,7 @@ const { datapoints } = await cloudWatchMetricsOperations.getMetricStatistics({
 ### Standalone construction
 
 ```typescript
-import { AWS } from "@m3l-automation/m3l-common";
+import { AWS } from "@monte3l/m3l-common";
 
 const provider = new AWS.AWSClientProvider({
   profile: AWS.parseAWSProfile("my-profile"),

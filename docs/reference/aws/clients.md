@@ -12,11 +12,11 @@ The client layer hands callers ready-to-use AWS SDK v3 clients with credentials 
 
 Credential resolution is profile-aware: when a profile name is supplied it uses `fromIni()` (SSO-aware) from `@aws-sdk/credential-provider-ini`; otherwise it falls back to the AWS SDK default credential chain.
 
-The AWS SDK v3 service-client packages are **hard runtime dependencies** of `@m3l-automation/m3l-common` (pinned exact, like `undici`), so the client getters are **synchronous** — no `await` is needed to obtain a client.
+The AWS SDK v3 service-client packages are **hard runtime dependencies** of `@monte3l/m3l-common` (pinned exact, like `undici`), so the client getters are **synchronous** — no `await` is needed to obtain a client.
 
 ## Public API
 
-Exported from `@m3l-automation/m3l-common/aws` (and re-exported under the `AWS` namespace):
+Exported from `@monte3l/m3l-common/aws` (and re-exported under the `AWS` namespace):
 
 - `AWSClientProvider` — single-profile, lazily-cached SDK client provider.
 - `AWSMultiClientProvider` — multi-profile provider with parallel-map helpers.
@@ -220,7 +220,7 @@ Subclass of `M3LError` with `code: "ERR_AWS_CLIENT"`. Thrown when an SDK client 
 ### Get a client for a single profile
 
 ```typescript
-import { AWS } from "@m3l-automation/m3l-common";
+import { AWS } from "@monte3l/m3l-common";
 
 const provider = new AWS.AWSClientProvider({
   profile: AWS.parseAWSProfile("my-profile"),
@@ -237,7 +237,7 @@ provider.close();
 ### Override the region
 
 ```typescript
-import { AWS } from "@m3l-automation/m3l-common";
+import { AWS } from "@monte3l/m3l-common";
 
 // Without `region`, clients default to AWS_REGION ('eu-south-1').
 const provider = new AWS.AWSClientProvider({
@@ -249,7 +249,7 @@ const provider = new AWS.AWSClientProvider({
 ### Run an operation across multiple profiles
 
 ```typescript
-import { AWS } from "@m3l-automation/m3l-common";
+import { AWS } from "@monte3l/m3l-common";
 
 const multi = new AWS.AWSMultiClientProvider({
   profiles: [
@@ -276,7 +276,7 @@ const s3 = script.aws.clients.s3;
 ### Use a library-owned wrapper via `.services`
 
 ```typescript
-import { AWS } from "@m3l-automation/m3l-common";
+import { AWS } from "@monte3l/m3l-common";
 
 const provider = new AWS.AWSProvider({
   profile: AWS.parseAWSProfile("my-profile"),
@@ -289,7 +289,7 @@ const sqsOperations = provider.services.sqsOperations;
 
 // aws/s3 and aws/dynamodb are function-based (ADR-0033) — call the exported
 // functions directly with the raw/document client instead.
-import { getItem } from "@m3l-automation/m3l-common/aws";
+import { getItem } from "@monte3l/m3l-common/aws";
 const item = await getItem(provider.services.dynamoDBDocument, "orders", {
   id: "42",
 });

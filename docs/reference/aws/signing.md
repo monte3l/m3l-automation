@@ -103,7 +103,7 @@ const headers = await signer.signedHeaders({
 ### Standalone construction
 
 ```typescript
-import { AWS } from "@m3l-automation/m3l-common";
+import { AWS } from "@monte3l/m3l-common";
 
 const signer = new AWS.M3LRequestSigner({
   profile: AWS.parseAWSProfile("my-profile"),

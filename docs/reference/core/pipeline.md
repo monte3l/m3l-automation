@@ -24,7 +24,7 @@ and `scripts/ecs-ops`.
 
 ## Public API
 
-Exported from `@m3l-automation/m3l-common/core` (and the `Core` namespace):
+Exported from `@monte3l/m3l-common/core` (and the `Core` namespace):
 
 - Engine: `M3LOperationPipeline`
 - Options: `M3LOperationPipelineOptions`, `M3LPipelineDestructiveOptions`,
@@ -610,7 +610,7 @@ as unknown.
 ## Example — soft-landing pipeline (s3-objects shape)
 
 ```typescript
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 const OPS = [
   "list",

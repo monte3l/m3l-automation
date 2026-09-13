@@ -1,6 +1,6 @@
 # Core / events
 
-A type-safe, generic event emitter for `@m3l-automation/m3l-common`. It is the shared base class that importers, exporters, and the HTTP client extend to publish strongly-typed events.
+A type-safe, generic event emitter for `@monte3l/m3l-common`. It is the shared base class that importers, exporters, and the HTTP client extend to publish strongly-typed events.
 
 ## Overview
 
@@ -28,7 +28,7 @@ Public surface (`events/index.ts`):
 ### Defining a typed emitter
 
 ```typescript
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 interface JobEvents {
   "job:started": { id: string };

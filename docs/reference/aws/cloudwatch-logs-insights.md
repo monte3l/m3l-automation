@@ -10,7 +10,7 @@ It composes with `core/polling`: query completion is polled via `M3LPoller` buil
 
 ## Public API
 
-Exported from `@m3l-automation/m3l-common/aws` (and re-exported under the `AWS` namespace):
+Exported from `@monte3l/m3l-common/aws` (and re-exported under the `AWS` namespace):
 
 - `M3LLogsInsightsClient` — the query wrapper class.
 - `LogsInsightsAwaitOptions` — optional-override type for `awaitResults`/`runQuery`, carrying `pollerOptions` and an

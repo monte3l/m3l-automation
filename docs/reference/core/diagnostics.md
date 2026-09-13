@@ -1,6 +1,6 @@
 # Core / diagnostics
 
-Failure reporting and runtime diagnostics for `@m3l-automation/m3l-common`: a
+Failure reporting and runtime diagnostics for `@monte3l/m3l-common`: a
 per-run machine-readable run report, a process exit-code registry, a recursive
 cause-chain formatter, an event-fed breadcrumb trail, an on-demand diagnostic
 snapshot, and the `runScript()` composition-root wrapper that ties them into a
@@ -659,7 +659,7 @@ Writing a run report by hand — what [`runScript()`](./script.md#runscript) doe
 and what a script can do today:
 
 ```typescript
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 const script = new Core.M3LScript({
   metadata: { name: "report-builder", version: "1.0.0" },

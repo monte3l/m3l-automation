@@ -8,7 +8,7 @@ The `utils` module gathers the cross-cutting helpers that other Core modules dep
 
 ## Public API
 
-Exported from `@m3l-automation/m3l-common/core` (and the `Core` namespace):
+Exported from `@monte3l/m3l-common/core` (and the `Core` namespace):
 
 - Paths and concurrency: `M3LPaths`, `M3LPathType`, `M3LPathEnvironmentVariables`, `M3LPathResolutionError`, `M3LConcurrencyPool`, `M3LSingleFlight`
 - Serialization and formatting: `safeJsonStringify`, `valueToString`, `M3LDateTokens`, `formatBytes`, `smartTruncate`, `truncatePath`, `truncateText`, `isPath`, `formatConfigValueDisplay`, `formatConfigSourceDisplay`
@@ -32,7 +32,7 @@ Every directory is overridable through environment variables:
 | `M3L_DEPLOYMENT_MODE` | Forces `monorepo` or `standalone` resolution |
 
 ```typescript
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 const paths = new Core.M3LPaths();
 
@@ -45,7 +45,7 @@ const outputDir = paths.getOutputDir();
 `resolveInput(name)` and `resolveOutput(name)` join a caller-supplied `name` onto the input or output directory **and contain it** — a `name` that is absolute or contains a `..` segment (checked after normalization, so both `../x` and `a/../../x` are rejected) throws `M3LPathResolutionError` (code `"ERR_PATH_RESOLUTION"`) rather than escaping the directory. This is the same containment rule `M3LFileCopier` applies to its `subdir` hint (see [files](./files.md)); use it instead of hand-joining a name onto `getInputDir()` / `getOutputDir()`.
 
 ```typescript
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 const paths = new Core.M3LPaths();
 
@@ -69,7 +69,7 @@ paths.resolveInput("../secrets.env"); // throws M3LPathResolutionError
 - `Map` and `Set` are serialized to their JSON equivalents.
 
 ```typescript
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 const node: { name: string; self?: unknown } = { name: "root" };
 node.self = node; // circular
@@ -85,7 +85,7 @@ const json = Core.safeJsonStringify(node);
 `M3LConcurrencyPool` limits the number of concurrent async tasks using a slot-count FIFO queue. Its `runEach(items, worker)` method consumes items on demand as slots free up, so memory stays proportional to the pool limit rather than the total number of items — this is the backpressure guarantee that makes it safe over large inputs.
 
 ```typescript
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 const pool = new Core.M3LConcurrencyPool(5);
 
@@ -99,7 +99,7 @@ await pool.runEach(itemIds, async (id) => {
 `M3LSingleFlight` deduplicates concurrent async calls by key: while a call for a given key is in flight, every additional `run()` for the same key returns the SAME promise instead of invoking the function again. Once the in-flight call settles (resolve or reject), the key's entry clears, so a later `run()` for that key starts a fresh invocation. Calls for different keys never coalesce.
 
 ```typescript
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 const single = new Core.M3LSingleFlight();
 
@@ -116,7 +116,7 @@ const [a, b] = await Promise.all([
 `M3LDateTokens` expands date tokens such as `{YYYY}`, `{MM}`, and `{DD}` inside path templates, producing time-stamped output directories. It is the mechanism behind the `output/{timestamp}/` layout used by `M3LPaths`.
 
 ```typescript
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 const expanded = Core.M3LDateTokens.expand("outputs/{YYYY}-{MM}-{DD}");
 // e.g. outputs/2026-06-27
@@ -149,7 +149,7 @@ The module exports a complete set of runtime type guards. Each narrows `unknown`
 | `hasProperty` / `hasMessage`                       | object with a given property / with a `message` field |
 
 ```typescript
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 function describe(value: unknown): string {
   if (Core.isNonEmptyString(value)) return `string: ${value}`;

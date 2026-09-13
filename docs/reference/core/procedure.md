@@ -38,7 +38,7 @@ skeleton". Use `M3LProcedure` for "gather evidence, then conclude".
 
 ## Public API
 
-Exported from `@m3l-automation/m3l-common/core` (and the `Core` namespace):
+Exported from `@monte3l/m3l-common/core` (and the `Core` namespace):
 
 - Shape: `M3LProcedureShape`, `M3LProcedureValue`, `M3LProcedureScalar`,
   `M3LProcedureValueMap`
@@ -1497,7 +1497,7 @@ missing `core → aws` zone was added alongside this module.
 ## Example — a log-analysis shape
 
 ```typescript
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 interface Triage extends Core.M3LProcedureShape {
   deps: { readonly logs: { query(q: string): Promise<number> } };

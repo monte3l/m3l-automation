@@ -12,7 +12,7 @@ The ZIP extractor recurses into archives by re-dispatching their entries through
 
 ## Public API
 
-Exported from `@m3l-automation/m3l-common/core` (`text` subpath):
+Exported from `@monte3l/m3l-common/core` (`text` subpath):
 
 | Symbol                     | Kind      | Purpose                                                                     |
 | -------------------------- | --------- | --------------------------------------------------------------------------- |
@@ -145,7 +145,7 @@ is a partial view of the archive.
 > `extract()` throws a typed `M3LTextExtractionError` naming the missing library.
 
 ```typescript
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 const registry = new Core.M3LTextExtractorRegistry();
 
@@ -163,7 +163,7 @@ if (result.truncated) {
 When the MIME type is unknown, the registry falls back to the file extension:
 
 ```typescript
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 const registry = new Core.M3LTextExtractorRegistry();
 
@@ -245,7 +245,7 @@ import {
   M3LTextExtractionError,
   type M3LTextExtractor,
   type M3LTextExtractionResult,
-} from "@m3l-automation/m3l-common/core";
+} from "@monte3l/m3l-common/core";
 
 /** Extracts the visible cell text from the tables in an .html file. */
 const htmlTableExtractor: M3LTextExtractor = {
@@ -286,7 +286,7 @@ const { text } = await registry.extract("text/html", "./report.html");
 - **Uniform results.** All extractors honor the same `{ text, pages?, truncated }` shape, so consuming code does not branch per format.
 - **Errors.** Extraction failures surface as `M3LTextExtractionError` (a subclass of the `errors` hierarchy), always chaining the underlying failure via `cause` — the module never throws a bare string or an unwrapped library exception.
 - **Core vs optional extractors.** `M3LTextExtractorRegistry` and `M3LPlainTextExtractor` depend only on Node's `fs` and are always available with the base install. The five library-backed extractors (`M3LPdfTextExtractor`, `M3LDocxTextExtractor`, `M3LXlsxTextExtractor`, `M3LEmailTextExtractor`, `M3LZipTextExtractor`) are opt-in.
-- **Optional dependencies.** The backing libraries (`unpdf`, `mammoth`, `read-excel-file`, `mailparser`, `cheerio`, `adm-zip`) are declared as optional `peerDependencies` (with `peerDependenciesMeta.<lib>.optional = true`), **not** runtime `dependencies`. The base install of `@m3l-automation/m3l-common` therefore pulls in none of them, honoring the minimal-runtime-dependencies constraint; a consumer installs only the libraries for the formats it actually extracts.
+- **Optional dependencies.** The backing libraries (`unpdf`, `mammoth`, `read-excel-file`, `mailparser`, `cheerio`, `adm-zip`) are declared as optional `peerDependencies` (with `peerDependenciesMeta.<lib>.optional = true`), **not** runtime `dependencies`. The base install of `@monte3l/m3l-common` therefore pulls in none of them, honoring the minimal-runtime-dependencies constraint; a consumer installs only the libraries for the formats it actually extracts.
 - **Lazy loading.** Each library-backed extractor performs a lazy dynamic `import()` of its backing library on the first `extract()` call — never at module load. Importing the `text` module, constructing the registry, or registering an extractor whose library is absent has no side effect until that extractor is actually invoked, so unused extractors never pull their library into the consumer's import graph.
 - **Absent-library behavior.** When an optional extractor runs and its backing library is not installed, the failing dynamic `import()` is caught and re-thrown as a typed `M3LTextExtractionError` that names the missing peer dependency and carries the original module-resolution error as `cause`. The registry never surfaces a bare `ERR_MODULE_NOT_FOUND`.
 

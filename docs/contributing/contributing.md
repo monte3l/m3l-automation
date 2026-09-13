@@ -1,17 +1,20 @@
-# Contributing to `@m3l-automation/m3l-common`
+# Contributing to `@monte3l/m3l-common`
 
 This guide is for people working **on** the library — adding features,
 fixing bugs, and changing the public API. If you are _consuming_ the
 package, this is not the document you want.
 
-`@m3l-automation/m3l-common` is a TypeScript 6.x library, **ESM-only**,
+`@monte3l/m3l-common` is a TypeScript 6.x library, **ESM-only**,
 targeting **Node.js 24 LTS+** (developed and CI-tested on exactly the
 `.node-version` major), managed with `pnpm`, built with `tsc`, and
-tested with `vitest`. Published as `@monte3l/m3l-common` to a private GitHub
-Packages registry (ADR-0057/ADR-0103, U13) — `@m3l-automation/m3l-common`
-remains the workspace's own internal dependency specifier, aliased to the
-real name. The public contract is the `exports` map; treat changes to it
-with care.
+tested with `vitest`. Published to a private GitHub Packages registry
+(ADR-0057/ADR-0103, U13). The package was originally scoped
+`@m3l-automation/m3l-common`; ADR-0103 renamed it to `@monte3l/m3l-common`
+(the scope GitHub Packages requires must equal the owning org) and every
+workspace consumer now depends on it via that plain specifier — the
+transitional `@m3l-automation/m3l-common` alias has been fully migrated
+away and no longer exists anywhere in the repo. The public contract is the
+`exports` map; treat changes to it with care.
 
 ## Environment Setup
 

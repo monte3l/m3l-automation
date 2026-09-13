@@ -10,7 +10,7 @@ The module is deliberately host-agnostic: it performs no I/O, knows nothing abou
 
 ## Public API
 
-Exported from `@m3l-automation/m3l-common/core` (and the `Core` namespace):
+Exported from `@monte3l/m3l-common/core` (and the `Core` namespace):
 
 - `M3LStepReference`
 - `M3LStepReferenceSegment`
@@ -39,7 +39,7 @@ Both digit runs — the ordinal and any index — are capped at 15 characters, s
 Parsing is all-or-nothing. Trailing garbage after an otherwise valid reference is rejected outright rather than silently truncated, so a typo cannot resolve to a shorter reference than the author wrote.
 
 ```typescript
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 const reference = Core.parseStepReference(
   'step-2.output.rows[0]["total count"]',
@@ -71,7 +71,7 @@ Both directions enforce the _same_ rules — the formatter applies the parser's 
 A binding records what a consumer expects to find at a reference, so a resolved value can be checked before it is used:
 
 ```typescript
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 const binding: Core.M3LStepBinding = {
   reference: Core.parseStepReference("step-1.output.queueUrl"),

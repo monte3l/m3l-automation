@@ -3,7 +3,7 @@
 `M3LEKSOperations` is a typed wrapper over a raw `EKSClient`, so callers never
 import `@aws-sdk/client-eks` command classes directly. Surfaced by
 `scripts/eks-ops` (roadmap W4) needing to avoid importing the SDK directly
-(ADR-0029 — scripts depend only on `@m3l-automation/m3l-common`).
+(ADR-0029 — scripts depend only on `@monte3l/m3l-common`).
 
 > **Status:** implemented and reviewed. The contract below was verified
 > against the installed `@aws-sdk/client-eks@3.1079.0` (resolved and read

@@ -12,7 +12,7 @@ This submodule is the ADR-0029 W4 prerequisite for the `athena-query` consumer s
 
 ## Public API
 
-Exported from `@m3l-automation/m3l-common/aws` (and re-exported under the `AWS` namespace):
+Exported from `@monte3l/m3l-common/aws` (and re-exported under the `AWS` namespace):
 
 - `M3LAthenaClient` — the query wrapper class.
 - `AthenaAwaitOptions` — optional-override type for `awaitResults`/`runQuery`, carrying `pollerOptions` and an
@@ -92,7 +92,7 @@ reordering a `?` in the SQL text silently misaligns the values array.
 written with named `:identifier` placeholders into that positional shape:
 
 ```typescript
-import { AWS } from "@m3l-automation/m3l-common";
+import { AWS } from "@monte3l/m3l-common";
 
 const compiled = AWS.compileAthenaQueryTemplate(
   "SELECT * FROM logs WHERE region = :region AND day = :day AND day = :day",

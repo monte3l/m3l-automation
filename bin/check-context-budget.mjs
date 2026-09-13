@@ -233,7 +233,7 @@ export function measure(normalized) {
  * for..."), never a standalone import line. Deliberately loose (word chars,
  * `.`, `/`, `-`): the false-positive filter is "does this resolve to a real
  * file", not the token shape — CLAUDE.md itself contains @-tokens that are
- * NOT imports (`@m3l-automation/m3l-common`, `@example`, `@version`,
+ * NOT imports (`@monte3l/m3l-common`, `@example`, `@version`,
  * `@arethetypeswrong/cli`), and none of those resolve to a real path.
  *
  * @param {string} text

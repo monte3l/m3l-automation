@@ -8,7 +8,7 @@ The `environment` module detects how and where a script is running — local ter
 
 ## Public API
 
-Exported from `@m3l-automation/m3l-common/core` (the `environment` sub-module):
+Exported from `@monte3l/m3l-common/core` (the `environment` sub-module):
 
 - `M3LExecutionEnvironment`
 - `M3LEnv`
@@ -66,7 +66,7 @@ It also carries a `detectionDetails` field (`M3LEnvironmentDetectionDetails`) ex
 ## Usage example
 
 ```typescript
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 const info = Core.M3LExecutionEnvironment.detect();
 

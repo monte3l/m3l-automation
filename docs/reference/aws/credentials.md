@@ -15,7 +15,7 @@ This manager is invoked automatically by `M3LScript.run()` (only when an `aws.pr
 
 ## Public API
 
-Exported from `@m3l-automation/m3l-common/aws` (and re-exported under the `AWS` namespace):
+Exported from `@monte3l/m3l-common/aws` (and re-exported under the `AWS` namespace):
 
 - `M3LAWSCredentialsManager` — the manager class.
 - `M3LAWSCredentialsError` — the typed error the manager throws for an
@@ -73,7 +73,7 @@ categories (defined in [AWS models](./models.md)) in two stages:
 ### Validate (and refresh) credentials for a single profile
 
 ```typescript
-import { AWS } from "@m3l-automation/m3l-common";
+import { AWS } from "@monte3l/m3l-common";
 
 const manager = new AWS.M3LAWSCredentialsManager({
   profile: AWS.parseAWSProfile("my-profile"),
@@ -87,7 +87,7 @@ await manager.ensureValidCredentials();
 ### Validate multiple profiles
 
 ```typescript
-import { AWS } from "@m3l-automation/m3l-common";
+import { AWS } from "@monte3l/m3l-common";
 
 const manager = new AWS.M3LAWSCredentialsManager();
 

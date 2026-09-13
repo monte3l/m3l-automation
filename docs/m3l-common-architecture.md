@@ -1,10 +1,10 @@
-# Architecture: `@m3l-automation/m3l-common`
+# Architecture: `@monte3l/m3l-common`
 
 ---
 
 ## 1. System Overview
 
-`@m3l-automation/m3l-common` (package name `@m3l-automation/m3l-common`) is a shared infrastructure library for every script, Lambda handler, and tool in the `m3l-automation` monorepo.
+`@monte3l/m3l-common` (package name `@monte3l/m3l-common`) is a shared infrastructure library for every script, Lambda handler, and tool in the `m3l-automation` monorepo.
 
 `packages/m3l-common/src/index.ts`: the package re-exports exactly two top-level namespace objects:
 

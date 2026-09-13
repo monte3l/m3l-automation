@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Guards the public API contract of @m3l-automation/m3l-common (rules 04).
+// Guards the public API contract of @monte3l/m3l-common (rules 04).
 //
 // The package `exports` map IS the public contract (`.`, `./core`, `./aws`);
 // adding, removing, or retyping an entry is a SEMVER event. `publint`/`attw`
@@ -65,7 +65,7 @@ try {
 
 if (actual !== expected) {
   reporter.error(
-    `The public \`exports\` map of @m3l-automation/m3l-common changed but the ` +
+    `The public \`exports\` map of @monte3l/m3l-common changed but the ` +
       `committed snapshot (${snapshotRel}) was not updated. This is a SEMVER ` +
       `event (it must ship as \`feat!:\` / carry a \`BREAKING CHANGE:\` footer). ` +
       `If the change is intentional, run \`node bin/check-exports-snapshot.mjs ` +

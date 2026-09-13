@@ -213,7 +213,7 @@ per `exactOptionalPropertyTypes`) rather than guessing.
 ## Usage
 
 ```ts
-import { M3LRDSDataOperations } from "@m3l-automation/m3l-common/aws";
+import { M3LRDSDataOperations } from "@monte3l/m3l-common/aws";
 
 const rdsData = new M3LRDSDataOperations(script.aws.clients.rdsData);
 // or, equivalently, skip constructing it yourself: script.aws.services.rdsDataOperations

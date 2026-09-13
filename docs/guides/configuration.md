@@ -7,7 +7,7 @@ each value across the full eight-level resolution order — with alias
 support, async fallbacks, presets, and per-value source tracking.
 
 All examples are ESM. Import from the namespace
-(`import { Core } from "@m3l-automation/m3l-common";`) or from the
+(`import { Core } from "@monte3l/m3l-common";`) or from the
 `./core` subpath; relative imports in your own code carry the `.js`
 extension.
 
@@ -20,7 +20,7 @@ JSON file, YAML file, environment variables, an in-memory map, a Lambda
 event payload, or a preset file) to the common `M3LConfigProvider` shape.
 
 ```typescript
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 const reader = new Core.M3LConfigReader([
   new Core.M3LCommandLineConfigProvider(),
@@ -80,7 +80,7 @@ of raw provider values. `M3LConfigParameterType` includes:
 - `BUFFER`
 
 ```typescript
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 const region = new Core.M3LConfigParameter({
   name: "region",
@@ -119,7 +119,7 @@ supplied a value. It is invoked as an async function, so the work is
 deferred until it is actually needed.
 
 ```typescript
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 const apiKey = new Core.M3LConfigParameter({
   name: "apiKey",

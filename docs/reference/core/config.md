@@ -8,7 +8,7 @@ The `config` module resolves configuration values from an ordered chain of provi
 
 ## Public API
 
-Exported from `@m3l-automation/m3l-common/core` (the `config` sub-module):
+Exported from `@monte3l/m3l-common/core` (the `config` sub-module):
 
 - `M3LConfig`
 - `M3LConfigReader`
@@ -895,7 +895,7 @@ import {
   M3LConfigParameterType,
   M3LConfigValidators,
   M3LConfigValidationError,
-} from "@m3l-automation/m3l-common/core";
+} from "@monte3l/m3l-common/core";
 
 const port = new M3LConfigParameter({
   name: "PORT",
@@ -1147,7 +1147,7 @@ already owns the `code` its consumers expect (mirrors
 ### Example
 
 ```typescript
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 const read = new Core.M3LConfigAccessor({
   config,
@@ -1185,7 +1185,7 @@ These are also the exact labels `core/diagnostics`' config fingerprint accepts (
 ## Usage example
 
 ```typescript
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 const reader = new Core.M3LConfigReader([
   new Core.M3LCommandLineConfigProvider(),

@@ -19,7 +19,7 @@ may then run it in-process, and falls back to the spawn path for any script
 that has not opted in. This submodule is that descriptor's typed home.
 
 It lives in `m3l-common`, not in `m3l-cli`, because ADR-0029 fixes the
-dependency direction: a consumer script depends on `@m3l-automation/m3l-common`
+dependency direction: a consumer script depends on `@monte3l/m3l-common`
 and nothing else. A descriptor type owned by the CLI would invert that.
 
 ### `cli-contract` is not a CLI framework
@@ -33,8 +33,8 @@ present and the _shape_ a host must supply — nothing that renders anything.
 ## Public API
 
 ```typescript
-import { Core } from "@m3l-automation/m3l-common";
-// or: import { ... } from "@m3l-automation/m3l-common/core";
+import { Core } from "@monte3l/m3l-common";
+// or: import { ... } from "@monte3l/m3l-common/core";
 ```
 
 Exported symbols — fourteen. The original five from U3, grouped by ADR-0054's
@@ -591,7 +591,7 @@ happens on a second signal.
 ## Example
 
 ```typescript
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 interface ExportParameters {
   readonly bucket: string;
@@ -651,7 +651,7 @@ wiring a `--in-process` flag are shipped — see `docs/reference/cli.md`
 ## See also
 
 - ADR-0054 — the typed command-module contract and hybrid execution.
-- ADR-0029 — consumer scripts depend only on `@m3l-automation/m3l-common`.
+- ADR-0029 — consumer scripts depend only on `@monte3l/m3l-common`.
 - ADR-0049 — the cooperative cancellation contract.
 - ADR-0035 — the exit-code registry this module reuses.
 - `docs/reference/core/diagnostics.md` — `M3L_EXIT_CODES`, `mapErrorToExitCode`.
