@@ -209,15 +209,28 @@ written now via `/writing-work-logs` before moving on — real-time context
 (spoke incidents, test counts, divergences) degrades fast once the session
 that did the work is gone. If a log already exists, skip silently.
 
-**If a log is written here, commit it immediately** (its own small `docs:`
-commit via `/writing-commits`) before moving on to any other task, rather
-than leaving it as an uncommitted file for "the user's next step." A log
-written mid-session and then left uncommitted while the session switches
+**If a log is written here, commit and land it immediately** (its own small
+`docs:` commit via `/writing-commits`) before moving on to any other task,
+rather than leaving it as an uncommitted file for "the user's next step." A
+log written mid-session and then left uncommitted while the session switches
 branches or worktrees becomes invisible to any later PR — and a later PR's
 own docs referencing it by name (a plan archive, a README row) will cite a
 file that doesn't actually exist yet, catchable only by a downstream
 reviewer (`docs/logs/2026-09-04-check-no-docker.md`, divergence #2: PR2's
 work log sat orphaned in the shared checkout through all of PR3's setup).
+
+**"Commit it" does not mean commit directly to `main`, even for this
+trivial a change.** This step runs right after Step 2 returns to `main` —
+branch first (`git switch -c docs/<slug>-worklog`), commit there, push, and
+open a PR. `main`'s branch-protection ruleset requires a PR for _every_
+change, docs included, with no path-scope exception the way
+`guard-branch-isolation.mjs`'s local hook has
+(`docs/contributing/branch-protection.md` § "Don't confuse this with
+`guard-branch-isolation.mjs`") — a direct `git push origin main` is rejected
+server-side with `GH013: ... Changes must be made through a pull request`
+regardless of how small the diff is, and only after the full multi-minute
+pre-push hook has already run to completion. A trivial, no-review-expected
+work-log PR is the `creating-prs` Step 15 "opt-in — arm auto-merge" case.
 
 ### 7 — Orphaned journal sweep
 
