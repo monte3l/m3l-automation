@@ -2340,15 +2340,45 @@
     "namespace": "core",
     "file": "packages/m3l-common/src/core/storage/append-only-manifest-types.ts"
   },
+  "M3LAppendOnlySegmentMeasurement": {
+    "submodule": "storage",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/storage/append-only-manifest-types.ts"
+  },
+  "M3LAppendOnlySealedSegment": {
+    "submodule": "storage",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/storage/append-only-manifest-types.ts"
+  },
+  "M3LAppendOnlyVerificationStatus": {
+    "submodule": "storage",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/storage/append-only-manifest-types.ts"
+  },
+  "M3LAppendOnlySegmentVerdict": {
+    "submodule": "storage",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/storage/append-only-manifest-types.ts"
+  },
+  "M3LAppendOnlyVerificationFailure": {
+    "submodule": "storage",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/storage/append-only-manifest-types.ts"
+  },
+  "M3LAppendOnlyVerification": {
+    "submodule": "storage",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/storage/append-only-manifest-types.ts"
+  },
   "M3LAppendOnlyEntry": {
     "submodule": "storage",
     "namespace": "core",
-    "file": "packages/m3l-common/src/core/storage/M3LAppendOnlyStream.ts"
+    "file": "packages/m3l-common/src/core/storage/append-only-entry-types.ts"
   },
   "M3LAppendOnlyValue": {
     "submodule": "storage",
     "namespace": "core",
-    "file": "packages/m3l-common/src/core/storage/M3LAppendOnlyStream.ts"
+    "file": "packages/m3l-common/src/core/storage/append-only-entry-types.ts"
   },
   "M3L_APPEND_ONLY_MAX_SEGMENT_BYTES": {
     "submodule": "storage",
