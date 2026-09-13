@@ -50,16 +50,16 @@ export const CLI_PACKAGE_DIR = "packages/m3l-cli";
 export const CLI_PACKAGE_NAME = "@m3l-automation/m3l-cli";
 
 /** The library the CLI is allowed — and required — to depend on. */
-export const CLI_LIBRARY_DEPENDENCY = "@m3l-automation/m3l-common";
+export const CLI_LIBRARY_DEPENDENCY = "@monte3l/m3l-common";
 
 /**
- * The workspace-alias value the library dependency must be pinned to.
- * ADR-0103 renamed the real package to `@monte3l/m3l-common`; the CLI's
- * dependency key stays the pre-rename specifier so no src import changes,
- * with the alias's target updated instead of the plain `"workspace:*"`
- * every other workspace-scope dependency still uses.
+ * The workspace-pin value the library dependency must carry. ADR-0103 renamed
+ * the real package to `@monte3l/m3l-common`; this slice migrated the CLI's
+ * dependency key and its import specifiers off the pre-rename
+ * `@m3l-automation/m3l-common` alias, so the library now uses the same plain
+ * `"workspace:*"` pin as every other workspace-scope dependency below.
  */
-export const CLI_LIBRARY_DEPENDENCY_VALUE = "workspace:@monte3l/m3l-common@*";
+export const CLI_LIBRARY_DEPENDENCY_VALUE = "workspace:*";
 
 /** Workspace-internal packages share this scope; anything else is third-party. */
 export const WORKSPACE_SCOPE = "@m3l-automation/";

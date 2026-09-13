@@ -9,7 +9,7 @@
  */
 import { describe, expect, expectTypeOf, test } from "vitest";
 
-import type { Core } from "@m3l-automation/m3l-common";
+import type { Core } from "@monte3l/m3l-common";
 
 import { exitCodeForError, M3LCliError } from "../src/cli/errors.js";
 import {

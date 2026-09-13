@@ -13,7 +13,7 @@
 import { accessSync, constants, existsSync, readFileSync } from "node:fs";
 import { dirname } from "node:path";
 
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 import { formatAlignedTable } from "../cli/table.js";
 import { M3LCliError } from "../cli/errors.js";

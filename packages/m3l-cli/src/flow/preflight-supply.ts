@@ -14,7 +14,7 @@
  * @packageDocumentation
  */
 
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 import type { M3LCliParameterDescriptor } from "../discovery/load-config.js";
 import type {
@@ -125,7 +125,7 @@ function hasOwnEnvKey(
  *
  * @example
  * ```ts
- * import { Core } from "@m3l-automation/m3l-common";
+ * import { Core } from "@monte3l/m3l-common";
  *
  * const env = { AWS_PROFILE: "prod" };
  * const provider = new Core.M3LEnvironmentConfigProvider({ env });

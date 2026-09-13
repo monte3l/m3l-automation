@@ -37,7 +37,7 @@ const HISTORY_JSON_INDENT = 2;
  *
  * @example
  * ```ts
- * import { HISTORY_CAP } from "@m3l-automation/m3l-common";
+ * import { HISTORY_CAP } from "@monte3l/m3l-common";
  * // HISTORY_CAP === 100
  * ```
  */
