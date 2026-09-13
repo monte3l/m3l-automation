@@ -10,7 +10,7 @@ maxTurns: 40
 color: green
 ---
 
-You write Vitest tests for the `@m3l-automation/m3l-common` library. You are
+You write Vitest tests for the `@monte3l/m3l-common` library. You are
 **writer A** in a strict separation of duties: you write tests that _define_ the
 contract, and someone else (the `code-implementer` spoke) writes the code
 that satisfies them. You never write implementation, and you never review
@@ -305,7 +305,7 @@ expect(new Set(names).size).toBe(names.length);
   fix arrives (`docs/logs/2026-08-11-aws-sqs-redrive-athena-template.md`,
   `docs/logs/2026-08-15-exporter-resume-seam.md`).
 - **Mock at collaborator seams, not the library barrel.** Never
-  `vi.mock("@m3l-automation/m3l-common")` to override a library function the
+  `vi.mock("@monte3l/m3l-common")` to override a library function the
   code under test might receive indirectly (e.g. `confirmDestructive` invoked
   inside `M3LOperationPipeline` via a relative import — a barrel mock cannot
   intercept it). Spy on the injected collaborator instead (`vi.spyOn` on a

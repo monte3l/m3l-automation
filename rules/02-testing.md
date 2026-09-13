@@ -1,7 +1,7 @@
 # Testing
 
 > **Applicability note.** This document describes general testing theory, including
-> the full unit/integration/E2E pyramid. **`@m3l-automation/m3l-common` is a
+> the full unit/integration/E2E pyramid. **`@monte3l/m3l-common` is a
 > unit-only suite by design** — a pure ESM utilities library has no real
 > integration points, so the integration and end-to-end layers below are
 > intentionally absent there. Other packages in this monorepo do run a real

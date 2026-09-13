@@ -75,7 +75,7 @@ export function extractPathCandidates(content) {
     const path = stripTrailingNoise(raw);
     // Reject a glob (nothing to hash), a bare ADR cross-reference rendered
     // in backticks (`ADR-0057`), and a package specifier that merely
-    // contains "/" (`@m3l-automation/m3l-common`) — none names a real file.
+    // contains "/" (`@monte3l/m3l-common`) — none names a real file.
     if (
       path.length === 0 ||
       path.includes("*") ||

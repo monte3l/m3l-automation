@@ -48,7 +48,7 @@ import {
  * `CallExpression` nodes, so comment and string-literal content is never
  * inspected at all — including this library's TSDoc `@example` blocks that
  * routinely show the *published* import path
- * (`@m3l-automation/m3l-common/core`), which would otherwise read as a real
+ * (`@monte3l/m3l-common/core`), which would otherwise read as a real
  * bare-specifier violation despite never executing.
  *
  * @param {string} source

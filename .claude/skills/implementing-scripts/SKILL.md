@@ -84,7 +84,7 @@ build` once after the rebase and confirm the new submodule's `dist/`
    parser). List each with a one-line rationale and wait for explicit user
    approval before anyone runs `pnpm add` — the lockfile is authoritative and
    never hand-edited. Prefer reaching the need through
-   `@m3l-automation/m3l-common` seams (config, paths, `script.aws`) before
+   `@monte3l/m3l-common` seams (config, paths, `script.aws`) before
    adding anything.
 
 3. **Phase 1 — Contract.** Dispatch `spec-conformance-reviewer` in contract

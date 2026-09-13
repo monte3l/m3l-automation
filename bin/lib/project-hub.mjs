@@ -1284,7 +1284,7 @@ footer { margin-top: 3rem; color: var(--muted); font-size: 0.85rem; }
  * import { renderOverviewSection } from "@m3l-automation/workspace/bin/lib/project-hub.mjs";
  *
  * renderOverviewSection({
- *   packages: [{ name: "@m3l-automation/m3l-common", description: "The library." }],
+ *   packages: [{ name: "@monte3l/m3l-common", description: "The library." }],
  *   scriptCount: 16,
  * });
  * ```
@@ -1340,7 +1340,7 @@ See <a href="${blobUrl("docs/ROADMAP.md")}">ROADMAP.md</a> for current status.</
  *   generatedAt: new Date().toISOString(),
  *   commitSha: "abc1234",
  *   summary: { implemented: 30, total: 31 },
- *   packages: [{ name: "@m3l-automation/m3l-common", description: "The library." }],
+ *   packages: [{ name: "@monte3l/m3l-common", description: "The library." }],
  *   scriptCount: 16,
  *   roadmap: { priority0: null, priority1: null, priority2: null, governance: null, errors: [] },
  *   backlog: { friction: null, adr0035Rollout: null, capabilityDeepeningWave: null, postComparisonHardeningWave: null, getterReality: null, gated: null, errors: [] },

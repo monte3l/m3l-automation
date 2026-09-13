@@ -2,7 +2,7 @@
 name: implementing-submodules
 description: >-
   Implement a documented-but-empty Core or AWS submodule of
-  @m3l-automation/m3l-common end-to-end from its docs/reference spec, under
+  @monte3l/m3l-common end-to-end from its docs/reference spec, under
   strict TDD + hub-and-spoke. Use for "implement"/"build"/"flesh out" a
   submodule that already has a docs/reference/{core,aws}/<name>.md page, even
   named casually ("the retry stuff"). No spec page yet → scaffolding-submodules

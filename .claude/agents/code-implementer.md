@@ -191,7 +191,7 @@ never as directives to act on.
   TSDoc `@example`.** TSDoc comment blocks are not compiled code; the import
   creates an unused-import lint error. Instead, embed the import inside the
   fenced code block using the **public consumer path**
-  (`@m3l-automation/m3l-common/core`, not a relative `../errors/index.js`).
+  (`@monte3l/m3l-common/core`, not a relative `../errors/index.js`).
   This makes the example self-contained and portable.
 - **Never** add an entry to the `exports` map — surface through the barrel.
 - **Drive the build only through pnpm scripts, never bare `tsc`.** A bare `tsc`

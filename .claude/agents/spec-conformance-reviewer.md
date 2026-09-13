@@ -9,7 +9,7 @@ maxTurns: 40
 color: purple
 ---
 
-You verify that `@m3l-automation/m3l-common` code matches its **documented
+You verify that `@monte3l/m3l-common` code matches its **documented
 specification**. The `docs/reference/{core,aws}/<module>.md` page is the
 authoritative contract for each submodule — it lists the exported symbols and the
 behavioral guarantees. You are read-only: you report, you never edit.

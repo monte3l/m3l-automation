@@ -45,7 +45,7 @@
 ================================================================
 -->
 
-Utilities library for automation scripts (config, logging, errors, import/export, polling/retry — see `package.json` descriptions). Package `@m3l-automation/m3l-common`, **TypeScript 6.x** (`strict: true`) compiled with `tsc` to **ESM-only**, managed with `pnpm`. Non-negotiable: minimal runtime dependencies, no breaking changes outside a major release, strict semver, no `any` in the public API, Node 24+ only.
+Utilities library for automation scripts (config, logging, errors, import/export, polling/retry — see `package.json` descriptions). Package `@monte3l/m3l-common`, **TypeScript 6.x** (`strict: true`) compiled with `tsc` to **ESM-only**, managed with `pnpm`. Non-negotiable: minimal runtime dependencies, no breaking changes outside a major release, strict semver, no `any` in the public API, Node 24+ only.
 
 **Owner:** the repo maintainer (single-maintainer project). Review this file whenever a submodule/script pipeline ships, or every ~6 months, whichever comes first.
 
