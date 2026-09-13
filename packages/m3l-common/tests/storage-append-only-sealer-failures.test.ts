@@ -336,18 +336,12 @@ async function seedHealthyTrail(): Promise<void> {
 // The property: the sealer never throws
 // ---------------------------------------------------------------------------
 
-/** One constructible fault, and the option overrides it needs. */
-interface FaultScenario {
+/** Fields every fault row carries, regardless of which `rotatedFrom` variant below it picks. */
+interface FaultScenarioBase {
   readonly name: string;
   readonly arm: () =>
     | Partial<AppendOnlySealerOptions>
     | Promise<Partial<AppendOnlySealerOptions>>;
-  /**
-   * What the writer claims to have rotated away from, when the fault IS that
-   * claim. Defaults to {@link ROTATED}, the real segment every other row
-   * damages some other way.
-   */
-  readonly rotatedFrom?: string;
   /**
    * `false` marks a row whose fault damages only {@link ROTATED} (or a
    * caller-supplied `rotatedFrom` the sweep-only variant below never passes)
@@ -357,6 +351,31 @@ interface FaultScenario {
    */
   readonly sweepReachable?: boolean;
 }
+
+/** The common row shape: no custom `rotatedFrom`, so the believed byte count is {@link ROTATED}'s real, current size. */
+interface DefaultRotatedFaultScenario extends FaultScenarioBase {
+  readonly rotatedFrom?: undefined;
+}
+
+/**
+ * A row that claims to have rotated away from something other than
+ * {@link ROTATED}. `believedBytes` is **required** here, on purpose: a
+ * custom name may never have been written to disk at all (so there is no
+ * real size to read), and the row that names it is the only place that
+ * knows whether the rotation guard should ever see it. Leaving this to a
+ * shared fallback (e.g. "0 unless `rotatedFrom` is unset") would silently
+ * hand a future PARSEABLE custom name a byte count of 0 it never asked
+ * for, deferring it at the guard instead of reaching whichever fault it
+ * exists to exercise — green, and proving nothing.
+ */
+interface CustomRotatedFaultScenario extends FaultScenarioBase {
+  readonly rotatedFrom: string;
+  /** What the writer believed it had for `rotatedFrom`, stated by this row. */
+  readonly believedBytes: number;
+}
+
+/** One constructible fault, and the option overrides it needs. */
+type FaultScenario = CustomRotatedFaultScenario | DefaultRotatedFaultScenario;
 
 const NO_OVERRIDES: Partial<AppendOnlySealerOptions> = {};
 
@@ -487,6 +506,11 @@ const FAULTS: readonly FaultScenario[] = [
     name: "the rotated name is not one this writer would produce",
     arm: () => NO_OVERRIDES,
     rotatedFrom: "not-a-segment.txt",
+    // `parseSegmentName` rejects this name before any measurement runs, so
+    // there is no real file for a "believed" count to describe — 0 is a
+    // stated placeholder for THIS row, not a fallback a future row inherits
+    // by omission.
+    believedBytes: 0,
     // The no-rotation variant below never passes `rotatedFrom` at all, so
     // this row's only fault (a bad `rotatedFrom`) never reaches the sealer
     // there — `arm` itself stages `NO_OVERRIDES`.
@@ -506,22 +530,24 @@ const SWEEP_REACHABLE_FAULTS: readonly FaultScenario[] = FAULTS.filter(
 );
 
 describe("the sealer never throws", () => {
-  test.each(FAULTS)("resolves when $name", async ({ arm, rotatedFrom }) => {
+  test.each(FAULTS)("resolves when $name", async (fault) => {
     await seedHealthyTrail();
     // Captured BEFORE `arm()` runs: several rows delete or replace ROTATED,
     // and the believed byte count is what the writer knew AT ROTATION TIME,
-    // not whatever survives the fault. The one row with a custom
-    // `rotatedFrom` (a name no writer would produce) never touches a real
-    // file — 0 is a placeholder the guard never reaches, since
-    // `parseSegmentName` rejects the name before any byte comparison.
+    // not whatever survives the fault. A row with a custom `rotatedFrom`
+    // states its own `believedBytes` (required by the `CustomRotatedFaultScenario`
+    // half of the union) rather than this runner assuming a value on its
+    // behalf — see that type's TSDoc for why a shared fallback is the trap.
     const believedBytes =
-      rotatedFrom === undefined ? await segmentByteLength(ROTATED) : 0;
-    const overrides = await arm();
+      fault.rotatedFrom === undefined
+        ? await segmentByteLength(ROTATED)
+        : fault.believedBytes;
+    const overrides = await fault.arm();
 
     await expect(
       createSealer(overrides).sealAfterAppend({
         rotatedFrom: {
-          name: rotatedFrom ?? ROTATED,
+          name: fault.rotatedFrom ?? ROTATED,
           byteLength: believedBytes,
         },
       }),
@@ -776,6 +802,37 @@ describe("reporting a failed seal", () => {
     );
     // No claim was appended for it: the manifest still holds nothing for
     // this segment.
+    const contents = await readManifest(
+      sandbox,
+      AMPLE_MAX_BYTES,
+      failurePort(),
+    );
+    expect(contents.seals.has(rotated)).toBe(false);
+  });
+
+  test("reports a deferred rotation seal through onSealFailed when the segment is smaller than the writer believed", async () => {
+    // The other direction of the same guard, and the sibling suite's
+    // "smaller than the writer's belief" test (`storage-append-only-sealer.test.ts`)
+    // only pins that no seal was written — this closes that side's reporting
+    // half, matching the larger-than-believed case pinned just above.
+    // `AppendOnlyRotatedSegment.byteLength`'s TSDoc documents a disagreement
+    // in EITHER direction as deferring AND reporting, not merely the
+    // segment-grew-past-belief direction exercised above.
+    await seedBaseline(null);
+    const rotated = await writeSegment(ROTATED);
+    const realBytes = await segmentByteLength(rotated);
+
+    await createSealer().sealAfterAppend({
+      rotatedFrom: { name: rotated, byteLength: realBytes + 1 },
+    });
+
+    const failure = definedOrThrow(reported.at(0), "a reported failure");
+    expect(failure.segment).toBe(rotated);
+    expect(failure.error).toBeInstanceOf(M3LError);
+    expect(failure.error.message).toBe(
+      "append-only stream: deferred a rotation seal — segment size disagrees with the writer's count",
+    );
+    // No claim was appended for it, matching the larger-than-believed case.
     const contents = await readManifest(
       sandbox,
       AMPLE_MAX_BYTES,

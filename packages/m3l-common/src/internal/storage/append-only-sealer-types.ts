@@ -89,11 +89,25 @@ export interface AppendOnlyRotatedSegment {
    * guard to tell a truncated read from a genuinely shorter file — sealing
    * on a count that cannot be reconciled is exactly what this guard exists
    * to prevent, regardless of which side of `byteLength` the disagreement
-   * falls on. Deferring loses nothing: `datePrefix < today` guarantees a
-   * later cold-start sweep reaches the same segment once its date is no
-   * longer today, so a shared segment can go unsealed for up to a day
-   * rather than sealed on a lie — a late seal over the whole truth, never
-   * an on-time one over a prefix of it.
+   * falls on. A deferred segment is picked up by a later cold-start
+   * sweep — but only when BOTH conditions hold: a NEW instance starts
+   * (the sweep is per-instance state, attempted at most once per process —
+   * see `./append-only-sealer.js`'s `#swept` — so the instance that
+   * deferred will not revisit this segment itself, no matter how long it
+   * keeps running), AND that instance's sweep observes `datePrefix < today`
+   * for the segment. So the honest bound is not "unsealed for up to a day"
+   * — it is "unsealed until some later instance cold-starts and sweeps it,
+   * which a long-lived process that never restarts may never do." Deferring
+   * is still the right call anyway, because an unsealed segment is
+   * HONESTLY unsealed and visible through two independent channels: a
+   * later `verify()` reports it `unsealed` (the "not sealed yet" verdict,
+   * not a failure), and `onSealFailed` already fired at the moment of
+   * deferral. A seal over a prefix would instead be a confident false
+   * claim — unreproducible by `sha256sum` once the rest of the segment is
+   * written, and a future `mismatched` verdict from `verify()` on an
+   * otherwise-untampered trail. A late-or-absent seal is recoverable by a
+   * later sweep or an operator's own re-run; a wrong one is not recoverable
+   * at all.
    *
    * **No cross-process coordination is needed** — deliberately, since
    * ADR-0102 has none — because the rotating writer's OWN accounting is
