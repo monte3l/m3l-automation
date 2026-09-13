@@ -155,3 +155,16 @@ paths:
   step, dropped, that a sibling still needed ordered before it)
   (`docs/logs/2026-09-10-verify-jobs.md`). Run a new `bin/**` parser
   against live input before writing tests, same as the bullet above.
+
+- **A `bin/check-*.mjs` gate that structurally validates a config value
+  (an ESLint zone regex, a dependency constant) holds a second, independent
+  copy of that value — a migration that updates the config but not the
+  checker's own hardcoded expectation passes locally and fails
+  `Governance gates` in CI.** This recurred twice in one wave — an
+  ADR-0042 CLI import-boundary check and its console-server sibling check
+  both hardcoded the pre-rename package scope a specifier migration had
+  already updated everywhere else
+  (`docs/logs/2026-09-13-u13-registry-p4b-wave.md`). Whenever a migration
+  changes a value a `bin/check-*.mjs` gate structurally validates (not
+  just runs), grep `bin/*.mjs` for the old value before considering the
+  migration complete, not after CI catches the gap.
