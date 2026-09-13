@@ -1,7 +1,7 @@
 /**
  * `internal/step-reference` — builds caller-facing step-output reference
  * text (`step-<ordinal>.output(...)`) for a tree path the JSON tree viewer
- * has navigated to, by thin-wrapping `@m3l-automation/m3l-common/core`'s
+ * has navigated to, by thin-wrapping `@monte3l/m3l-common/core`'s
  * `formatStepReference`. Private to this package: never re-exported from a
  * public entry point.
  *
@@ -14,8 +14,8 @@
  * @packageDocumentation
  */
 
-import type { M3LStepReferenceSegment } from "@m3l-automation/m3l-common/core";
-import { formatStepReference } from "@m3l-automation/m3l-common/core";
+import type { M3LStepReferenceSegment } from "@monte3l/m3l-common/core";
+import { formatStepReference } from "@monte3l/m3l-common/core";
 
 /** One path segment into a JSON value: an object property key (string) or an array index (number). */
 export type M3LTreePathSegment = string | number;

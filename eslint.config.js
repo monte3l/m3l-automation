@@ -139,15 +139,20 @@ export default tseslint.config(
       // TypeScript (pnpm typecheck) is the authoritative resolver for these
       // imports, so suppressing the ESLint check here is safe.
       // `^@monte3l/m3l-common` covers m3l-common's ADR-0103 renamed
-      // specifier (used directly in scripts/*/src as of the P4a slice)
-      // alongside every other package's pre-existing `@m3l-automation/`
-      // scope — bounded to the one renamed package rather than the whole
-      // `@monte3l/` scope, so an unresolved import of some future,
-      // different `@monte3l/*` package would still surface as a real error.
-      "import-x/no-unresolved": [
-        "error",
-        { ignore: ["^@m3l-automation/", "^@monte3l/m3l-common"] },
-      ],
+      // specifier — bounded to the one renamed package rather than the
+      // whole `@monte3l/` scope, so an unresolved import of some future,
+      // different `@monte3l/*` package would still surface as a real
+      // error. The former `^@m3l-automation/` entry was dropped once the
+      // P4b wave's last real consumer (console-web) migrated off it:
+      // every other `@m3l-automation/*`-scoped package name (the 17
+      // scripts/* packages, m3l-cli, console-server) stays permanently
+      // unrenamed per ADR-0103's Stage 4 note, but none of them are ever
+      // statically imported by another package — scripts/* are banned
+      // from importing each other (ADR-0029), and m3l-cli discovers them
+      // dynamically via `createRequire(...).resolve(...)`, never a
+      // static import — so there is nothing left for that entry to
+      // suppress.
+      "import-x/no-unresolved": ["error", { ignore: ["^@monte3l/m3l-common"] }],
     },
   },
   {

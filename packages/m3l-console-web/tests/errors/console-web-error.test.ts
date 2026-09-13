@@ -1,4 +1,4 @@
-import { M3LError } from "@m3l-automation/m3l-common/core/errors";
+import { M3LError } from "@monte3l/m3l-common/core/errors";
 import { describe, expect, test } from "vitest";
 
 import type { M3LConsoleWebErrorCode } from "../../src/errors/console-web-error.js";
