@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import type * as NodeFsPromises from "node:fs/promises";
 
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 import { writeJsonArtifact } from "../../src/steps/write-artifact.js";
 

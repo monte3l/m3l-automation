@@ -1,5 +1,5 @@
-import { Core } from "@m3l-automation/m3l-common";
-import type { AWS } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
+import type { AWS } from "@monte3l/m3l-common";
 
 /**
  * `purge-queue` — clears `queueUrl`'s contents via
@@ -24,10 +24,10 @@ import type { AWS } from "@m3l-automation/m3l-common";
  *
  * @example
  * ```typescript
- * import { Core } from "@m3l-automation/m3l-common";
+ * import { Core } from "@monte3l/m3l-common";
  * import { purgeQueue } from "./purge-queue.js";
  *
- * declare const sqsOperations: import("@m3l-automation/m3l-common/aws").M3LSQSOperations;
+ * declare const sqsOperations: import("@monte3l/m3l-common/aws").M3LSQSOperations;
  *
  * await purgeQueue({
  *   config: await new Core.M3LScript({

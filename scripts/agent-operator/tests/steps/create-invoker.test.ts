@@ -17,7 +17,7 @@
 
 import { describe, expect, it } from "vitest";
 
-import { AWS } from "@m3l-automation/m3l-common";
+import { AWS } from "@monte3l/m3l-common";
 
 import { M3LAgentOperatorCliError } from "../../src/lib/errors.js";
 import { createInvoker } from "../../src/steps/create-invoker.js";

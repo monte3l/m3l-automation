@@ -115,8 +115,8 @@ vi.mock("../src/steps/load-runbook.js", async (importOriginal) => ({
 // `sendBatch`/`deleteBatch` call sites — a mocked `applyActions` would make
 // that assertion vacuously true regardless of the gate's correctness.
 
-import { Core } from "@m3l-automation/m3l-common";
-import type { AWS } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
+import type { AWS } from "@monte3l/m3l-common";
 
 import { runSqsDeadLetterTriage } from "../src/steps/run-sqs-dead-letter-triage.js";
 import type { TriagePreset, TriageVerdict } from "../src/steps/preset.js";

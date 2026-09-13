@@ -32,7 +32,7 @@
  * @packageDocumentation
  */
 
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 import { M3LAgentOperatorCliError } from "../lib/errors.js";
 
@@ -209,7 +209,7 @@ export interface AgentDailyBaseline {
  *
  * @example
  * ```ts
- * import { Core } from "@m3l-automation/m3l-common";
+ * import { Core } from "@monte3l/m3l-common";
  * import { AgentRunLedger } from "./run-ledger.js";
  *
  * declare const policy: Core.M3LAgentPolicy;
@@ -437,7 +437,7 @@ export class AgentRunLedger {
    *
    * @example
    * ```ts
-   * import { Core } from "@m3l-automation/m3l-common";
+   * import { Core } from "@monte3l/m3l-common";
    * import { AgentRunLedger } from "./run-ledger.js";
    *
    * const ledger = new AgentRunLedger();

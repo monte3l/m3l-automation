@@ -1,4 +1,4 @@
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 import { AUTHORABLE_VERDICTS, RESERVED_PRIORITY_CEILING } from "./preset.js";
 import { writeJsonArtifact } from "./write-artifact.js";
@@ -352,7 +352,7 @@ function alarmFrom(source: string, alarm: string | undefined): string {
  *
  * @example
  * ```typescript
- * import { Core } from "@m3l-automation/m3l-common";
+ * import { Core } from "@monte3l/m3l-common";
  * import { convertRunbook } from "./convert-runbook.js";
  *
  * const paths = new Core.M3LPaths();

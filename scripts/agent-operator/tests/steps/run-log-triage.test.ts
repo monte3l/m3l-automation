@@ -57,7 +57,7 @@ import path from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { AWS, Core } from "@m3l-automation/m3l-common";
+import { AWS, Core } from "@monte3l/m3l-common";
 
 import type * as BuildToolRegistryModule from "../../src/steps/build-tool-registry.js";
 import type * as BuildTriageToolsModule from "../../src/steps/build-triage-tools.js";

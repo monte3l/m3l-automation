@@ -100,6 +100,22 @@ optional ESLint hardening banning all bare imports in `scripts/*/src` except
   forces into the library land as additive `./aws` barrel exports — minor,
   per ADR-0027's established pattern.
 
+## Update 2026-09-13 — the dependency name is now `@monte3l/m3l-common`
+
+This ADR's title and Decision both name the one permitted dependency as
+`@m3l-automation/m3l-common`. [ADR-0103](./0103-publish-scope-rename-and-staged-first-release.md)
+renamed the library's published scope to `@monte3l/m3l-common` to satisfy
+GitHub Packages' scope-equals-owning-account requirement; its own P4a/P4a2
+follow-on slices (`docs/plans/2026-09-12-u13-registry-publish.md`) migrated
+every `scripts/*/package.json` and import specifier off the pre-rename
+`@m3l-automation/m3l-common` workspace alias onto the direct
+`@monte3l/m3l-common` specifier, and `bin/check-script-deps.mjs` /
+`bin/lib/script-scaffold.mjs` now enforce only that shape. The boundary this
+ADR ratifies — exactly one runtime dependency, no devDependencies — is
+unaffected; only the dependency's name changed. Read every
+`@m3l-automation/m3l-common` reference above as historical: the enforced name
+is `@monte3l/m3l-common` via `workspace:*`.
+
 ## Links
 
 - Supersedes / superseded by: **supersedes in part

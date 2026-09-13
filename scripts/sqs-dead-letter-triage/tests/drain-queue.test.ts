@@ -20,7 +20,7 @@ vi.mock("../src/steps/write-artifact.js", () => ({
   writeJsonArtifact: writeJsonArtifactMock,
 }));
 
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 import {
   DRAIN_BYTE_BUDGET,

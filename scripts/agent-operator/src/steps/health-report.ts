@@ -29,8 +29,8 @@
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
 
-import { Core } from "@m3l-automation/m3l-common";
-import type { AWS } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
+import type { AWS } from "@monte3l/m3l-common";
 
 import { sanitizeForModel } from "../lib/model-safety.js";
 import type { AgentHealthObservationSnapshot } from "./health-observations.js";
@@ -391,7 +391,7 @@ const HEALTH_REPORT_DEFAULT_FILENAME = "agent-operator-health-check.json";
  *
  * @example
  * ```ts
- * import { Core } from "@m3l-automation/m3l-common";
+ * import { Core } from "@monte3l/m3l-common";
  * import { writeHealthReport } from "./health-report.js";
  * import type { AgentHealthReport } from "./health-report.js";
  *

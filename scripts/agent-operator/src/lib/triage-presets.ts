@@ -334,7 +334,7 @@ function hasYamlOrYmlPresetExtension(relativePath: string): boolean {
  *
  * @example
  * ```ts
- * import { Core } from "@m3l-automation/m3l-common/core";
+ * import { Core } from "@monte3l/m3l-common/core";
  * import { verifyTriagePresets } from "./triage-presets.js";
  *
  * const verified = await verifyTriagePresets({

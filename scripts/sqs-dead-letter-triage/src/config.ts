@@ -1,4 +1,4 @@
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 /**
  * The `operation` parameter's declared operation set (ADR-0055) — the five

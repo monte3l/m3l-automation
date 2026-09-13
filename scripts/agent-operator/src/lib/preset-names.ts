@@ -97,7 +97,7 @@ export type AgentOperatorPresetPath = string & {
  * Preset-name pattern, copied **verbatim** from `PRESET_NAME_PATTERN` in
  * `packages/m3l-cli/src/presets/store.ts` (the CLI's own preset-store
  * validator). It cannot be imported here: ADR-0029 restricts a `scripts/*`
- * package to a single dependency, `@m3l-automation/m3l-common`. A drift-guard
+ * package to a single dependency, `@monte3l/m3l-common`. A drift-guard
  * test reads `store.ts` as text and asserts this literal still matches, so any
  * future change to the upstream pattern is caught rather than silently
  * diverging.
@@ -146,7 +146,7 @@ export const AGENT_OPERATOR_PRESET_NAME_MAX_LENGTH = 64;
  * (`packages/m3l-cli/src/presets/store.ts`'s `presetsDirectory`). This is the
  * **single** local copy of that upstream value. It is copied rather than
  * imported because ADR-0029 restricts a `scripts/*` package to one
- * dependency, `@m3l-automation/m3l-common`, and `presetsDirectory` is
+ * dependency, `@monte3l/m3l-common`, and `presetsDirectory` is
  * module-private upstream anyway.
  *
  * Drift between this copy and upstream is guarded by a dedicated test in

@@ -20,15 +20,6 @@ describe("scriptDependencyErrors", () => {
     expect(scriptDependencyErrors(pkg)).toEqual([]);
   });
 
-  test("accepts the transitional pre-rename aliased shape (agent-operator, until P4a2)", () => {
-    const pkg = {
-      dependencies: {
-        "@m3l-automation/m3l-common": "workspace:@monte3l/m3l-common@*",
-      },
-    };
-    expect(scriptDependencyErrors(pkg)).toEqual([]);
-  });
-
   test("flags an extra dependency alongside the library", () => {
     const pkg = {
       dependencies: {
@@ -56,6 +47,17 @@ describe("scriptDependencyErrors", () => {
   test("flags the pre-rename name paired with the new value as non-conformant", () => {
     const pkg = {
       dependencies: { "@m3l-automation/m3l-common": "workspace:*" },
+    };
+    const errors = scriptDependencyErrors(pkg);
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain("ADR-0029");
+  });
+
+  test("flags the full pre-rename aliased shape (old key + old value) as non-conformant", () => {
+    const pkg = {
+      dependencies: {
+        "@m3l-automation/m3l-common": "workspace:@monte3l/m3l-common@*",
+      },
     };
     const errors = scriptDependencyErrors(pkg);
     expect(errors).toHaveLength(1);

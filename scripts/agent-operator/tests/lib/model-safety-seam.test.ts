@@ -26,7 +26,7 @@
  */
 import { describe, expect, it } from "vitest";
 
-import type { Core } from "@m3l-automation/m3l-common";
+import type { Core } from "@monte3l/m3l-common";
 
 import type { AgentOperatorParamDescriptor } from "../../src/lib/cli-envelopes.js";
 import { M3LAgentOperatorCliError } from "../../src/lib/errors.js";

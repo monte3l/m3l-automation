@@ -1,7 +1,7 @@
 import * as fs from "node:fs";
 import * as fsp from "node:fs/promises";
 
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 /**
  * `transform-records` — maps/filters records between two JSONL files without
@@ -327,7 +327,7 @@ async function wrapTransformError(
  *
  * @example
  * ```typescript
- * import { Core } from "@m3l-automation/m3l-common";
+ * import { Core } from "@monte3l/m3l-common";
  * import { transformRecords } from "./transform-records.js";
  *
  * const summary = await transformRecords({
