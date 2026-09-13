@@ -20,7 +20,7 @@
  */
 
 import { M3LConsoleError } from "./errors/console-error.js";
-import { errnoCodeOf } from "./errors/errno.js";
+import { underlyingErrnoCodeOf } from "./errors/errno.js";
 import { loadRetentionConfig } from "./config/retention.js";
 import { loadTelemetryConfig } from "./config/telemetry.js";
 import type { M3LConsoleTelemetryConfig } from "./config/telemetry.js";
@@ -174,15 +174,15 @@ interface CleanupDriverFailure {
    */
   readonly code: string | undefined;
   /**
-   * The caught value's own `code` property; `undefined` when not present.
-   * This is a raw Node errno (e.g. `"EACCES"`) only when the driver threw an
-   * unwrapped `fs` error. A driver that wraps its errors (e.g. `auditTrail`,
+   * The own `code` of the first non-`Core.M3LError` `Error` in the caught
+   * value's `cause` chain (see `underlyingErrnoCodeOf`); `undefined` when
+   * that error has no qualifying own `code`. For a driver that throws an
+   * unwrapped `fs` error directly, this is that error's own Node errno (e.g.
+   * `"ENOTDIR"`). For a driver that wraps its errors (e.g. `auditTrail`,
    * which turns a Node error into `M3LAppendOnlyStreamReadError` and then
-   * `M3LConsoleError`) puts its own `M3LError` code here instead — duplicating
-   * {@link CleanupDriverFailure.code} — because `errnoCodeOf` reads only the
-   * caught value's own `code` and does not walk the `cause` chain. The
-   * underlying Node errno, when there is one, then survives only on the
-   * chained `cause`.
+   * `M3LConsoleError`), this walks past every wrapping `Core.M3LError` layer
+   * to the underlying failure's own code (e.g. `"ERR_SQLITE_ERROR"` for a
+   * store failure) rather than duplicating {@link CleanupDriverFailure.code}.
    */
   readonly errno: string | undefined;
 }
@@ -222,7 +222,7 @@ function toCleanupFailure(result: DriverFail): CleanupDriverFailure {
     driver: result.driver,
     code:
       result.cause instanceof M3LConsoleError ? result.cause.code : undefined,
-    errno: errnoCodeOf(result.cause),
+    errno: underlyingErrnoCodeOf(result.cause),
   };
 }
 
@@ -248,9 +248,10 @@ function buildDriverFailureContext(results: CleanupResults): {
   const firstCause: unknown = failures[0]?.cause;
 
   // Successful drivers' outcomes — present so the caller knows what
-  // completed. Keying off `result.driver` is safe: DriverName's three
-  // values ("telemetry", "runOutputs", "sessionArtifacts") are exactly the
-  // keys `M3LConsoleCleanupOutcome` and this context object already use.
+  // completed. Keying off `result.driver` is safe: DriverName's four
+  // values ("telemetry", "runOutputs", "sessionArtifacts", "auditTrail") are
+  // exactly the keys `M3LConsoleCleanupOutcome` and this context object
+  // already use.
   const context: Record<string, unknown> = {};
   for (const result of ordered) {
     if (result.ok) context[result.driver] = result.outcome;

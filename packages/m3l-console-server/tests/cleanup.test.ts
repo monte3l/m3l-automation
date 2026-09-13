@@ -259,9 +259,14 @@ describe("runCleanup — failing first driver (telemetry)", () => {
   test("runOutputs and sessionArtifacts still run, and their outcomes appear in the thrown error's context", async () => {
     const { store, openStore } = makeMemoryStore();
 
-    // Make telemetry.prune (the FIRST driver) throw.
+    // Make telemetry.prune (the FIRST driver) throw. The thrown value carries
+    // its own `code` (mirroring a real driver failure such as a SQLite error)
+    // so the errno assertion below can tell the underlying code apart from
+    // the M3LConsoleError code that wraps it.
     vi.spyOn(store.telemetry, "prune").mockImplementation(() => {
-      throw new Error("simulated telemetry prune failure");
+      throw Object.assign(new Error("simulated telemetry prune failure"), {
+        code: "ESIMULATED",
+      });
     });
 
     // Set up data for the other two drivers so their outcomes are non-trivially
@@ -299,6 +304,26 @@ describe("runCleanup — failing first driver (telemetry)", () => {
     expect(ctx).not.toHaveProperty("telemetry");
     expect(ctx).toHaveProperty("runOutputs");
     expect(ctx).toHaveProperty("sessionArtifacts");
+
+    // [X8c regression] `context.failures`' telemetry entry's `errno` must be
+    // the underlying mock error's own code ("ESIMULATED"), not a duplicate of
+    // the wrapping M3LConsoleError's own `code` ("ERR_CONSOLE_INTERNAL").
+    // `toCleanupFailure` currently calls the un-chain-walking `errnoCodeOf`
+    // directly on `result.cause` (the M3LConsoleError from `pruneTelemetry`),
+    // so today `errno` just duplicates `code` — this is the X8c defect.
+    const failures = ctx?.["failures"];
+    expect(Array.isArray(failures)).toBe(true);
+    const telemetryFailure = (
+      failures as Array<{
+        driver: string;
+        code: string | undefined;
+        errno: string | undefined;
+      }>
+    ).find((failure) => failure.driver === "telemetry");
+    expect(telemetryFailure).toBeDefined();
+    expect(telemetryFailure?.code).toBe("ERR_CONSOLE_INTERNAL");
+    expect(telemetryFailure?.errno).toBe("ESIMULATED");
+    expect(telemetryFailure?.errno).not.toBe("ERR_CONSOLE_INTERNAL");
 
     // The run output dir was deleted even though telemetry failed.
     await expect(stat(join(runsRoot, "run-beta"))).rejects.toMatchObject({
@@ -878,6 +903,15 @@ describe("runCleanup — fourth driver (auditTrail)", () => {
     expect((failures as Array<{ driver: string }>)[0]?.driver).toBe(
       "auditTrail",
     );
+
+    // [X8c regression] the audit driver's failure chain is
+    // M3LConsoleError -> Core.M3LAppendOnlyStreamReadError -> the real
+    // ENOTDIR fs error `readdir(brokenAuditRoot)` raises. `errno` must be the
+    // underlying fs code, not a duplicate of the outer M3LConsoleError's own
+    // `code` — locks in the exact defect issue #1058 describes.
+    expect(failures).toEqual([
+      { driver: "auditTrail", code: "ERR_CONSOLE_INTERNAL", errno: "ENOTDIR" },
+    ]);
 
     // The run output dir and artifact file were still deleted even though
     // the audit driver failed — the other three drivers are unaffected.

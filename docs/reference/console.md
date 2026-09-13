@@ -1341,13 +1341,31 @@ overrides either at runtime.
 subcommand is given. An unknown subcommand (e.g. a typo) exits `1`
 immediately without starting the server.
 
-**One driver failing does not skip the other two.** The three concerns are
+**One section failing does not skip the others.** The four sections are
 independent: a telemetry failure is no reason to skip sweeping run outputs.
-All three always run; on failure, a single `M3LConsoleError` with code
-`ERR_CONSOLE_INTERNAL` is thrown after all three have completed, carrying the
-first driver's failure as `cause` and including each successful driver's
-outcome plus a `context.failures` entry per failed driver. On success, the
-combined `M3LConsoleCleanupOutcome` is printed as JSON to stdout.
+All four always run; on failure, a single `M3LConsoleError` with code
+`ERR_CONSOLE_INTERNAL` is thrown after all four have completed, carrying the
+first failing section's error as `cause` and including each successful
+section's outcome plus one `context.failures` entry per failed section. On
+success, the combined `M3LConsoleCleanupOutcome` is printed as JSON to stdout.
+
+**Each `context.failures` entry names the section and the underlying cause.**
+An entry is `{ driver, code, errno }`. `driver` is the section (`telemetry`,
+`runOutputs`, `sessionArtifacts`, or `auditTrail`). `code` is the
+`M3LConsoleError` code the section raised, when it raised one. `errno` is the
+own `code` of the first error in the `cause` chain that is not an M3L error —
+a Node errno such as `ENOTDIR` or `EACCES` for a filesystem failure, or a Node
+error code such as `ERR_SQLITE_ERROR` for a store failure — and `undefined`
+when that error carries none. On failure the command prints the message, then
+one line per entry, to stderr (`-` stands for `undefined`):
+
+```text
+m3l-console-server cleanup: one or more retention drivers failed during cleanup
+  auditTrail: code=ERR_CONSOLE_INTERNAL errno=ENOTDIR
+```
+
+Neither `context` nor those lines carry an absolute path. The chained `cause`'s
+own message may, which is why it is not printed.
 
 **The audit-trail section reports; it never deletes.** The fourth section of
 the sweep inventories `<audit root>/` and returns the segment count, the total

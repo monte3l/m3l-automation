@@ -940,6 +940,62 @@ audited-route set, or the telemetry retention policy. Nothing about what the
 trail _records_ changes here — only what can be proven about the bytes it
 recorded into.
 
+## Update (2026-09-13) — X8c closes: a cleanup failure names its underlying cause, and the operator can see it
+
+X8c — filed by the 2026-09-05 (second) Update above, § What X8 does not
+close — is complete. `runCleanup`'s `context.failures[].errno` used to read
+only the caught value's own `code`. Every section that wraps its failure in
+an `M3LConsoleError` — the audit-trail observation driver
+(`M3LConsoleError` → `M3LAppendOnlyStreamReadError` → the `node:fs` error) and
+the telemetry driver (`M3LConsoleError` → the repository's throw) — therefore
+reported `ERR_CONSOLE_INTERNAL` twice, once as `code` and again as `errno`,
+while the cause an operator actually needed sat unread further down the chain.
+
+This section supersedes the X8c bullet under "What X8 does not close" above.
+
+### What changed
+
+`errors/errno.ts` gains `underlyingErrnoCodeOf`, a sibling of `errnoCodeOf`.
+It walks `.cause` from the caught value, skips every link that is an
+`M3LError` (its own `code` is this project's vocabulary, never an errno), and
+returns `errnoCodeOf` of the first link that is not — so the own-property and
+single-read hardening `errnoCodeOf` already carries applies unchanged. The
+first non-M3L link decides: one with no own `code` yields `undefined` rather
+than letting the walk continue past it and report a code from an unrelated
+deeper error. The walk inspects at most ten links — the caught value itself
+plus up to nine causes — so a cyclic chain terminates, and a throwing `cause`
+accessor ends it with `undefined`, since this runs on the failure path and
+must not itself throw. `toCleanupFailure` uses it for
+`errno`; `code` is unchanged.
+
+A non-errno Node code is reported deliberately. A store failure surfaces as
+`ERR_SQLITE_ERROR` — not an errno in the POSIX sense, but the underlying
+cause, and far closer to what an operator needs than the wrapper's code.
+
+### The departure from a literal reading of the tracker row
+
+The row named only the context value. Correcting it alone would have fixed a
+field no operator ever saw: the `cleanup` subcommand in
+`bin/m3l-console-server.mjs` printed `error.message` and nothing else, so
+`context.failures` reached programmatic callers only. The subcommand now
+also prints one stderr line per failure — `driver`, `code`, `errno` — and
+nothing more from `context` or `cause`. The no-absolute-path rule this ADR's
+cleanup sections hold is preserved: none of those three values is a path,
+while a chained `cause`'s message may be one and stays unprinted.
+
+### Rejected alternatives
+
+- **Accept only a Node `SystemError` shape** (own numeric `errno` plus
+  `syscall`). Narrower to the field's name, but the telemetry section's cause
+  would report `undefined` — silence exactly where the store names its
+  failure.
+- **Leave `errno` as-is and add a `causeCode` field.** Additive, but it keeps
+  a field that names the wrong thing, and every reader would have to know to
+  ignore it.
+- **Stop the duplicate without walking** (`undefined` whenever the caught
+  value is an `M3LError`). Removes the misleading value and every useful one
+  with it — no wrapped section would ever report a cause.
+
 ## Links
 
 - Programme: [ADR-0064](./0064-m3l-console-programme.md). Store/index:
