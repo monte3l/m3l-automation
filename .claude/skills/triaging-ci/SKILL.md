@@ -42,6 +42,18 @@ If a failed run exists in the broader search, proceed with that run and note the
 branch it came from. If no failed run exists anywhere in the recent history, report
 that clearly and stop — there is nothing to triage.
 
+**Zero runs at all (not even queued) is a different problem from a failed
+run — a dropped webhook event, not a code failure.** If a push landed but
+no `CI`/`Claude PR Review`/`Dependency Review` run was ever created for
+its head SHA (only a GitHub-managed default scan, if anything), first
+confirm it isn't isolated to this push — check whether a different,
+unrelated PR pushed around the same time shows the identical gap. If so,
+it's likely a one-off `pull_request: synchronize` delivery drop, not a
+repo config problem; a safe, reversible fix is an empty-commit push
+(`git commit --allow-empty -m "chore: retrigger CI"`) to fire a fresh
+event, rather than auditing Actions permissions or workflow triggers
+(`docs/logs/2026-09-13-u13-registry-p4b-wave.md`).
+
 ### 2 — Fetch the failing job logs
 
 Pull only the logs from steps that failed:

@@ -155,3 +155,9 @@ paths:
   step, dropped, that a sibling still needed ordered before it)
   (`docs/logs/2026-09-10-verify-jobs.md`). Run a new `bin/**` parser
   against live input before writing tests, same as the bullet above.
+
+- **A `bin/check-*.mjs` gate can hold its own hardcoded copy of a config
+  value it validates** — updating the config but not the checker passes
+  locally, fails `Governance gates` (hit twice in one wave, both in
+  `bin/check-eslint-zones.mjs`: `docs/logs/2026-09-13-u13-registry-p4b-wave.md`).
+  Grep `bin/*.mjs` for the old value first.
