@@ -151,7 +151,7 @@ per-phase detail in
 | **U10** | `m3l flow` — orchestration engine + the named flow           | Done     |
 | **U11** | Retry/resume/cancellation surfacing at the CLI layer         | Done     |
 | **U12** | `m3l completion` (bash/zsh/fish)                             | Done     |
-| **U13** | Phase B — private GitHub Packages publishing                 | To Do    |
+| **U13** | Phase B — private GitHub Packages publishing                 | Done     |
 | **U14** | Phase C — single-file binary (gated on a future ADR)         | Deferred |
 
 ### Agent-operator wave (V-series) — ADR-0058/0059/0060/0061/0062/0063
