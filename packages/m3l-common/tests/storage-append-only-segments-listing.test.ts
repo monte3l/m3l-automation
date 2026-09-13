@@ -76,6 +76,7 @@ import type {
 import {
   currentDatePrefix,
   parseSegmentName,
+  segmentFileName,
 } from "../src/internal/storage/append-only-segments.js";
 import { M3L_APPEND_ONLY_MANIFEST_NAME } from "../src/internal/storage/append-only-manifest.js";
 
@@ -803,6 +804,53 @@ describe("fresh array per call", () => {
     expect(second.segments.map((segment) => segment.name)).toEqual([
       "2026-01-01-0001.jsonl",
     ]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// segmentFileName — the single renderer, exercised directly
+// ---------------------------------------------------------------------------
+//
+// `segmentFileName` is exercised transitively below (the real-writer
+// round-trip fixture), but that fixture only ever forces single-digit
+// sequences. These tests pin its own documented contract directly: the
+// sequence is padded to width four, a sequence already at or above four
+// digits is NOT truncated (`padStart` is a no-op past its target width),
+// and a rendered name round-trips through `parseSegmentName` in both
+// regimes.
+
+describe("segmentFileName", () => {
+  test.each([
+    { sequence: 0, expected: "2026-01-01-0000.jsonl" },
+    { sequence: 1, expected: "2026-01-01-0001.jsonl" },
+    { sequence: 42, expected: "2026-01-01-0042.jsonl" },
+    { sequence: 999, expected: "2026-01-01-0999.jsonl" },
+  ])("zero-pads sequence $sequence to width four", ({ sequence, expected }) => {
+    expect(segmentFileName("2026-01-01", sequence)).toBe(expected);
+  });
+
+  test("does not truncate a sequence already at width four", () => {
+    expect(segmentFileName("2026-01-01", 1000)).toBe("2026-01-01-1000.jsonl");
+  });
+
+  test("does not truncate a sequence above four digits", () => {
+    expect(segmentFileName("2026-01-01", 12345)).toBe("2026-01-01-12345.jsonl");
+  });
+
+  test("round-trips through parseSegmentName for a padded (below-width-four) sequence", () => {
+    const name = segmentFileName("2026-01-01", 7);
+    expect(parseSegmentName(name)).toEqual({
+      datePrefix: "2026-01-01",
+      sequence: 7,
+    });
+  });
+
+  test("round-trips through parseSegmentName for a sequence above four digits", () => {
+    const name = segmentFileName("2026-01-01", 12345);
+    expect(parseSegmentName(name)).toEqual({
+      datePrefix: "2026-01-01",
+      sequence: 12345,
+    });
   });
 });
 

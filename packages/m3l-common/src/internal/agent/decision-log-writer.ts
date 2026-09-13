@@ -325,6 +325,15 @@ export class AgentDecisionLogWriter {
       maxSegmentBytes: options.maxSegmentBytes,
       maxLineBytes: M3L_AGENT_MAX_LOG_ENTRY_BYTES,
       maxManifestBytes: DEFAULT_MAX_MANIFEST_BYTES,
+      // Known limitation: this single `AppendOnlyReadFailure` builder serves
+      // BOTH the sealer's manifest reads and its manifest appends, so the
+      // class name never discriminates direction. For this owner it is the
+      // READ side that is misnamed — a failed manifest read (e.g.
+      // `append-only-manifest.ts`'s baseline/listing reads) still surfaces as
+      // a "Write" error. The `cause` and `message` carry the accurate
+      // operational detail regardless, so nothing but the class name is
+      // wrong. X8b4 introduces a dedicated `M3LAppendOnlyStreamManifestError`
+      // (code `ERR_APPEND_ONLY_STREAM_MANIFEST`) that actually resolves this.
       buildError: (message, errorOptions) =>
         new M3LAgentDecisionLogWriteError(message, errorOptions),
       // Conditional spread, not a direct assignment: `exactOptionalPropertyTypes`

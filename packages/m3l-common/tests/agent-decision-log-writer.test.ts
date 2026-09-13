@@ -1,7 +1,6 @@
 /**
- * Tests for `core/agent`'s V7 slice 2 decision-log writer (RED phase —
- * `M3LAgentDecisionLog` does not exist yet; only V7 slice 1's pure entry
- * schema/projector/serializer are shipped).
+ * Tests for `core/agent`'s V7 slice 2 decision-log writer,
+ * `M3LAgentDecisionLog`.
  *
  * Contract source: docs/reference/core/agent.md § "Writing the decision log"
  * and § "Escalating when the log is unavailable" plus ADR-0061.
@@ -15,17 +14,13 @@
  * `agentDecisionLogEntry` / `serializeAgentDecisionLogEntry` rather than
  * hand-rolled objects, so this file only exercises the writer's own contract.
  *
- * ASSUMPTION FLAGGED FOR THE IMPLEMENTER: neither the doc nor any existing
- * source fixes the writer's exact method/option names (V7 slice 2 has no
- * source file yet). This file asserts:
+ * This file asserts:
  *   - `new M3LAgentDecisionLog(options?: M3LAgentDecisionLogOptions)`
  *   - `write(entry: M3LAgentDecisionLogEntry): Promise<void>`
  *   - `M3LAgentDecisionLogOptions.directory` FULLY overrides the resolved
  *     target directory (the doc's default is `new M3LPaths().getDataDir() +
  *     "agent-log"`; overriding `directory` replaces that whole computation,
  *     matching the barrel's singular "the directory override" phrasing).
- * If the implementer picks different names, this file's call sites need a
- * one-time rename — the behavioral assertions do not otherwise change.
  *
  * Rotation-by-age is driven without real sleeps by BOTH fabricating widely
  * spaced entry `now` values AND controlling the wall clock via
@@ -86,9 +81,9 @@ import type {
   M3LAgentIdentity,
 } from "../src/core/agent/index.js";
 // Internal-only: the manifest sidecar's file name is not on the public
-// `core/storage` barrel, so it is imported directly from its module (see
-// REPAIR 2 in this file's owning task — the sidecar must be filtered out of
-// "which segments are on disk", not treated as one).
+// `core/storage` barrel, so it is imported directly from its module — the
+// sidecar must be filtered out of "which segments are on disk" below (see
+// listSegments()), never treated as a segment itself.
 import { M3L_APPEND_ONLY_MANIFEST_NAME } from "../src/internal/storage/append-only-manifest.js";
 
 // ---------------------------------------------------------------------------

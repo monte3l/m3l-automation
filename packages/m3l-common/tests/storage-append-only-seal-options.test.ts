@@ -1,6 +1,6 @@
 /**
- * Tests for `M3LAppendOnlyStream`'s not-yet-implemented `onSealFailed`
- * constructor option (X8, writer-seal wiring).
+ * Tests for `M3LAppendOnlyStream`'s `onSealFailed` constructor option (X8,
+ * writer-seal wiring).
  *
  * `onSealFailed` is the caller's channel for a best-effort manifest seal
  * that could not be written — see the TSDoc on
@@ -12,18 +12,13 @@
  * precedent (`validateReadOptions`) byte for byte in polarity: a function is
  * accepted, an omitted option is accepted, a TRUTHY non-function throws
  * `ERR_INVALID_ARGUMENT`, and a FALSY non-function degrades silently to "no
- * handler" rather than throwing.
- *
- * RED PHASE: `onSealFailed` is not yet in `M3LAppendOnlyStream`'s options
- * allowlist. Every test below that constructs with an `onSealFailed` key is
- * expected to fail — the current validator rejects it as an unrecognized
- * key (`ERR_INVALID_ARGUMENT` / `{ field: "options", violation:
- * "unknown-key" }`) regardless of what value is supplied, which is not yet
- * the behaviour these tests pin. Split into its own sibling file rather
+ * handler" rather than throwing — the safe direction, since a
+ * caller-supplied falsy value (e.g. an accidentally-`undefined` variable)
+ * must never break construction. Split into its own sibling file rather
  * than added to `storage-append-only-stream.test.ts`, which sits at 58,389
  * of 60,000 chars.
  *
- * Split test/behavior split: constructor-boundary validation only. Whether
+ * Test/behavior split: constructor-boundary validation only. Whether
  * `onSealFailed` is actually INVOKED on a real seal failure is a
  * higher-level integration behavior belonging to the sealer's own test file
  * once the writer wires it up.
@@ -42,10 +37,10 @@ import { M3LAppendOnlyStream } from "../src/core/storage/index.js";
 import type { M3LAppendOnlyStreamOptions } from "../src/core/storage/index.js";
 
 /**
- * Constructs through an `unknown` seam so an options bag carrying a field
- * not yet in the static type (`onSealFailed`, during this RED phase) can
- * reach the constructor without weakening the public type or tripping an
- * excess-property check on an object literal.
+ * Constructs through an `unknown` seam so an options bag whose
+ * `onSealFailed` value violates the property's function-typed signature
+ * (a string, a number, a plain object, and so on) can reach the constructor
+ * without weakening the public type.
  */
 function construct(options: unknown): M3LAppendOnlyStream {
   return new M3LAppendOnlyStream(options as M3LAppendOnlyStreamOptions);

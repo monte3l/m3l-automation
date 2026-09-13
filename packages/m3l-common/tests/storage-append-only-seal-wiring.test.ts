@@ -77,7 +77,7 @@ function definedOrThrow<T>(value: T | undefined, label: string): T {
 /**
  * Appends one throwaway entry and awaits it.
  *
- * `M3LAppendOnlyWriter.write()` resolves once the entry's own bytes are
+ * `AppendOnlyWriter.write()` resolves once the entry's own bytes are
  * durable, but the manifest seal that FOLLOWS that append runs on a private
  * tail chain the caller never awaits directly. The next `append()` call,
  * however, cannot start its own write until that tail settles — so awaiting
