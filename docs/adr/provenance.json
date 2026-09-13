@@ -806,6 +806,18 @@
         "blob": "5e2040e8cbdc4adff45f8dc52463aa4e5c644484"
       },
       {
+        "path": "bin/check-script-deps.mjs",
+        "blob": "90e88d6e2fcbdcdca3520616f97ce562132c3c30"
+      },
+      {
+        "path": "bin/lib/script-scaffold.mjs",
+        "blob": "8fc9ccf316956dd16e7981af33d50731550f13df"
+      },
+      {
+        "path": "docs/plans/2026-09-12-u13-registry-publish.md",
+        "blob": "16604589a2cfde26f74fa5cfb52fb65119a0a2ad"
+      },
+      {
         "path": "docs/ROADMAP.md",
         "blob": "9cac911c564762bccf5416e3d492b42647a185c5"
       },
@@ -814,7 +826,7 @@
         "blob": "fafc364ac36bf90fd945cda2ecf2324f130da87b"
       }
     ],
-    "verifiedAt": "2026-09-12"
+    "verifiedAt": "2026-09-13"
   },
   "0030": {
     "sourceFiles": [

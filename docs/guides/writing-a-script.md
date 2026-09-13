@@ -20,7 +20,7 @@ If you have not installed the package yet, start with
 Every script follows the same three-part shape: import, construct, run.
 
 ```typescript
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 const script = new Core.M3LScript({
   metadata: { name: "report-builder", version: "1.0.0" },
@@ -44,7 +44,7 @@ credential management from these inputs, so by the time `run()` starts those
 facilities are ready.
 
 ```typescript
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 const script = new Core.M3LScript({
   // 2.1 Metadata — identifies the script (M3LScriptMetadata).
@@ -292,7 +292,7 @@ The following script ties the pieces together: a typed configuration schema,
 hooks, structured logging, a prompt, and a clean main function.
 
 ```typescript
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 const region = new Core.M3LConfigParameter({
   name: "region",

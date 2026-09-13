@@ -207,6 +207,17 @@ diffs live in `docs/plans/archive/2026-07-06-consumer-fleet-implementation-plan.
   workspace; restoring it does not touch the `exports` map, any public type,
   or the library version.
 
+## Update 2026-09-13 — the dependency name is now `@monte3l/m3l-common`
+
+§1's "depending on `@m3l-automation/m3l-common` via `workspace:*`" is
+historical: [ADR-0103](./0103-publish-scope-rename-and-staged-first-release.md)
+renamed the library's published scope, and its P4a/P4a2 slices migrated
+every `scripts/*` package onto the direct `@monte3l/m3l-common` specifier.
+See [ADR-0029](./0029-script-dependency-boundary.md)'s own 2026-09-13 Update
+for the full detail — the dependency boundary itself is unchanged, only the
+name. Script package names (`@m3l-automation/<script-name>`) are unaffected;
+scripts stay `private: true` and unpublished.
+
 ## Links
 
 - Supersedes / superseded by: **supersedes
