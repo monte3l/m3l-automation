@@ -45,6 +45,7 @@ import type {
   M3LAppendOnlySegment,
   M3LAppendOnlySegmentListing,
 } from "../../core/storage/append-only-read-types.js";
+import { isEnoentError } from "../../core/utils/guards.js";
 import {
   DIRECTORY_MODE,
   SEGMENT_EXPECTED_LINK_COUNT,
@@ -227,19 +228,6 @@ export function parseSegmentName(name: string): ParsedSegmentName | undefined {
 }
 
 /**
- * `true` for a filesystem error meaning "there is nothing at that path".
- *
- * Only `ENOENT` is treated as "absent"; every other failure (`EACCES`,
- * `ELOOP`, `ENOTDIR`, …) is re-thrown by its caller and surfaces as a write
- * failure. A blanket `catch` here would reintroduce exactly the defect class
- * this module is audited for — a byte count silently restarting at zero
- * because a `stat` failed for a reason that had nothing to do with absence.
- */
-function isFileNotFound(cause: unknown): boolean {
-  return cause instanceof Error && "code" in cause && cause.code === "ENOENT";
-}
-
-/**
  * Builds a fresh, empty in-memory segment record. The file itself is created
  * by the writer's first `open` against it.
  */
@@ -288,7 +276,10 @@ async function adoptExistingSegment(
   try {
     stats = await stat(segmentPath);
   } catch (cause) {
-    if (isFileNotFound(cause)) {
+    // ENOENT only. EACCES/ELOOP/ENOTDIR mean the path is there and
+    // unreadable, not absent — rethrowing is what keeps a full segment's
+    // byte count from restarting at zero.
+    if (isEnoentError(cause)) {
       return undefined;
     }
     throw cause;
@@ -452,7 +443,7 @@ export async function listSegmentFiles(
   try {
     names = await readdir(directory);
   } catch (cause) {
-    if (isFileNotFound(cause)) {
+    if (isEnoentError(cause)) {
       return { segments: [], skipped: 0 };
     }
     throw cause;
@@ -469,7 +460,7 @@ export async function listSegmentFiles(
     try {
       stats = await lstat(path.join(directory, name));
     } catch (cause) {
-      if (isFileNotFound(cause)) {
+      if (isEnoentError(cause)) {
         skipped += 1;
         continue;
       }

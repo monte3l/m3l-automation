@@ -996,6 +996,67 @@ while a chained `cause`'s message may be one and stays unprinted.
   value is an `M3LError`). Removes the misleading value and every useful one
   with it — no wrapped section would ever report a cause.
 
+## Update (2026-09-13, second) — X8d closes: the errno guards honour only an own `code`, and the single-read defect the row didn't name is fixed alongside it
+
+X8d — filed by the 2026-09-05 (second) Update above — is complete, and
+scoped wider than its own row text. `core/utils/guards.ts`'s `isNodeError`
+and `isEnoentError` now require `code` to be an OWN property
+(`Object.hasOwn`), never merely reachable via `in`, and read it exactly
+once through a shared module-private `readErrnoCode`. The two hand-rolled
+`isFileNotFound` copies in `internal/storage/append-only-segments.ts` and
+`internal/storage/append-only-manifest.ts` — the second of which explicitly
+claimed to behave "exactly as" the first, a claim only true by accident
+until this change — are deleted; both call sites now use the hardened
+`isEnoentError`.
+
+This section supersedes the X8d bullet under "What X8 does not close"
+above.
+
+Consolidating onto the shared guard surfaced a second defect the row never
+named: `isEnoentError(v) = isNodeError(v) && v.code === "ENOENT"` reads
+`.code` twice — once inside `isNodeError`'s `typeof` check, once in the
+comparison — so a non-idempotent own getter could desynchronise the two
+reads. A test proves this against the pre-fix code: a getter returning
+`"ENOENT"` on its first read and `"EACCES"` thereafter made the old
+`isEnoentError` return `false` after two reads, for a value that
+unambiguously carries `ENOENT`. The shared `readErrnoCode` helper reads
+once; both guards now compose without re-reading.
+
+### The departure from a literal reading of the tracker row
+
+The row named one function in one file. Fixing only that file would have
+made `append-only-manifest.ts`'s own TSDoc claim — "exactly as
+`./append-only-segments.js` does" — false one file over, since the two
+copies would then diverge. The fix instead deletes both copies and
+consolidates onto `core/utils/guards.ts`'s already-exported, already-used-
+by-a-sibling-file (`append-only-reader.ts`) `isEnoentError`, per
+`.claude/rules/library-src.md`'s standing rule to reuse that module's
+guards rather than reimplement locally.
+
+### Scope boundary — X8e filed for the rest of the census
+
+Auditing this row surfaced further hand-rolled `ENOENT`/errno spellings
+outside this fix's boundary: `internal/procedure/step-exec.ts` and
+`internal/files/copyExecution.ts` in this package, and five sites in
+`m3l-cli` (including an unguarded `as NodeJS.ErrnoException` cast in
+`flow/record.ts`). None share this row's exact shape — some discriminate a
+different code, some accept non-`Error` input by design, one is a new
+public-symbol event (`feat:`). Filed as **X8e** (two slices: library
+`errnoCodeOf` export + `m3l-cli` consolidation) rather than folded in here,
+keeping this PR's blast radius inside the two files the row named plus the
+guard they both should have been calling.
+
+### Rejected alternatives
+
+- **Fix only the one line the row names** (`"code" in cause` →
+  `Object.hasOwn(cause, "code")` in `append-only-segments.ts` alone).
+  Smallest diff, but leaves the manifest's duplicate un-hardened and its
+  "exactly as" TSDoc claim false.
+- **Patch each guard's own read separately**, without a shared
+  `readErrnoCode`. Fixes the ownership half but not the double-read: unless
+  `isEnoentError` stops composing through `isNodeError`, comparing `v.code`
+  again after the composed call re-introduces the second read.
+
 ## Links
 
 - Programme: [ADR-0064](./0064-m3l-console-programme.md). Store/index:
@@ -1009,3 +1070,8 @@ while a chained `cause`'s message may be one and stays unprinted.
   [ADR-0061](./0061-agent-decision-log.md).
 - Trigger fired by: [ADR-0102](./0102-sealed-segment-manifest.md) (X8b — the
   sealed-segment manifest makes whole-date archival provable).
+- Trigger fired by: this row itself (X8d — X8 follow-up, filed 2026-09-05,
+  second Update above).
+- Reference implementation: `errnoCodeOf`
+  (`packages/m3l-console-server/src/errors/errno.ts`), unchanged by the
+  X8d Update above.

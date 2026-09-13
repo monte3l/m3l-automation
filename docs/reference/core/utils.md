@@ -166,6 +166,14 @@ function describe(value: unknown): string {
 - `safeJsonStringify` never throws — unsupported inputs degrade to the placeholder strings above rather than raising.
 - `M3LConcurrencyPool` preserves FIFO order of task starts; results are returned per the pool's contract, but task scheduling is bounded by the slot count.
 - `M3LSingleFlight` shares a rejection with every coalesced caller — all callers for the same in-flight key hold the literal same promise, so a reject propagates to all of them, not just the first.
+- `isNodeError`/`isEnoentError` require `code` to be an OWN property of the
+  `Error`, not merely reachable via `in` — an `Error` whose only `code` comes
+  from `Error.prototype` (or a subclass prototype getter) does not match.
+  Every real `node:fs` errno sets `code` as an own property, so no genuine
+  filesystem failure is affected; the guard only closes a forgeability gap
+  where an inherited `code` could make an unrelated failure present as a
+  tolerated one. Contrast `hasProperty`/`hasMessage`, which stay `in`-based
+  by design — they answer "can this be read", not "did this value carry it".
 
 ## See also
 

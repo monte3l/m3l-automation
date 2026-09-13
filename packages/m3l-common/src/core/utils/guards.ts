@@ -2,7 +2,11 @@
  * `core/utils/guards` — runtime type-narrowing predicates.
  *
  * All guards follow the signature `(v: unknown): v is T`.
- * They are pure functions with no side effects and throw nothing.
+ * They are pure functions with no side effects. They do not throw for any
+ * ordinary value, but a hostile `Proxy` whose
+ * `has`/`getPrototypeOf`/`getOwnPropertyDescriptor` trap throws will
+ * propagate that — a guard cannot be more total than the operators it is
+ * built from.
  *
  * @packageDocumentation
  */
@@ -65,8 +69,62 @@ export function isError(v: unknown): v is Error {
 }
 
 /**
- * Returns `true` when `v` is a Node.js `ErrnoException` — an `Error` subclass
- * that carries a string `code` property.
+ * The `errno` code an `Error` carries as its OWN property, or `undefined`
+ * for anything else. Module-private: {@link isNodeError} and
+ * {@link isEnoentError} are the exported surface built on it.
+ *
+ * OWNERSHIP IS PART OF THE CHECK. A caller's tolerate/rethrow decision is
+ * driven by this code, so honouring an INHERITED `code` would make that
+ * decision forgeable at a distance — one `Error.prototype.code = "ENOENT"`
+ * anywhere in the process, or a `get code()` on a thrown subclass's
+ * prototype, and every unrelated failure would present as the tolerated
+ * one. Node's own errno errors always set `code` as an own property, so
+ * requiring ownership costs no real `node:fs` call site anything.
+ *
+ * Reads `.code` ONCE into a local and narrows the local, never the property
+ * expression: an accessor may answer differently on each read, so a
+ * validate-then-compare chain over `v.code` is two reads of a value only
+ * one of them checked. `Object.hasOwn` tests for the property without
+ * reading it, so the ownership guard adds no second read.
+ *
+ * Mirrors `errnoCodeOf`
+ * (`packages/m3l-console-server/src/errors/errno.ts`) — same order, same
+ * single read. That copy stays where it is: it lives in the one zone every
+ * console zone may import, and this is a separate, unpublished need.
+ */
+function readErrnoCode(v: unknown): string | undefined {
+  if (!isError(v) || !Object.hasOwn(v, "code")) {
+    return undefined;
+  }
+  const code: unknown = (v as NodeJS.ErrnoException).code;
+  return typeof code === "string" ? code : undefined;
+}
+
+/**
+ * Returns `true` when `v` is a Node.js `ErrnoException` — an `Error`
+ * subclass carrying a string `code` as its OWN property.
+ *
+ * Ownership is part of the guarantee, not an implementation detail: an
+ * `Error` whose only `code` comes from `Error.prototype` (or a subclass
+ * prototype getter) is NOT a node error here, because the caller's
+ * tolerate/rethrow decision must not be settable by anything other than
+ * the throw itself. Node's own errno errors always set `code` as an own
+ * property, so no real `node:fs` failure is affected.
+ *
+ * Contrast {@link hasProperty}/{@link hasMessage}, which are `in`-based by
+ * documented contract — they answer "can this property be read", not "did
+ * this value carry it". Do not unify the two.
+ *
+ * Semver: this narrowed from an `in`-based check to this own-property check
+ * in a patch release. Every caller in this repository passes a real
+ * `node:fs`/libuv errno, which always sets `code` as an own property, so no
+ * in-repo caller is affected. A caller passing a custom `Error` subclass
+ * that intentionally exposes `code` only via a prototype getter would see
+ * this guard start returning `false` for it — treated as a patch because
+ * that shape was never a documented, supported use of this guard: the
+ * ownership guarantee stated above has always been this guard's contract,
+ * and the previous `in`-based implementation that let a prototype `code`
+ * satisfy it was the bug, not a feature being removed.
  *
  * @example
  * ```typescript
@@ -77,15 +135,17 @@ export function isError(v: unknown): v is Error {
  * ```
  */
 export function isNodeError(v: unknown): v is NodeJS.ErrnoException {
-  return (
-    isError(v) &&
-    "code" in v &&
-    typeof (v as NodeJS.ErrnoException).code === "string"
-  );
+  return readErrnoCode(v) !== undefined;
 }
 
 /**
- * Returns `true` when `v` is a Node.js `ErrnoException` with `code === "ENOENT"`.
+ * Returns `true` when `v` is a Node.js `ErrnoException` whose own `code` is
+ * exactly `"ENOENT"`.
+ *
+ * Carries {@link isNodeError}'s ownership guarantee, and reads `code`
+ * exactly ONCE — it does not type-check the property and then re-read it to
+ * compare, so a non-idempotent own getter cannot make the value compared
+ * differ from the value validated.
  *
  * @example
  * ```typescript
@@ -98,7 +158,7 @@ export function isNodeError(v: unknown): v is NodeJS.ErrnoException {
 export function isEnoentError(
   v: unknown,
 ): v is NodeJS.ErrnoException & { code: "ENOENT" } {
-  return isNodeError(v) && v.code === "ENOENT";
+  return readErrnoCode(v) === "ENOENT";
 }
 
 /**
