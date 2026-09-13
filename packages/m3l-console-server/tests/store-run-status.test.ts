@@ -22,7 +22,7 @@
  */
 import { describe, expect, expectTypeOf, test } from "vitest";
 
-import type { Core } from "@m3l-automation/m3l-common";
+import type { Core } from "@monte3l/m3l-common";
 
 import {
   isRunStatus,

@@ -17,7 +17,7 @@
  * @packageDocumentation
  */
 
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 import type { M3LConsoleConfig } from "../config/env.js";
 import type { M3LDrainOutcome } from "../lifecycle/drain.js";

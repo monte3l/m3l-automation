@@ -112,7 +112,7 @@
 
 import * as fs from "node:fs";
 
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 import { errnoCodeOf } from "../errors/errno.js";
 import type { M3LTelemetryRecorder } from "./port.js";

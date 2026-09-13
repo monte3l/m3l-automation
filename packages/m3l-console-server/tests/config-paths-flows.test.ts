@@ -24,7 +24,7 @@ import * as path from "node:path";
 
 import { describe, expect, expectTypeOf, test } from "vitest";
 
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 import { M3LConsoleError } from "../src/errors/console-error.js";
 import { resolveFlowsDirectory } from "../src/config/paths.js";

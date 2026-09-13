@@ -117,7 +117,7 @@ import * as path from "node:path";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import type { MockInstance } from "vitest";
 
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 import type {
   M3LTelemetryRecorder,

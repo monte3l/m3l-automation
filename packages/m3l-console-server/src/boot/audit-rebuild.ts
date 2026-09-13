@@ -34,7 +34,7 @@
  * @packageDocumentation
  */
 
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 import type { M3LHumanActionRecord } from "../audit/record.js";
 import { projectHumanActionRecord } from "../audit/record.js";

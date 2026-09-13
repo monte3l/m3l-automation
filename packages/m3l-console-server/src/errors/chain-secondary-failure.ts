@@ -45,7 +45,7 @@
  *
  * @example
  * ```ts
- * import { M3LError } from "@m3l-automation/m3l-common/core";
+ * import { M3LError } from "@monte3l/m3l-common/core";
  *
  * try {
  *   riskyCleanup();

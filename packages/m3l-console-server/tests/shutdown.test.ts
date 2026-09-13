@@ -15,7 +15,7 @@
  */
 import { afterEach, describe, expect, expectTypeOf, test, vi } from "vitest";
 
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 import { createShutdown } from "../src/lifecycle/shutdown.js";
 import type {

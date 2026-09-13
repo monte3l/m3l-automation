@@ -42,7 +42,7 @@ import * as path from "node:path";
 
 import { describe, expect, test } from "vitest";
 
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 import { createConsoleRuntime } from "../src/main.js";
 import type { M3LConsoleRuntimeOptions } from "../src/main.js";

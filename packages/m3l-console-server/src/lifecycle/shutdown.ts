@@ -14,7 +14,7 @@
  * @packageDocumentation
  */
 
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 import type { M3LDrainController, M3LDrainOutcome } from "./drain.js";
 import type { M3LListeningServer } from "./http-server.js";

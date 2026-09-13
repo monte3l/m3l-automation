@@ -22,7 +22,7 @@
  */
 import { afterEach, describe, expect, test, vi } from "vitest";
 
-import type * as M3LCommonModule from "@m3l-automation/m3l-common";
+import type * as M3LCommonModule from "@monte3l/m3l-common";
 
 // Partial mock: only the three step-reference functions become `vi.fn()`s
 // (each defaulting to the REAL implementation, so unmocked calls behave
@@ -30,7 +30,7 @@ import type * as M3LCommonModule from "@m3l-automation/m3l-common";
 // `M3LError`/`M3LStepReferenceError` classes used for `instanceof` checks —
 // passes through untouched. Scoped this narrowly so it cannot bleed into
 // any other collaborator this suite or the module under test reaches.
-vi.mock("@m3l-automation/m3l-common", async (importOriginal) => {
+vi.mock("@monte3l/m3l-common", async (importOriginal) => {
   const actual = await importOriginal<typeof M3LCommonModule>();
   return {
     ...actual,
@@ -43,7 +43,7 @@ vi.mock("@m3l-automation/m3l-common", async (importOriginal) => {
   };
 });
 
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 import { M3LConsoleError } from "../src/errors/console-error.js";
 import {

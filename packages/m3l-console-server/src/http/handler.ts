@@ -10,7 +10,7 @@
 import { randomUUID } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
 
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 import { logDiagnosticIfFault } from "./access-log.js";
 import type { RequestFaultContext } from "./access-log.js";

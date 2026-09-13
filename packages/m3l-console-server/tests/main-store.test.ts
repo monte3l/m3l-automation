@@ -28,7 +28,7 @@ import type { AddressInfo } from "node:net";
 
 import { afterEach, describe, expect, test, vi } from "vitest";
 
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 import { createConsoleRuntime, startConsole } from "../src/main.js";
 import type { M3LConsoleRuntime, StartConsoleOptions } from "../src/main.js";

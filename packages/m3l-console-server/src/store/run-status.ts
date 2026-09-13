@@ -22,7 +22,7 @@
  * @packageDocumentation
  */
 
-import type { Core } from "@m3l-automation/m3l-common";
+import type { Core } from "@monte3l/m3l-common";
 
 /**
  * A run that has not yet reached a terminal outcome: queued for execution,

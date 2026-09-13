@@ -30,7 +30,7 @@
 
 import { randomUUID } from "node:crypto";
 
-import type { Core } from "@m3l-automation/m3l-common";
+import type { Core } from "@monte3l/m3l-common";
 
 import type { M3LConsoleRunsConfig } from "./config/runs.js";
 import { tryLoadRunsConfig } from "./config/runs.js";
@@ -228,7 +228,7 @@ function buildSessionSubsystem(
  *
  * @example
  * ```ts
- * import { Core } from "@m3l-automation/m3l-common";
+ * import { Core } from "@monte3l/m3l-common";
  * import { buildConsoleSubsystems } from "./subsystems.js";
  *
  * const subsystems = buildConsoleSubsystems(

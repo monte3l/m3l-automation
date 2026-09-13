@@ -274,7 +274,7 @@ const hasConsoleServerImportBoundary = config.some((block) => {
     patterns.some(
       (pattern) =>
         typeof pattern?.regex === "string" &&
-        pattern.regex.includes("@m3l-automation/m3l-common") &&
+        pattern.regex.includes("@monte3l/m3l-common") &&
         pattern.regex.includes("node:") &&
         pattern.allowTypeImports === false,
     )

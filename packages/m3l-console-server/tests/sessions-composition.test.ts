@@ -27,7 +27,7 @@
  */
 import { describe, expect, test, vi } from "vitest";
 
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 import { createSessionSubsystem } from "../src/sessions/composition.js";
 import type {

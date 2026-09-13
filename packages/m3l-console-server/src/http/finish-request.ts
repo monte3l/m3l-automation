@@ -9,7 +9,7 @@
 
 import type { ServerResponse } from "node:http";
 
-import type { Core } from "@m3l-automation/m3l-common";
+import type { Core } from "@monte3l/m3l-common";
 
 import { logOutcome } from "./access-log.js";
 import type { RequestFaultContext } from "./access-log.js";

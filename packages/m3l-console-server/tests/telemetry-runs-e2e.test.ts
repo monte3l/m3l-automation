@@ -56,7 +56,7 @@ import * as path from "node:path";
 
 import { afterEach, describe, expect, test, vi } from "vitest";
 
-import type { Core } from "@m3l-automation/m3l-common";
+import type { Core } from "@monte3l/m3l-common";
 
 import { createConsoleRuntime } from "../src/main.js";
 import type { M3LConsoleRuntime } from "../src/main.js";

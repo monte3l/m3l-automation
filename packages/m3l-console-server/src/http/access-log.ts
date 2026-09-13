@@ -8,7 +8,7 @@
  * @packageDocumentation
  */
 
-import type { Core } from "@m3l-automation/m3l-common";
+import type { Core } from "@monte3l/m3l-common";
 
 import { isFaultError } from "./envelope.js";
 import type { M3LRouteAuth } from "./router.js";

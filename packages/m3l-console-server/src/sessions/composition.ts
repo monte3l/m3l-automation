@@ -22,7 +22,7 @@
  * @packageDocumentation
  */
 
-import type { Core } from "@m3l-automation/m3l-common";
+import type { Core } from "@monte3l/m3l-common";
 
 import { createSessionArtifactStore } from "./artifacts.js";
 import type { CreateSessionArtifactStoreOptions } from "./artifacts.js";
@@ -41,7 +41,7 @@ import type { M3LConsoleSessionsRepository } from "../store/sessions-repository.
  *
  * @example
  * ```ts
- * import { Core } from "@m3l-automation/m3l-common";
+ * import { Core } from "@monte3l/m3l-common";
  * import type { M3LSessionSubsystemOptions } from "@m3l-automation/m3l-console-server/sessions/composition.js";
  * import type { M3LConsoleSessionsRepository } from "@m3l-automation/m3l-console-server/store/sessions-repository.js";
  * import type { M3LSessionRunLauncherPort } from "@m3l-automation/m3l-console-server/sessions/ports.js";
@@ -136,7 +136,7 @@ export interface M3LSessionSubsystem {
  *
  * @example
  * ```ts
- * import { Core } from "@m3l-automation/m3l-common";
+ * import { Core } from "@monte3l/m3l-common";
  * import { createSessionSubsystem } from "@m3l-automation/m3l-console-server/sessions/composition.js";
  * import type { M3LConsoleSessionsRepository } from "@m3l-automation/m3l-console-server/store/sessions-repository.js";
  * import type { M3LSessionRunLauncherPort } from "@m3l-automation/m3l-console-server/sessions/ports.js";

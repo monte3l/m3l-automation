@@ -36,7 +36,7 @@ import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 import { M3LConsoleError } from "../src/errors/console-error.js";
 import { createScriptCatalog } from "../src/runs/descriptors.js";

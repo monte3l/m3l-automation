@@ -19,7 +19,7 @@ import { mkdtemp, mkdir, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 
 import { M3LConsoleError } from "../src/errors/console-error.js";

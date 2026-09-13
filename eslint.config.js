@@ -581,7 +581,7 @@ export default tseslint.config(
   },
   {
     // The console server carries the same source-level dependency boundary as
-    // the m3l CLI: @m3l-automation/m3l-common (or a subpath) and node:
+    // the m3l CLI: @monte3l/m3l-common (or a subpath) and node:
     // builtins, nothing else. ADR-0065 chose a hand-rolled node:http router
     // over a routing framework precisely to keep this budget minimal, and
     // recorded adopting one as an explicit fallback rather than a free
@@ -593,10 +593,10 @@ export default tseslint.config(
         {
           patterns: [
             {
-              regex: "^(?!\\.)(?!node:)(?!@m3l-automation/m3l-common($|/)).+$",
+              regex: "^(?!\\.)(?!node:)(?!@monte3l/m3l-common($|/)).+$",
               allowTypeImports: false,
               message:
-                "The console server may only import @m3l-automation/m3l-common (or a subpath) and node: builtins — ADR-0065 keeps its dependency budget minimal. Adopting the recorded routing-framework fallback requires widening this zone in the same PR as a dated ADR-0065 Update.",
+                "The console server may only import @monte3l/m3l-common (or a subpath) and node: builtins — ADR-0065 keeps its dependency budget minimal. Adopting the recorded routing-framework fallback requires widening this zone in the same PR as a dated ADR-0065 Update.",
             },
           ],
         },
@@ -680,14 +680,14 @@ export default tseslint.config(
               from: "./packages/m3l-console-server/src",
               except: ["net"],
               message:
-                "console-server: net/ is a layering leaf — it may import @m3l-automation/m3l-common and node: builtins only, never another console-server module (ADR-0065). It holds pure network-address predicates that config/, lifecycle/ and http/ all need.",
+                "console-server: net/ is a layering leaf — it may import @monte3l/m3l-common and node: builtins only, never another console-server module (ADR-0065). It holds pure network-address predicates that config/, lifecycle/ and http/ all need.",
             },
             {
               target: "./packages/m3l-console-server/src/errors",
               from: "./packages/m3l-console-server/src",
               except: ["errors"],
               message:
-                "console-server: errors/ is the layering leaf — it may import @m3l-automation/m3l-common and node: builtins only, never another console-server module (ADR-0065).",
+                "console-server: errors/ is the layering leaf — it may import @monte3l/m3l-common and node: builtins only, never another console-server module (ADR-0065).",
             },
             {
               target: "./packages/m3l-console-server/src/config",
@@ -722,7 +722,7 @@ export default tseslint.config(
               from: "./packages/m3l-console-server/src",
               except: ["stream", "errors", "telemetry"],
               message:
-                "console-server: stream/ is a layering leaf — it may import @m3l-automation/m3l-common, node: builtins and errors/ only (ADR-0065, ADR-0066). It is generic over its payload type and must never import node:http, store/ or runs/: runs/ publishes into it and http/ serves it, so any edge out of stream/ would drag transport and orchestration into each other.",
+                "console-server: stream/ is a layering leaf — it may import @monte3l/m3l-common, node: builtins and errors/ only (ADR-0065, ADR-0066). It is generic over its payload type and must never import node:http, store/ or runs/: runs/ publishes into it and http/ serves it, so any edge out of stream/ would drag transport and orchestration into each other.",
             },
             {
               target: "./packages/m3l-console-server/src/runs",
@@ -784,7 +784,7 @@ export default tseslint.config(
     // `globals.node` the no-cycle zone below sets for every tsc-only package,
     // and it may not import a `node:` builtin at all (the inverse of the
     // m3l-cli/console-server zones above, which ban everything EXCEPT
-    // `node:` and `@m3l-automation/m3l-common`).
+    // `node:` and `@monte3l/m3l-common`).
     files: [
       "packages/m3l-console-web/src/**/*.{ts,tsx}",
       "packages/m3l-console-web/tests/**/*.{ts,tsx}",

@@ -46,7 +46,7 @@ import type { ServerResponse } from "node:http";
 
 import { afterEach, describe, expect, test, vi } from "vitest";
 
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 import { encodeSseFrame, encodeSseRetry } from "../src/http/sse.js";
 import type {
