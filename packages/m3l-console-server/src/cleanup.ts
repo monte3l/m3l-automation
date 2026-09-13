@@ -20,7 +20,7 @@
  */
 
 import { M3LConsoleError } from "./errors/console-error.js";
-import { errnoCodeOf } from "./errors/errno.js";
+import { underlyingErrnoCodeOf } from "./errors/errno.js";
 import { loadRetentionConfig } from "./config/retention.js";
 import { loadTelemetryConfig } from "./config/telemetry.js";
 import type { M3LConsoleTelemetryConfig } from "./config/telemetry.js";
@@ -162,8 +162,9 @@ function inRunOrder(results: CleanupResults): readonly DriverResult<unknown>[] {
 /**
  * Narrow per-driver failure published in a thrown error's `context.failures`,
  * mirroring `AccumulatedFailure<T>` in `retention-walk.ts`. No absolute path
- * appears here — only the driver identity and the error code/errno extracted
- * from the caught value.
+ * appears here — only the driver identity, the caught value's
+ * `M3LConsoleError` code when present, and the errno found by walking the
+ * cause chain to the first non-`Core.M3LError` (see `underlyingErrnoCodeOf`).
  */
 interface CleanupDriverFailure {
   /** Which driver failed. */
@@ -174,15 +175,15 @@ interface CleanupDriverFailure {
    */
   readonly code: string | undefined;
   /**
-   * The caught value's own `code` property; `undefined` when not present.
-   * This is a raw Node errno (e.g. `"EACCES"`) only when the driver threw an
-   * unwrapped `fs` error. A driver that wraps its errors (e.g. `auditTrail`,
+   * The own `code` of the first non-`Core.M3LError` `Error` in the caught
+   * value's `cause` chain (see `underlyingErrnoCodeOf`); `undefined` when
+   * that error has no qualifying own `code`. For a driver that throws an
+   * unwrapped `fs` error directly, this is that error's own Node errno (e.g.
+   * `"ENOTDIR"`). For a driver that wraps its errors (e.g. `auditTrail`,
    * which turns a Node error into `M3LAppendOnlyStreamReadError` and then
-   * `M3LConsoleError`) puts its own `M3LError` code here instead — duplicating
-   * {@link CleanupDriverFailure.code} — because `errnoCodeOf` reads only the
-   * caught value's own `code` and does not walk the `cause` chain. The
-   * underlying Node errno, when there is one, then survives only on the
-   * chained `cause`.
+   * `M3LConsoleError`), this walks past every wrapping `Core.M3LError` layer
+   * to the underlying failure's own code (e.g. `"ERR_SQLITE_ERROR"` for a
+   * store failure) rather than duplicating {@link CleanupDriverFailure.code}.
    */
   readonly errno: string | undefined;
 }
@@ -216,13 +217,35 @@ async function runAsync<T>(
   }
 }
 
+/**
+ * A caught value's `M3LConsoleError` code, or `undefined` when it is not one
+ * — never throwing.
+ *
+ * `instanceof M3LConsoleError` walks the value's prototype chain, which can
+ * throw for a hostile value (e.g. a Proxy whose `getPrototypeOf` trap
+ * throws) exactly like the `instanceof` checks {@link underlyingErrnoCodeOf}
+ * guards against (X8c review finding, issue #1058 follow-up). This is a
+ * failure-REPORTING path — a hostile `cause` on the driver that already
+ * failed must not replace or interrupt `runCleanup`'s own
+ * `M3LConsoleError("ERR_CONSOLE_INTERNAL")` — so returning `undefined` here
+ * is safe: it degrades the reported `code`, not the outcome.
+ */
+function consoleErrorCodeOf(cause: unknown): string | undefined {
+  try {
+    return cause instanceof M3LConsoleError ? cause.code : undefined;
+  } catch {
+    // A hostile cause's instanceof check threw — nothing further safe to
+    // read from it; report no code rather than let the throw escape.
+    return undefined;
+  }
+}
+
 /** Narrows one {@link DriverFail} into the published {@link CleanupDriverFailure} shape. */
 function toCleanupFailure(result: DriverFail): CleanupDriverFailure {
   return {
     driver: result.driver,
-    code:
-      result.cause instanceof M3LConsoleError ? result.cause.code : undefined,
-    errno: errnoCodeOf(result.cause),
+    code: consoleErrorCodeOf(result.cause),
+    errno: underlyingErrnoCodeOf(result.cause),
   };
 }
 
@@ -248,9 +271,10 @@ function buildDriverFailureContext(results: CleanupResults): {
   const firstCause: unknown = failures[0]?.cause;
 
   // Successful drivers' outcomes — present so the caller knows what
-  // completed. Keying off `result.driver` is safe: DriverName's three
-  // values ("telemetry", "runOutputs", "sessionArtifacts") are exactly the
-  // keys `M3LConsoleCleanupOutcome` and this context object already use.
+  // completed. Keying off `result.driver` is safe: DriverName's four
+  // values ("telemetry", "runOutputs", "sessionArtifacts", "auditTrail") are
+  // exactly the keys `M3LConsoleCleanupOutcome` and this context object
+  // already use.
   const context: Record<string, unknown> = {};
   for (const result of ordered) {
     if (result.ok) context[result.driver] = result.outcome;
@@ -269,7 +293,7 @@ function buildDriverFailureContext(results: CleanupResults): {
  * - `bestEffort === true`: a close() failure is swallowed — the driver error
  *   that already occurred is the real signal, and a close() failure on top of
  *   it is noise.
- * - `bestEffort === false`: all three drivers succeeded, so a close() failure
+ * - `bestEffort === false`: all four sections succeeded, so a close() failure
  *   is a genuine fault the supervisor must see; it is raised as
  *   {@link M3LConsoleError} with code `"ERR_CONSOLE_INTERNAL"`.
  *
@@ -320,7 +344,9 @@ function anyDriverFailed(results: CleanupResults): boolean {
  * project's cyclomatic-complexity limit.
  *
  * **`context` never contains an absolute root path** — only the count/flag
- * objects the three retention drivers return, which carry no path strings.
+ * objects each successful driver returns (including the audit-trail
+ * observation outcome), plus `context.failures`, whose entries carry only a
+ * driver name, `code`, and `errno` — none of them path strings.
  * **`context.failures` mirrors `AccumulatedFailure<T>` in
  * `retention-walk.ts`**: a second simultaneous failure is never lost.
  */
@@ -453,8 +479,8 @@ function resolveCleanupConfig(env: NodeJS.ProcessEnv): ResolvedCleanupConfig {
  * @returns The combined {@link M3LConsoleCleanupOutcome}.
  * @throws {@link M3LConsoleError} with code `"ERR_CONSOLE_INTERNAL"` when
  *   one or more sections fail; `context.failures` lists each failed
- *   section's name and error code, and `context` also carries each
- *   successful section's outcome. When all four sections succeed but
+ *   section's driver name, `code`, and `errno`, and `context` also carries
+ *   each successful section's outcome. When all four sections succeed but
  *   `store.close()` subsequently throws, this code is also raised with the
  *   close failure as `cause`.
  * @throws {@link M3LConsoleError} with code `"ERR_CONSOLE_CONFIG_INVALID"`

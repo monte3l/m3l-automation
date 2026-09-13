@@ -13,8 +13,10 @@ const subcommand = process.argv[2];
 
 if (subcommand === "cleanup") {
   // Operator-triggered retention sweep (ADR-0070 slice 5c). Orchestration
-  // lives entirely in `src/cleanup.ts`; this branch only prints the outcome
-  // or the failure message, matching the wrapper's existing failure convention.
+  // lives entirely in `src/cleanup.ts`; this branch prints the outcome, or
+  // on failure the failure message followed by one line per
+  // `context.failures` entry, matching the wrapper's existing failure
+  // convention.
   const { runCleanup } = await import("../dist/cleanup.js");
   try {
     const outcome = await runCleanup();
@@ -24,6 +26,36 @@ if (subcommand === "cleanup") {
       `m3l-console-server cleanup: ${error instanceof Error ? error.message : String(error)}\n`,
     );
     process.exitCode = 1;
+    // Print only `driver`/`code`/`errno` from each `context.failures` entry
+    // — never the rest of `context`, and never `cause` — because a chained
+    // `cause`'s own `.message` may embed an absolute path, and cleanup's
+    // contract is that no path reaches stderr. Wrapped in its own try/catch:
+    // `context` is a caught value's property, so a hostile shape (a throwing
+    // getter, a Proxy) must not throw here and replace the clean
+    // `cleanup: <message>` line already written above with a raw stack — the
+    // exit code is already set, so stopping silently is a safe fallback.
+    try {
+      const field = (value) => (typeof value === "string" ? value : "-");
+      if (
+        typeof error === "object" &&
+        error !== null &&
+        "context" in error &&
+        typeof error.context === "object" &&
+        error.context !== null &&
+        "failures" in error.context &&
+        Array.isArray(error.context.failures)
+      ) {
+        for (const failure of error.context.failures) {
+          process.stderr.write(
+            `  ${field(failure?.driver)}: code=${field(failure?.code)} errno=${field(failure?.errno)}\n`,
+          );
+        }
+      }
+    } catch {
+      // A hostile `context` shape must not escalate a reporting failure into
+      // an uncaught throw — the `cleanup: <message>` line and exit code 1 are
+      // already in place, so there is nothing left to safely add.
+    }
   }
 } else if (subcommand !== undefined) {
   // An unknown subcommand must not silently start the long-running server —
