@@ -51,14 +51,14 @@
       },
       {
         "path": "pnpm-lock.yaml",
-        "blob": "17681408a470df9b9ec8bebc122f7e5bdb04f30d"
+        "blob": "388e0a89ab97f78252f4e8e4d7991573800e600b"
       },
       {
         "path": "turbo.json",
         "blob": "d2b88dbb4423408a33153335c055b088c6fd628a"
       }
     ],
-    "verifiedAt": "2026-09-12"
+    "verifiedAt": "2026-09-13"
   },
   "0002": {
     "sourceFiles": [
@@ -68,14 +68,14 @@
       },
       {
         "path": "packages/m3l-common/package.json",
-        "blob": "9bd07e00bdfbd94cce74f474c756eec6e7a62bb9"
+        "blob": "9779a35226bc02566f748808934907a9943040df"
       },
       {
         "path": "tsconfig.base.json",
         "blob": "35cb899531dae08c630295c4d0b25cc783d1c50f"
       }
     ],
-    "verifiedAt": "2026-09-12"
+    "verifiedAt": "2026-09-13"
   },
   "0003": {
     "sourceFiles": [
@@ -125,14 +125,14 @@
       },
       {
         "path": "packages/m3l-common/package.json",
-        "blob": "9bd07e00bdfbd94cce74f474c756eec6e7a62bb9"
+        "blob": "9779a35226bc02566f748808934907a9943040df"
       },
       {
         "path": "packages/m3l-console-server/tests/stream-writer.test.ts",
-        "blob": "f7f20de5e8551589d0521f50b71e9e9fa544d312"
+        "blob": "9570a94c12c169bd9847dbf1154573dabe0f5321"
       }
     ],
-    "verifiedAt": "2026-09-12"
+    "verifiedAt": "2026-09-13"
   },
   "0004": {
     "sourceFiles": [
@@ -158,7 +158,7 @@
       },
       {
         "path": "packages/m3l-common/package.json",
-        "blob": "9bd07e00bdfbd94cce74f474c756eec6e7a62bb9"
+        "blob": "9779a35226bc02566f748808934907a9943040df"
       },
       {
         "path": "packages/m3l-console-web/src/errors/console-web-error.ts",
@@ -169,7 +169,7 @@
         "blob": "35cb899531dae08c630295c4d0b25cc783d1c50f"
       }
     ],
-    "verifiedAt": "2026-09-12"
+    "verifiedAt": "2026-09-13"
   },
   "0005": {
     "sourceFiles": [
@@ -200,10 +200,10 @@
       },
       {
         "path": "packages/m3l-common/package.json",
-        "blob": "9bd07e00bdfbd94cce74f474c756eec6e7a62bb9"
+        "blob": "9779a35226bc02566f748808934907a9943040df"
       }
     ],
-    "verifiedAt": "2026-09-12"
+    "verifiedAt": "2026-09-13"
   },
   "0007": {
     "sourceFiles": [
@@ -302,7 +302,7 @@
       },
       {
         "path": "docs/reference/catalog.json",
-        "blob": "214c8bd38f8c6cdaa00040c8408d22bc0268f06f"
+        "blob": "59ba9c77b1be8ab8b419a6c7ce8df7359dbaffcc"
       },
       {
         "path": "docs/reference/README.md",
@@ -310,10 +310,10 @@
       },
       {
         "path": "docs/reference/symbol-map.json",
-        "blob": "c56222f25b6a5584008eb2ec8fb39ac62dfcc297"
+        "blob": "940554aebf1abb4649a86ed2a240269c56a88dca"
       }
     ],
-    "verifiedAt": "2026-09-08"
+    "verifiedAt": "2026-09-13"
   },
   "0013": {
     "sourceFiles": [
@@ -609,14 +609,14 @@
       },
       {
         "path": "docs/reference/catalog.json",
-        "blob": "214c8bd38f8c6cdaa00040c8408d22bc0268f06f"
+        "blob": "59ba9c77b1be8ab8b419a6c7ce8df7359dbaffcc"
       },
       {
         "path": "docs/reference/symbol-map.json",
-        "blob": "c56222f25b6a5584008eb2ec8fb39ac62dfcc297"
+        "blob": "940554aebf1abb4649a86ed2a240269c56a88dca"
       }
     ],
-    "verifiedAt": "2026-09-12"
+    "verifiedAt": "2026-09-13"
   },
   "0024": {
     "sourceFiles": [
@@ -674,7 +674,7 @@
       },
       {
         "path": "docs/reference/catalog.json",
-        "blob": "214c8bd38f8c6cdaa00040c8408d22bc0268f06f"
+        "blob": "59ba9c77b1be8ab8b419a6c7ce8df7359dbaffcc"
       },
       {
         "path": "docs/reference/provenance.schema.json",
@@ -686,7 +686,7 @@
       },
       {
         "path": "docs/reference/symbol-map.json",
-        "blob": "c56222f25b6a5584008eb2ec8fb39ac62dfcc297"
+        "blob": "940554aebf1abb4649a86ed2a240269c56a88dca"
       },
       {
         "path": "docs/ROADMAP.md",
@@ -694,10 +694,10 @@
       },
       {
         "path": "pnpm-lock.yaml",
-        "blob": "17681408a470df9b9ec8bebc122f7e5bdb04f30d"
+        "blob": "388e0a89ab97f78252f4e8e4d7991573800e600b"
       }
     ],
-    "verifiedAt": "2026-09-12"
+    "verifiedAt": "2026-09-13"
   },
   "0025": {
     "sourceFiles": [
@@ -815,7 +815,7 @@
       },
       {
         "path": "docs/plans/2026-09-12-u13-registry-publish.md",
-        "blob": "bd347baf47eec921389eb6f20a467910c931b812"
+        "blob": "008fa531240dabe1c2440f4fa3efc385cb75862a"
       },
       {
         "path": "docs/ROADMAP.md",
@@ -1043,7 +1043,7 @@
       },
       {
         "path": "packages/m3l-common/package.json",
-        "blob": "9bd07e00bdfbd94cce74f474c756eec6e7a62bb9"
+        "blob": "9779a35226bc02566f748808934907a9943040df"
       },
       {
         "path": "packages/m3l-common/src/aws/clients/provider.ts",
@@ -1106,10 +1106,10 @@
       },
       {
         "path": "packages/m3l-common/package.json",
-        "blob": "9bd07e00bdfbd94cce74f474c756eec6e7a62bb9"
+        "blob": "9779a35226bc02566f748808934907a9943040df"
       }
     ],
-    "verifiedAt": "2026-09-12"
+    "verifiedAt": "2026-09-13"
   },
   "0037": {
     "sourceFiles": [
@@ -1123,14 +1123,14 @@
       },
       {
         "path": "packages/m3l-common/package.json",
-        "blob": "9bd07e00bdfbd94cce74f474c756eec6e7a62bb9"
+        "blob": "9779a35226bc02566f748808934907a9943040df"
       },
       {
         "path": "pnpm-workspace.yaml",
         "blob": "5d5debd51048ec86c9d57a331a2e55e0e92fe0c2"
       }
     ],
-    "verifiedAt": "2026-09-12"
+    "verifiedAt": "2026-09-13"
   },
   "0038": {
     "sourceFiles": [
@@ -1326,7 +1326,7 @@
     "sourceFiles": [
       {
         "path": "bin/check-eslint-zones.mjs",
-        "blob": "c8b65df5cab3e2dcb8881f9857d17ab2b3909fe5"
+        "blob": "6e8a6f825404e746e763729913abaafe4c162e80"
       },
       {
         "path": "docs/reference/aws/cloudformation.md",
@@ -1361,7 +1361,7 @@
         "blob": "b47f9d503307e281c82588bc1bd887107d351217"
       }
     ],
-    "verifiedAt": "2026-09-12"
+    "verifiedAt": "2026-09-13"
   },
   "0050": {
     "sourceFiles": [
@@ -1495,7 +1495,7 @@
     "sourceFiles": [
       {
         "path": "bin/check-eslint-zones.mjs",
-        "blob": "c8b65df5cab3e2dcb8881f9857d17ab2b3909fe5"
+        "blob": "6e8a6f825404e746e763729913abaafe4c162e80"
       },
       {
         "path": "packages/m3l-cli/src/run/spawn.ts",
@@ -1506,7 +1506,7 @@
         "blob": "ce7a512e81caf80a6164321b8af75d195d7b7161"
       }
     ],
-    "verifiedAt": "2026-09-12"
+    "verifiedAt": "2026-09-13"
   },
   "0056": {
     "sourceFiles": [
@@ -1516,7 +1516,7 @@
       },
       {
         "path": "docs/plans/2026-08-20-m3l-console.md",
-        "blob": "378b6e98f9b95d1e3df162b6ce23346d6ebc17c2"
+        "blob": "5307e54662784e6ee6b96ba82b3baf19f0d636ea"
       },
       {
         "path": "docs/plans/IMPLEMENTATION.md",
@@ -1603,7 +1603,7 @@
     "sourceFiles": [
       {
         "path": "docs/plans/2026-08-20-m3l-console.md",
-        "blob": "378b6e98f9b95d1e3df162b6ce23346d6ebc17c2"
+        "blob": "5307e54662784e6ee6b96ba82b3baf19f0d636ea"
       },
       {
         "path": "docs/plans/IMPLEMENTATION.md",
@@ -1616,10 +1616,10 @@
     "sourceFiles": [
       {
         "path": "docs/reference/console.md",
-        "blob": "6278edf3465e6fb94e2fa56708f131c7b25c0212"
+        "blob": "788f4fa84f572f3d2f7879505223f3269a64bf9b"
       }
     ],
-    "verifiedAt": "2026-09-12"
+    "verifiedAt": "2026-09-13"
   },
   "0067": {
     "sourceFiles": [
@@ -1642,7 +1642,7 @@
     "sourceFiles": [
       {
         "path": "docs/plans/2026-08-20-m3l-console.md",
-        "blob": "378b6e98f9b95d1e3df162b6ce23346d6ebc17c2"
+        "blob": "5307e54662784e6ee6b96ba82b3baf19f0d636ea"
       },
       {
         "path": "docs/plans/IMPLEMENTATION.md",
@@ -1650,7 +1650,7 @@
       },
       {
         "path": "docs/reference/console.md",
-        "blob": "6278edf3465e6fb94e2fa56708f131c7b25c0212"
+        "blob": "788f4fa84f572f3d2f7879505223f3269a64bf9b"
       },
       {
         "path": "packages/m3l-cli/src/flow/types.ts",
@@ -1671,7 +1671,7 @@
       },
       {
         "path": "docs/reference/console.md",
-        "blob": "6278edf3465e6fb94e2fa56708f131c7b25c0212"
+        "blob": "788f4fa84f572f3d2f7879505223f3269a64bf9b"
       },
       {
         "path": "docs/ROADMAP.md",
@@ -1679,10 +1679,10 @@
       },
       {
         "path": "packages/m3l-common/package.json",
-        "blob": "9bd07e00bdfbd94cce74f474c756eec6e7a62bb9"
+        "blob": "9779a35226bc02566f748808934907a9943040df"
       }
     ],
-    "verifiedAt": "2026-09-12"
+    "verifiedAt": "2026-09-13"
   },
   "0071": {
     "sourceFiles": [
@@ -1773,7 +1773,7 @@
       },
       {
         "path": "docs/reference/catalog.json",
-        "blob": "214c8bd38f8c6cdaa00040c8408d22bc0268f06f"
+        "blob": "59ba9c77b1be8ab8b419a6c7ce8df7359dbaffcc"
       },
       {
         "path": "docs/reference/core/procedure.md",
@@ -1792,7 +1792,7 @@
         "blob": "fafc364ac36bf90fd945cda2ecf2324f130da87b"
       }
     ],
-    "verifiedAt": "2026-09-12"
+    "verifiedAt": "2026-09-13"
   },
   "0073": {
     "sourceFiles": [
@@ -2142,14 +2142,14 @@
       },
       {
         "path": "packages/m3l-cli/src/commands/dynamic-argv.ts",
-        "blob": "30cc65e4e45ec3184f829ac1c6e0026a72a3941a"
+        "blob": "dc5eefc0b4219700fa8ba863027e7da05004a297"
       },
       {
         "path": "packages/m3l-cli/src/run/spawn.ts",
         "blob": "a554f625f8d023da5f84fa376e7d3853bb72b2e7"
       }
     ],
-    "verifiedAt": "2026-09-12"
+    "verifiedAt": "2026-09-13"
   },
   "0086": {
     "sourceFiles": [
@@ -2589,11 +2589,11 @@
       },
       {
         "path": "packages/m3l-common/tests/storage-append-only-segments-listing.test.ts",
-        "blob": "a81c1926a74bb0ad0c2810660b30efb21cbb4d13"
+        "blob": "1e8dad20fd062d493a494495c8be38bb06174676"
       },
       {
         "path": "packages/m3l-console-server/tests/integration/handler.integration.test.ts",
-        "blob": "4e52e119e3fcb561b40c0e7968f89dd938d59f5f"
+        "blob": "8b70860396eef4e52481c73435103251db2fad92"
       },
       {
         "path": "packages/m3l-console-server/tests/integration/store.integration.test.ts",
@@ -2604,7 +2604,7 @@
         "blob": "eaf1052dd67488b727f6241d2bd2d1fd3abda8dc"
       }
     ],
-    "verifiedAt": "2026-09-12"
+    "verifiedAt": "2026-09-13"
   },
   "0101": {
     "sourceFiles": [
@@ -2622,14 +2622,14 @@
       },
       {
         "path": "packages/m3l-cli/src/flow/preflight.ts",
-        "blob": "1dba7d00712fc1e519480d1fe0d34cdaf98db33d"
+        "blob": "91723509ee75ba2e9865555782fa97ccc8187e42"
       },
       {
         "path": "scripts/agent-operator/src/lib/flow-definitions.ts",
         "blob": "34b7992f64c393bab2d5f25e422744eda958f823"
       }
     ],
-    "verifiedAt": "2026-09-12"
+    "verifiedAt": "2026-09-13"
   },
   "0102": {
     "sourceFiles": [
@@ -2639,11 +2639,11 @@
       },
       {
         "path": "docs/plans/2026-08-20-m3l-console.md",
-        "blob": "378b6e98f9b95d1e3df162b6ce23346d6ebc17c2"
+        "blob": "5307e54662784e6ee6b96ba82b3baf19f0d636ea"
       },
       {
         "path": "packages/m3l-console-server/src/boot/audit-rebuild.ts",
-        "blob": "f2d496b3a7a60ab9e7229cd8707453522255695a"
+        "blob": "0a2690fcc0df90c3704b74b16e6d8feeffd34ce3"
       }
     ],
     "verifiedAt": "2026-09-13"
