@@ -2323,7 +2323,12 @@
   "M3LAppendOnlyStreamOptions": {
     "submodule": "storage",
     "namespace": "core",
-    "file": "packages/m3l-common/src/core/storage/M3LAppendOnlyStream.ts"
+    "file": "packages/m3l-common/src/core/storage/append-only-write-types.ts"
+  },
+  "M3LAppendOnlySealFailure": {
+    "submodule": "storage",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/storage/append-only-manifest-types.ts"
   },
   "M3LAppendOnlyEntry": {
     "submodule": "storage",

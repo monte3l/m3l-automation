@@ -56,6 +56,11 @@ import {
   corroborateClaim,
   measureSegment,
 } from "./append-only-seal-attempt.js";
+import {
+  DEFAULT_MAX_SEAL_ATTEMPTS,
+  DEFAULT_MAX_SWEEP_SEALS,
+  resolveSealerBound,
+} from "./append-only-sealer-types.js";
 import type {
   AppendOnlyRotatedSegment,
   AppendOnlySealFailure,
@@ -69,24 +74,8 @@ import {
 } from "./append-only-segments.js";
 import {
   baselineBoundaryKey,
-  isAtOrBeforeBaseline,
+  selectSweepCandidates,
 } from "./append-only-sweep-policy.js";
-
-/**
- * How many segments one instance's cold-start sweep may seal. A pathological
- * directory — a crashed process's whole backlog, or a trail nobody has run
- * the sealer against since an upgrade — must not turn one cold start into an
- * unbounded read on the append path.
- */
-const DEFAULT_MAX_SWEEP_SEALS = 64;
-
-/**
- * How many times one segment's seal is attempted before it is reported. More
- * than one because a transient `EIO`/`EAGAIN` on a single read should not cost
- * a proof; bounded because the append path is not the place to wait out a
- * filesystem that is genuinely down.
- */
-const DEFAULT_MAX_SEAL_ATTEMPTS = 3;
 
 /** Reported when a segment's directory inventory cannot be taken. */
 const LISTING_FAILURE_MESSAGE =
@@ -100,31 +89,12 @@ const FOREIGN_NAME_MESSAGE =
 const ROTATION_DISAGREEMENT_MESSAGE =
   "append-only stream: deferred a rotation seal — segment size disagrees with the writer's count";
 
-/** Re-exported for existing importers — see `./append-only-sealer-types.js`. */
-export type { AppendOnlySealFailure, AppendOnlySealerOptions };
-
 /**
- * Resolves one of the sealer's caller-overridable bounds: `override` when
- * it is a finite number, clamped up to `floor`; `fallback` when `override`
- * is `undefined` or not finite.
- *
- * **A malformed override must not silently disable what it bounds.**
- * `Math.max(floor, NaN)` is `NaN`, and a `NaN` reaching
- * `Array.prototype.slice(0, …)` yields an EMPTY list — the sweep silently
- * off — or a zero-iteration `for` loop bound, indistinguishable from
- * "already sealed". Once these two options reach the public surface a later
- * slice adds, the value is no longer library-controlled, so this is what
- * keeps a caller's typo from reading as success.
+ * Re-exported so every existing importer of this module keeps working
+ * unchanged — see `./append-only-sealer-types.js` for the definitions and
+ * their full TSDoc.
  */
-function resolveSealerBound(
-  override: number | undefined,
-  fallback: number,
-  floor: number,
-): number {
-  return override !== undefined && Number.isFinite(override)
-    ? Math.max(floor, override)
-    : fallback;
-}
+export type { AppendOnlySealFailure, AppendOnlySealerOptions };
 
 /**
  * Seals segments on the writer's behalf: the one the writer just rotated away
@@ -138,21 +108,13 @@ function resolveSealerBound(
  * truncate its read of exactly the segments that rotated on size — the common
  * case — and refuse to seal them (ADR-0102).
  *
- * **The sweep admits only a STRICTLY OLDER date prefix than
- * {@link "./append-only-segments.js".currentDatePrefix}.** The looser-looking
- * rule "today's segments below the highest sequence" is rejected outright:
- * writer A can sit at sequence 3 while writer B creates sequence 4, so B's
- * sweep would digest a prefix of a file A is still appending to — a false
- * positive on a tamper guard, the worst failure this design can have. The
- * strict rule is airtight instead, because `shouldRotate`'s date check forces
- * any conforming writer off a non-today segment on its next write and
- * `discoverActiveSegment` only ever adopts today's prefix.
- *
- * The sweep set is the on-disk inventory minus manifest-named, minus
- * at-or-before-baseline, minus today's date, oldest first and capped by
- * {@link "./append-only-sealer-types.js".AppendOnlySealerOptions.maxSweepSeals}. On a healthy trail that is
- * one manifest read and ZERO segment bytes re-read — a performance contract
- * the writer depends on, since this runs on the append path.
+ * The cold-start sweep's candidate rules — the strict-older-date admission,
+ * excluding the writer's own `active` segment by name, the `sealed` and
+ * baseline exclusions, and why the per-instance cap is applied to the
+ * candidate list before any candidate is opened — are
+ * {@link "./append-only-sweep-policy.js".selectSweepCandidates}'s to state,
+ * not this class's: they are a pure computation over the inventory, kept
+ * apart from every I/O step around it.
  *
  * Sealing NEVER throws; see this module's header for why, and
  * {@link AppendOnlySealer.sealAfterAppend} for the guard that holds it.
@@ -172,7 +134,14 @@ function resolveSealerBound(
  *     unsealed.add(segment);
  *   },
  * });
- * await sealer.sealAfterAppend({ rotatedFrom });
+ *
+ * // `rotatedFrom` is undefined when this append did not rotate; when it did,
+ * // it carries the rotated segment's name and what the writer believes it
+ * // holds. `active` is the segment this writer is appending to now.
+ * const rotatedFrom = rotatedSegmentName
+ *   ? { name: rotatedSegmentName, byteLength: rotatedSegmentByteLength }
+ *   : undefined;
+ * await sealer.sealAfterAppend({ rotatedFrom, active });
  * ```
  */
 export class AppendOnlySealer {
@@ -261,18 +230,25 @@ export class AppendOnlySealer {
    * append path is that there is nothing whatsoever to do.
    *
    * @param request - Whether this append rotated, and if so, the rotated
-   *   segment plus what the writer believes it holds — see
-   *   {@link "./append-only-sealer-types.js".AppendOnlySealRequest}. Ignores the sweep's
-   *   at-or-before-baseline filter (this module's header); guarded instead
-   *   by {@link AppendOnlySealer.#sealSegment}'s `expectedByteLength` check.
+   *   segment plus what the writer believes it holds (`rotatedFrom`), and
+   *   the segment this writer is appending to now (`active`) — see
+   *   {@link "./append-only-sealer-types.js".AppendOnlySealRequest}. A
+   *   rotation seal ignores the sweep's at-or-before-baseline filter (this
+   *   module's header); it is guarded instead by
+   *   {@link AppendOnlySealer.#sealSegment}'s `expectedByteLength` check. An
+   *   object rather than positional parameters: both fields ultimately name
+   *   a segment (`rotatedFrom.name`, `active`), so two positionals would
+   *   risk a call site transposing them — a swap here would make the sealer
+   *   digest the writer's own live segment while exempting a complete one
+   *   from the sweep, silently.
    */
   async sealAfterAppend(request: AppendOnlySealRequest): Promise<void> {
-    const { rotatedFrom } = request;
+    const { rotatedFrom, active } = request;
     if (rotatedFrom === undefined && this.#swept) {
       return;
     }
     try {
-      await this.#sealAndSweep(rotatedFrom);
+      await this.#sealAndSweep(rotatedFrom, active);
     } catch (cause) {
       // Manifest-level: nothing that reaches here is attributable to one
       // segment, and a single fault must not fan out into one report per
@@ -295,9 +271,17 @@ export class AppendOnlySealer {
    * this method still tell "already swept before this call" from "swept for
    * the first time just now": both read `true` off the field by the time the
    * sweep step is reached, and only the local remembers which.
+   *
+   * `active` is threaded into the manifest load, not only the sweep below:
+   * `./append-only-manifest.js`'s `loadOrInitializeManifest` excludes it from
+   * a freshly-computed baseline for the same reason the sweep excludes it —
+   * it names bytes THIS writer produced, never a pre-upgrade artifact — see
+   * `./append-only-manifest-baseline.js`'s `highestSegmentName` for the full
+   * reasoning.
    */
   async #sealAndSweep(
     rotatedFrom: AppendOnlyRotatedSegment | undefined,
+    active: string,
   ): Promise<void> {
     const alreadySwept = this.#swept;
     this.#swept = true;
@@ -305,6 +289,7 @@ export class AppendOnlySealer {
       this.#directory,
       this.#maxManifestBytes,
       this.#buildError,
+      active,
     );
     // Mutable, and seeded from the manifest just read: a segment sealed by
     // this call is a segment the sweep must not seal again — which is also
@@ -316,23 +301,21 @@ export class AppendOnlySealer {
     if (alreadySwept) {
       return;
     }
-    await this.#sweep(contents, sealed);
+    await this.#sweep(contents, sealed, active);
   }
 
   /**
    * Seals every segment a crashed predecessor left behind, oldest first and
    * capped at {@link "./append-only-sealer-types.js".AppendOnlySealerOptions.maxSweepSeals}.
    *
-   * The cap bounds the READS and not merely the manifest lines written, which
-   * is what actually stops a pathological directory from turning one cold
-   * start into an unbounded read: candidates are cut to the budget before any
-   * of them is opened.
-   *
    * The inventory is `./append-only-segments.js`'s, whose per-entry `lstat`
    * refusals already exclude a symlink or a hardlink planted at a segment
    * name, and whose failures propagate raw — wrapped here into the owner's
    * vocabulary, then out to the total guard, since a directory that cannot be
-   * listed is not attributable to any one segment.
+   * listed is not attributable to any one segment. Which segments the
+   * inventory admits, and why the cap is applied before any candidate is
+   * opened, is
+   * {@link "./append-only-sweep-policy.js".selectSweepCandidates}'s to state.
    *
    * **A candidate cut by the cap reaches no reporter at all** — it is neither
    * sealed nor passed to `#sealSegment`, so `onSealFailed` never fires for it.
@@ -347,8 +330,17 @@ export class AppendOnlySealer {
    * as `verify()`'s `unsealed` verdict for whatever a sweep has not yet
    * reached — which is the intended channel for "not sealed yet", as opposed
    * to `onSealFailed`'s "tried and failed to seal".
+   *
+   * @param active - The writer's in-progress segment, excluded by name from
+   *   the candidates — see
+   *   {@link "./append-only-sweep-policy.js".selectSweepCandidates} for
+   *   exactly what that closes and does not.
    */
-  async #sweep(contents: ManifestContents, sealed: Set<string>): Promise<void> {
+  async #sweep(
+    contents: ManifestContents,
+    sealed: Set<string>,
+    active: string,
+  ): Promise<void> {
     let segments: readonly M3LAppendOnlySegment[];
     try {
       ({ segments } = await listSegmentFiles(this.#directory));
@@ -357,14 +349,13 @@ export class AppendOnlySealer {
     }
     const today = currentDatePrefix();
     const boundaryKey = baselineBoundaryKey(contents);
-    const candidates = segments
-      .filter(
-        (segment) =>
-          segment.datePrefix < today &&
-          !sealed.has(segment.name) &&
-          !isAtOrBeforeBaseline(segment, boundaryKey),
-      )
-      .slice(0, this.#maxSweepSeals);
+    const candidates = selectSweepCandidates(segments, {
+      today,
+      active,
+      sealed,
+      boundaryKey,
+      limit: this.#maxSweepSeals,
+    });
     for (const candidate of candidates) {
       // Serially, and each one self-contained: one segment nobody can digest
       // is reported and skipped, never a reason to abandon the backlog.
@@ -434,9 +425,15 @@ export class AppendOnlySealer {
    * Retry is in-process and immediate in both halves: the failure worth
    * surviving here is a transient read/write error on an otherwise healthy
    * file, and waiting is not something an append path may do. A segment the
-   * manifest already names is not re-sealed — an agreeing duplicate is
-   * tolerated at read time, but measuring a file again to write a line that
-   * says what is already said is work the append path should not pay for.
+   * manifest already names is not re-sealed — but that check is each
+   * CALLER's to make, not this method's: {@link AppendOnlySealer.#sweep}
+   * never offers this method a name `selectSweepCandidates` has already
+   * filtered against `sealed`, and {@link AppendOnlySealer.#sealRotatedSegment}
+   * only delegates here when `contents.seals.get(segment)` is `undefined`.
+   * An agreeing duplicate is tolerated at read time, but measuring a file
+   * again to write a line that says what is already said is work the append
+   * path should not pay for — which is why both callers withhold the name
+   * rather than this method re-deriving the same test from `sealed`.
    *
    * A name {@link parseSegmentName} declines is refused rather than digested.
    * Whatever such a name reached the writer by, joining it onto the stream
@@ -465,9 +462,6 @@ export class AppendOnlySealer {
     sealed: Set<string>,
     expectedByteLength?: number,
   ): Promise<void> {
-    if (sealed.has(segment)) {
-      return;
-    }
     if (parseSegmentName(segment) === undefined) {
       // `undefined`, not `segment`: this is the one path where the name is
       // provably NOT writer-derived — see this method's TSDoc for why that
@@ -510,7 +504,17 @@ export class AppendOnlySealer {
     sealed.add(segment);
   }
 
-  /** Delegates to {@link "./append-only-seal-report.js".reportSealFailure}. */
+  /**
+   * Hands one failure to the owner, in the owner's own vocabulary.
+   *
+   * Delegates to
+   * {@link "./append-only-seal-report.js".reportSealFailure} — see that
+   * function's TSDoc for the full contract: why an already-typed
+   * {@link "../../core/errors/index.js".M3LError} is passed through rather
+   * than double-wrapped, why the guard is still needed even under
+   * {@link AppendOnlySealer.sealAfterAppend}'s total guard, and why a
+   * returned thenable is neutralised rather than awaited.
+   */
   #report(segment: string | undefined, cause: unknown): void {
     reportSealFailure(this.#onSealFailed, this.#buildError, segment, cause);
   }

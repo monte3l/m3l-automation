@@ -58,7 +58,6 @@ import { appendFile, open } from "node:fs/promises";
 import path from "node:path";
 
 import { M3LError } from "../../core/errors/index.js";
-import type { M3LAppendOnlySegmentListing } from "../../core/storage/append-only-read-types.js";
 import {
   APPEND_FLAGS,
   assertSegmentIsReadable,
@@ -71,8 +70,8 @@ import {
   splitLines,
   STRICT_UTF8_DECODER,
 } from "./append-only-lines.js";
+import { buildBaselineRecord } from "./append-only-manifest-baseline.js";
 import type {
-  ManifestBaselineRecord,
   ManifestContents,
   ManifestRecord,
   SegmentSealClaim,
@@ -81,7 +80,6 @@ import {
   collectRecords,
   MANIFEST_FORMAT_VERSION,
 } from "./append-only-manifest-records.js";
-import { currentDatePrefix, listSegmentFiles } from "./append-only-segments.js";
 
 /**
  * The manifest's public-surface vocabulary, re-exported so a caller that reads
@@ -101,6 +99,10 @@ export type { ManifestContents, SegmentSealClaim };
  * inventory, byte total or `skipped` count ever sees it.
  */
 export const M3L_APPEND_ONLY_MANIFEST_NAME: string = "manifest.jsonl";
+
+// Re-exported for import stability; the declaration and its rationale now
+// live in `./append-only-sealer-types.js`, beside the option it defaults.
+export { DEFAULT_MAX_MANIFEST_BYTES } from "./append-only-sealer-types.js";
 
 /**
  * The largest read this module ever issues, in bytes, mirroring
@@ -135,10 +137,6 @@ const OPEN_FAILURE_MESSAGE =
 /** Reported for any other failure raised while reading the manifest. */
 const READ_FAILURE_MESSAGE =
   "append-only stream: failed to read the sealed-segment manifest";
-
-/** Reported when the stream directory cannot be listed for the baseline. */
-const LISTING_FAILURE_MESSAGE =
-  "append-only stream: failed to list segments while initializing the manifest";
 
 /** Reported when a manifest record cannot be appended. */
 const APPEND_FAILURE_MESSAGE =
@@ -357,46 +355,6 @@ async function appendRecord(
 }
 
 /**
- * The highest segment name in `directory` dated no later than today, or
- * `null` when it holds none.
- *
- * Reuses `./append-only-segments.js`'s inventory rather than walking the
- * directory a second time, so "a segment" means exactly what it means
- * everywhere else in this stream: a name this writer would itself have
- * produced. A foreign file — `notes.txt`, or an over-padded `-00005.jsonl` no
- * writer here renders — is not a boundary this trail can state anything
- * about.
- *
- * A segment dated AFTER {@link currentDatePrefix}'s today is excluded before
- * the highest is taken, even though it is otherwise a well-formed name. This
- * trail cannot have written it yet, so it is not evidence of how far back an
- * already-written trail is unproven — a future-dated name planted ahead of
- * the first sealer run would otherwise become the baseline forever, writing
- * off every real segment, past and future, as `legacy`. The same exclusion
- * is also the right call for an honestly clock-skewed peer: excluding its
- * segment costs it nothing but a delay, since it is swept and sealed once its
- * date arrives rather than being written off as unproven now. `segments` is
- * already sorted oldest-first, so filtering preserves order and the highest
- * eligible entry is still the last one.
- */
-async function highestSegmentName(
-  directory: string,
-  buildError: AppendOnlyReadFailure,
-): Promise<string | null> {
-  let listing: M3LAppendOnlySegmentListing;
-  try {
-    listing = await listSegmentFiles(directory);
-  } catch (cause) {
-    throw buildError(LISTING_FAILURE_MESSAGE, { cause });
-  }
-  const today = currentDatePrefix();
-  const eligible = listing.segments.filter(
-    (segment) => segment.datePrefix <= today,
-  );
-  return eligible.at(-1)?.name ?? null;
-}
-
-/**
  * Reads the manifest in `directory` under a hard `maxBytes` ceiling.
  *
  * An ABSENT manifest is contents-free, not a failure: a stream that has never
@@ -458,9 +416,17 @@ export async function readManifest(
  * a trail whose real boundary this reader could not read, turning an
  * upgrade-me error into silent evidence destruction.
  *
+ * `activeSegment` is REQUIRED, not optional: optional would silently restore
+ * the pre-fix bug (baseline naming the writer's own just-created segment —
+ * see `./append-only-manifest-baseline.js`'s `highestSegmentName`) at any
+ * forgetful call site; a security property, not a convenience. Last in the
+ * list so it can't be transposed with `directory` and still typecheck.
+ *
  * @param directory - The stream directory holding the manifest.
  * @param maxBytes - The ceiling, enforced against bytes actually read.
  * @param buildError - The caller's error vocabulary for every failure here.
+ * @param activeSegment - The caller's active segment; see
+ *   `./append-only-manifest-baseline.js`'s `highestSegmentName`.
  * @returns The manifest's contents, including a baseline just written.
  * @example
  * ```ts
@@ -471,6 +437,7 @@ export async function readManifest(
  *   maxManifestBytes,
  *   (message, options) =>
  *     new M3LError(message, { code: "ERR_STORAGE_READ", ...options }),
+ *   active,
  * );
  * // Segments at or before `contents.baseline?.upTo` classify as `legacy`.
  * ```
@@ -479,17 +446,17 @@ export async function loadOrInitializeManifest(
   directory: string,
   maxBytes: number,
   buildError: AppendOnlyReadFailure,
+  activeSegment: string,
 ): Promise<ManifestContents> {
   const existing = await readManifestFile(directory, maxBytes, buildError);
   if (existing.present) {
     return { baseline: existing.baseline, seals: existing.seals };
   }
-  const baseline: ManifestBaselineRecord = {
-    kind: "baseline",
-    formatVersion: MANIFEST_FORMAT_VERSION,
-    at: new Date().toISOString(),
-    upTo: await highestSegmentName(directory, buildError),
-  };
+  const baseline = await buildBaselineRecord(
+    directory,
+    buildError,
+    activeSegment,
+  );
   await appendRecord(directory, baseline, buildError);
   return { baseline, seals: existing.seals };
 }

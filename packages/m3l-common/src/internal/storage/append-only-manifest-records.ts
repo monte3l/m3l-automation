@@ -344,7 +344,7 @@ function parseSealRecord(
  * A name whose date prefix is LATER than today is refused on the same
  * grounds, not a separate one: this trail cannot have written it yet, so it
  * is not evidence of anything this reader can act on. The sibling guard in
- * `./append-only-manifest.js`'s `highestSegmentName` applies this exact
+ * `./append-only-manifest-baseline.js`'s `highestSegmentName` applies this exact
  * exclusion when a baseline is *derived*, at initialization; this is the
  * other half — the same exclusion applied when a baseline already sitting in
  * a manifest is *read* back. Without it, a planted `upTo` dated arbitrarily

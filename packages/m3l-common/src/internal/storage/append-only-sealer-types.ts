@@ -13,32 +13,34 @@
  * @packageDocumentation
  */
 
-import type { M3LError } from "../../core/errors/index.js";
+import type { M3LAppendOnlySealFailure } from "../../core/storage/append-only-manifest-types.js";
+import { M3L_APPEND_ONLY_MAX_SEGMENT_BYTES } from "../../core/storage/append-only-read-types.js";
 import type { AppendOnlyReadFailure } from "./append-only-lines.js";
 
-/** One seal that could not be written, as reported to the owner. */
-export interface AppendOnlySealFailure {
-  /**
-   * The segment that could not be sealed, or `undefined` for a MANIFEST-level
-   * failure — one that stopped the whole operation before (or instead of) any
-   * one segment, such as a manifest that cannot be read.
-   *
-   * A segment NAME is sanctioned here where a directory path is not: it
-   * derives from the writer's own clock and counter, carries zero caller
-   * bytes, and is already public through `listSegments()`. The one exception
-   * is a name {@link "./append-only-segments.js".parseSegmentName} declines:
-   * see `./append-only-sealer.js`'s `AppendOnlySealer` (its private
-   * `#sealSegment`) for why that name is exactly the one this carve-out's
-   * reasoning does not cover, and reports `undefined`.
-   */
-  readonly segment: string | undefined;
-  /**
-   * The failure, built through {@link AppendOnlySealerOptions.buildError} so
-   * the owner sees its own error vocabulary rather than a class this module
-   * does not own. Raw filesystem detail survives on `cause`.
-   */
-  readonly error: M3LError;
-}
+/**
+ * Alias, not a separate declaration: `internal/` and the public surface must
+ * not carry two independently-maintained shapes for one seal-failure
+ * payload — nothing enforced that they matched, so an optional field added
+ * to only one side would have stopped being a compile error and silently
+ * become an assignable subtype instead. The public
+ * {@link "../../core/storage/append-only-manifest-types.js".M3LAppendOnlySealFailure}
+ * is the single definition because it is the type the owner's
+ * `onSealFailed` handler actually receives; see that type's own TSDoc for
+ * the full contract (why a bare segment name is sanctioned here, and what
+ * the `undefined` carve-out means).
+ *
+ * Two details the public TSDoc does not — and, being public, cannot —
+ * cover:
+ * - The segment-name carve-out's decliner is
+ *   {@link "./append-only-segments.js".parseSegmentName}; see
+ *   `./append-only-sealer.js`'s `AppendOnlySealer` (its private
+ *   `#sealSegment`) for why the name it declines is exactly the one this
+ *   carve-out's reasoning does not cover.
+ * - `error` is built through {@link AppendOnlySealerOptions.buildError} so
+ *   the owner sees its own error vocabulary rather than a class this module
+ *   does not own.
+ */
+export type AppendOnlySealFailure = M3LAppendOnlySealFailure;
 
 /**
  * One segment a writer rotated away from, as the writer itself believes it
@@ -131,16 +133,36 @@ export interface AppendOnlyRotatedSegment {
 }
 
 /**
- * What {@link "./append-only-sealer.js".AppendOnlySealer.sealAfterAppend}
- * needs on every append: whether this append rotated, and — when it did —
- * what the writer believes the segment it left behind holds.
+ * What one call to {@link "./append-only-sealer.js".AppendOnlySealer.sealAfterAppend}
+ * needs to know about the append that just landed: whether it rotated, and —
+ * when it did — what the writer believes the segment it left behind holds,
+ * plus the one segment this process can currently swear is still growing.
+ *
+ * **An object, not two positional parameters.** `rotatedFrom` and `active`
+ * are shaped closely enough — both identify a segment this call touched —
+ * that a call site transposing them reads as a plausible typo rather than an
+ * obvious one, and a swap here is not a benign mix-up: it would make the
+ * sealer digest the segment the writer is STILL appending to (as if it were
+ * the complete, rotated-away one) while exempting the actually-sealed
+ * segment from the cold-start sweep — silently, on a tamper-evidence guard,
+ * not as a type error.
  */
 export interface AppendOnlySealRequest {
   /**
    * The segment this append rotated away from, or `undefined` when it did
-   * not rotate.
+   * not rotate — the one segment this call knows is now complete and
+   * belongs to this process's own just-written bytes. See
+   * {@link AppendOnlyRotatedSegment} for what it carries and why.
    */
   readonly rotatedFrom: AppendOnlyRotatedSegment | undefined;
+  /**
+   * The segment the writer is appending to AFTER this call's append — i.e.
+   * the one segment this process can swear is still growing. Named here
+   * purely so the cold-start sweep can exclude it by name; see
+   * `./append-only-sealer.js`'s `#sweep` for what excluding it does and does
+   * not close.
+   */
+  readonly active: string;
 }
 
 /**
@@ -166,18 +188,96 @@ export interface AppendOnlySealerOptions {
    * Told about every seal that could not be written. Optional: the sealer
    * never depends on a handler being there to absorb a failure, and a handler
    * that throws cannot break it either.
+   *
+   * Called synchronously from `./append-only-sealer.js`'s `#report`, which
+   * never awaits its return value — it should not be declared `async`, since
+   * the type permits that but the sealer neither waits for nor observes what
+   * the returned promise resolves or rejects with. A rejection is discarded
+   * rather than left to become an unhandled rejection; an owner whose own
+   * reporting can fail must handle that failure inside the handler itself.
    */
   readonly onSealFailed?: (failure: AppendOnlySealFailure) => void;
   /**
    * Overrides the sealer's default sweep cap. A non-finite value (`NaN`,
    * `±Infinity`) falls back to the default instead — see
-   * `./append-only-sealer.js`'s `resolveSealerBound`.
+   * {@link resolveSealerBound}.
    */
   readonly maxSweepSeals?: number;
   /**
    * Overrides the sealer's default per-segment attempt count. Same
    * non-finite fallback as {@link maxSweepSeals} — see
-   * `./append-only-sealer.js`'s `resolveSealerBound`.
+   * {@link resolveSealerBound}.
    */
   readonly maxSealAttempts?: number;
+}
+
+/**
+ * The one `maxManifestBytes` a sealer owner should construct with. The
+ * sealer requires that bound and holds no default, so without this,
+ * `M3LAppendOnlyStream.ts` and `decision-log-writer.ts` would each invent a
+ * number and could disagree how much of the same kind of file is readable.
+ *
+ * Equals {@link M3L_APPEND_ONLY_MAX_SEGMENT_BYTES}, not a smaller number: the
+ * manifest is read through the same bounded chunk machinery, and the same
+ * `O_NOFOLLOW` / single-link / owner-only-mode refusals, as a segment. A
+ * differing ceiling would only add a number for the two to drift apart on.
+ *
+ * NOT derived from a caller's resolved `maxSegmentBytes` — that is
+ * per-stream and legitimately very small (a test rotating after a few
+ * hundred bytes); deriving from it would make the manifest unreadable after
+ * a handful of seals on exactly those streams. This is the library CONSTANT,
+ * never a per-instance value — the trap the next caller would fall into.
+ *
+ * At the ceiling, a read fails with a typed error (`readManifestFile`'s
+ * `OVER_CEILING_MESSAGE` in `./append-only-manifest.js`) rather than reading
+ * short. Bounded in practice: the manifest grows ~200 bytes per sealed
+ * segment and is never rotated (`./append-only-writer.js`), so this holds
+ * tens of thousands of seals.
+ *
+ * @example
+ * ```ts
+ * import { readManifest } from "./append-only-manifest.js";
+ * await readManifest(directory, DEFAULT_MAX_MANIFEST_BYTES, buildError);
+ * ```
+ */
+export const DEFAULT_MAX_MANIFEST_BYTES: number =
+  M3L_APPEND_ONLY_MAX_SEGMENT_BYTES;
+
+/**
+ * How many segments one instance's cold-start sweep may seal. A pathological
+ * directory — a crashed process's whole backlog, or a trail nobody has run
+ * the sealer against since an upgrade — must not turn one cold start into an
+ * unbounded read on the append path.
+ */
+export const DEFAULT_MAX_SWEEP_SEALS: number = 64;
+
+/**
+ * How many times one segment's seal is attempted before it is reported. More
+ * than one because a transient `EIO`/`EAGAIN` on a single read should not cost
+ * a proof; bounded because the append path is not the place to wait out a
+ * filesystem that is genuinely down.
+ */
+export const DEFAULT_MAX_SEAL_ATTEMPTS: number = 3;
+
+/**
+ * Resolves one of the sealer's caller-overridable bounds: `override` when
+ * it is a finite number, clamped up to `floor`; `fallback` when `override`
+ * is `undefined` or not finite.
+ *
+ * **A malformed override must not silently disable what it bounds.**
+ * `Math.max(floor, NaN)` is `NaN`, and a `NaN` reaching
+ * `Array.prototype.slice(0, …)` yields an EMPTY list — the sweep silently
+ * off — or a zero-iteration `for` loop bound, indistinguishable from
+ * "already sealed". Once these two options reach the public surface a later
+ * slice adds, the value is no longer library-controlled, so this is what
+ * keeps a caller's typo from reading as success.
+ */
+export function resolveSealerBound(
+  override: number | undefined,
+  fallback: number,
+  floor: number,
+): number {
+  return override !== undefined && Number.isFinite(override)
+    ? Math.max(floor, override)
+    : fallback;
 }

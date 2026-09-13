@@ -48,7 +48,11 @@ import { M3LAgentDecisionLogWriteError } from "../../core/agent/M3LAgentDecision
 import type { M3LAgentDecisionLogEntry } from "../../core/agent/decision-log-types.js";
 import { M3L_AGENT_MAX_LOG_ENTRY_BYTES } from "../../core/agent/decision-log-types.js";
 import { M3LError } from "../../core/errors/index.js";
+import type { M3LAppendOnlySealFailure } from "../../core/storage/append-only-manifest-types.js";
 import { isNumber, isPlainObject } from "../../core/utils/guards.js";
+import { DEFAULT_MAX_MANIFEST_BYTES } from "../storage/append-only-manifest.js";
+import { readOnSealFailed } from "../storage/append-only-options.js";
+import { AppendOnlySealer } from "../storage/append-only-sealer.js";
 import type { AppendOnlyWriterErrors } from "../storage/append-only-writer.js";
 import { AppendOnlyWriter } from "../storage/append-only-writer.js";
 import { projectAgentDecisionLogEntry } from "./decision-log-projection.js";
@@ -59,6 +63,7 @@ const WRITER_OPTIONS_KEYS: ReadonlySet<string> = new Set([
   "directory",
   "maxSegmentBytes",
   "maxSegmentAgeMs",
+  "onSealFailed",
 ]);
 
 /**
@@ -132,6 +137,9 @@ export interface AgentDecisionLogWriterOverrides {
   readonly maxSegmentBytes: number | undefined;
   /** The validated `maxSegmentAgeMs` override, or `undefined` when absent. */
   readonly maxSegmentAgeMs: number | undefined;
+  /** The validated `onSealFailed` override, or `undefined` when absent. */
+  readonly onSealFailed:
+    ((failure: M3LAppendOnlySealFailure) => void) | undefined;
 }
 
 /**
@@ -147,8 +155,9 @@ export interface AgentDecisionLogWriterOverrides {
  *
  * @throws {@link M3LError} with `code: "ERR_INVALID_ARGUMENT"` when the bag
  *   is not a plain object, carries an unknown or dangerous key, has a
- *   blank/non-string `directory`, or a `maxSegmentBytes` / `maxSegmentAgeMs`
- *   that is not a finite positive integer.
+ *   blank/non-string `directory`, a `maxSegmentBytes` / `maxSegmentAgeMs`
+ *   that is not a finite positive integer, or a truthy non-function
+ *   `onSealFailed`.
  */
 export function validateAgentDecisionLogOptions(
   options: unknown,
@@ -158,6 +167,7 @@ export function validateAgentDecisionLogOptions(
       directory: undefined,
       maxSegmentBytes: undefined,
       maxSegmentAgeMs: undefined,
+      onSealFailed: undefined,
     };
   }
   if (!isPlainObject(options)) {
@@ -168,6 +178,10 @@ export function validateAgentDecisionLogOptions(
     directory: readOptionalDirectory(options),
     maxSegmentBytes: readOptionalPositiveInteger(options, "maxSegmentBytes"),
     maxSegmentAgeMs: readOptionalPositiveInteger(options, "maxSegmentAgeMs"),
+    // The truthy-non-function / falsy-degrades polarity this validates —
+    // and why it must not be tightened — is documented once, on the shared
+    // {@link "../storage/append-only-options.js".readOnSealFailed}.
+    onSealFailed: readOnSealFailed(options, invalidArgument),
   };
 }
 /**
@@ -241,32 +255,101 @@ function renderLogLine(entry: M3LAgentDecisionLogEntry): string {
 }
 
 /**
+ * Constructor options for {@link AgentDecisionLogWriter}.
+ *
+ * An object rather than four positional parameters. Three of the four
+ * values are `string, number, number, function` — a fourth positional
+ * `onSealFailed` would put `maxSegmentBytes` and `maxSegmentAgeMs` next to
+ * each other as two bare numbers, and a call site transposing them would
+ * still typecheck. The rotation ceilings are exactly the pair where a
+ * silent transposition produces a plausible-looking but wrong trail (a
+ * byte ceiling doing duty as an age ceiling and vice versa), so the two are
+ * named on an object precisely to make that swap impossible to typo into
+ * existence.
+ */
+export interface AgentDecisionLogWriterOptions {
+  /** The directory the segments (and the manifest sidecar) live in. */
+  readonly directory: string;
+  /** Rotate once the active segment has reached this many bytes. */
+  readonly maxSegmentBytes: number;
+  /** Rotate once the active segment has been open this many milliseconds. */
+  readonly maxSegmentAgeMs: number;
+  /**
+   * Told about every seal that could not be written to the manifest
+   * sidecar. Optional: sealing is best-effort by design (see this class's
+   * own TSDoc), and the sealer never depends on a handler being there to
+   * absorb a failure.
+   */
+  readonly onSealFailed?: (failure: M3LAppendOnlySealFailure) => void;
+}
+
+/**
  * The decision log's writer: the agent-specific rendering and error
  * vocabulary bound to one generic {@link AppendOnlyWriter}, which owns the
- * rotation decision, the atomic append, and the serialized append chain.
+ * rotation decision, the atomic append, and the serialized append chain. A
+ * directory-wide `manifest.jsonl` sidecar is sealed on rotation by
+ * {@link "../storage/append-only-sealer.js".AppendOnlySealer}, giving the
+ * decision log the same tamper-evidence proof
+ * {@link "../../core/storage/M3LAppendOnlyStream.js".M3LAppendOnlyStream}
+ * carries — recording each sealed segment's entry count, byte length and
+ * plain sha256.
  *
- * No index file is kept and no state is carried across processes — a fresh
- * instance always re-derives the active segment from a directory listing
- * plus one `stat`, so a long-lived process and a freshly spawned one agree.
+ * Three things stay true even with the manifest in the picture, and they
+ * must not be read as in tension with each other:
+ * - the manifest is never consulted to decide where to append — a fresh
+ *   instance still re-derives the active segment from a directory listing
+ *   plus one `stat`, so a long-lived process and a freshly spawned one
+ *   still agree;
+ * - the manifest carries no in-memory state across processes either;
+ * - the manifest is not a segment, so it is invisible to segment discovery.
+ *
  * Rotation only ever seals the active segment (by simply no longer writing
  * to it) and opens a new one; it never prunes or truncates a segment in
  * place.
+ *
+ * **A failed APPEND stays loud; a failed SEAL does not, and that is a
+ * deliberate asymmetry, not a weakening of the append rule.** A seal is
+ * metadata about bytes that are already durably appended — failing a new
+ * entry's append to protect a proof about an *older* one would discard a
+ * new auditable record in order to defend an old one. So sealing is
+ * best-effort: a seal failure is reported only through the optional
+ * `onSealFailed` handler, never by throwing out of `write()`, and never at
+ * the cost of the append it follows.
  */
 export class AgentDecisionLogWriter {
   private readonly writer: AppendOnlyWriter<M3LAgentDecisionLogEntry>;
 
-  constructor(
-    directory: string,
-    maxSegmentBytes: number,
-    maxSegmentAgeMs: number,
-  ) {
+  constructor(options: AgentDecisionLogWriterOptions) {
+    const sealer = new AppendOnlySealer({
+      directory: options.directory,
+      maxSegmentBytes: options.maxSegmentBytes,
+      maxLineBytes: M3L_AGENT_MAX_LOG_ENTRY_BYTES,
+      maxManifestBytes: DEFAULT_MAX_MANIFEST_BYTES,
+      // Known limitation: this single `AppendOnlyReadFailure` builder serves
+      // BOTH the sealer's manifest reads and its manifest appends, so the
+      // class name never discriminates direction. For this owner it is the
+      // READ side that is misnamed — a failed manifest read (e.g.
+      // `append-only-manifest.ts`'s baseline/listing reads) still surfaces as
+      // a "Write" error. The `cause` and `message` carry the accurate
+      // operational detail regardless, so nothing but the class name is
+      // wrong. X8b4 introduces a dedicated `M3LAppendOnlyStreamManifestError`
+      // (code `ERR_APPEND_ONLY_STREAM_MANIFEST`) that actually resolves this.
+      buildError: (message, errorOptions) =>
+        new M3LAgentDecisionLogWriteError(message, errorOptions),
+      // Conditional spread, not a direct assignment: `exactOptionalPropertyTypes`
+      // forbids setting an optional property to a value typed `T | undefined`.
+      ...(options.onSealFailed !== undefined && {
+        onSealFailed: options.onSealFailed,
+      }),
+    });
     this.writer = new AppendOnlyWriter<M3LAgentDecisionLogEntry>({
-      directory,
-      maxSegmentBytes,
-      maxSegmentAgeMs,
+      directory: options.directory,
+      maxSegmentBytes: options.maxSegmentBytes,
+      maxSegmentAgeMs: options.maxSegmentAgeMs,
       maxLineBytes: M3L_AGENT_MAX_LOG_ENTRY_BYTES,
       renderEntry: renderLogLine,
       errors: AGENT_DECISION_LOG_ERRORS,
+      sealer,
     });
   }
 
@@ -290,5 +373,15 @@ export class AgentDecisionLogWriter {
    */
   async write(entry: M3LAgentDecisionLogEntry): Promise<void> {
     await this.writer.write(entry);
+  }
+
+  /**
+   * Drains the underlying {@link AppendOnlyWriter}'s serialized append
+   * chain as it stands at the moment of the call. One-line delegation —
+   * see {@link AppendOnlyWriter.flush} for the full guarantee (a
+   * point-in-time drain, never rejects).
+   */
+  async flush(): Promise<void> {
+    await this.writer.flush();
   }
 }
