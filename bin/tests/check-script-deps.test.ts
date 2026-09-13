@@ -53,6 +53,17 @@ describe("scriptDependencyErrors", () => {
     expect(errors[0]).toContain("ADR-0029");
   });
 
+  test("flags the full pre-rename aliased shape (old key + old value) as non-conformant", () => {
+    const pkg = {
+      dependencies: {
+        "@m3l-automation/m3l-common": "workspace:@monte3l/m3l-common@*",
+      },
+    };
+    const errors = scriptDependencyErrors(pkg);
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain("ADR-0029");
+  });
+
   test("flags a wrong version specifier for the library", () => {
     const pkg = {
       dependencies: { "@monte3l/m3l-common": "^1.0.0" },

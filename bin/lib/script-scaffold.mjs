@@ -372,7 +372,7 @@ function expectedTsconfigShape(templateName, scriptName) {
  * the invariants the matching template encodes: `extends` the base config,
  * every `compilerOptions` entry the template sets, and a project `references`
  * entry back to m3l-common (so `tsc -b` and editor tooling resolve
- * `@m3l-automation/m3l-common`'s types). Checker-only. Returns human-readable
+ * `@monte3l/m3l-common`'s types). Checker-only. Returns human-readable
  * problem strings (empty array = conformant).
  *
  * The `compilerOptions` check is full parity with the template rather than a

@@ -86,7 +86,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   if (errors > 0) {
     if (!json) {
       console.error(
-        `\n✗  ${errors} script-dependency mismatch(es). ADR-0029: scripts depend only on @m3l-automation/m3l-common.`,
+        `\n✗  ${errors} script-dependency mismatch(es). ADR-0029: scripts depend only on @monte3l/m3l-common.`,
       );
     }
     reporter.finish();

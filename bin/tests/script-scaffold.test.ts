@@ -614,6 +614,18 @@ describe("packageManifestErrors", () => {
     ]);
   });
 
+  test("flags the full pre-rename aliased shape (old key + old value) as non-conformant", () => {
+    const pkg = {
+      ...conformantManifest("data-sync"),
+      dependencies: {
+        "@m3l-automation/m3l-common": "workspace:@monte3l/m3l-common@*",
+      },
+    };
+    expect(packageManifestErrors(pkg, "data-sync")).toEqual([
+      'dependencies must include "@monte3l/m3l-common": "workspace:*"',
+    ]);
+  });
+
   test.each(["build", "typecheck", "start"])(
     "flags a missing scripts.%s entry",
     (scriptName) => {
