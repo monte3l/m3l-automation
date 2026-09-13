@@ -92,12 +92,12 @@ describe("the errno guards read `code` exactly once", () => {
       get: () => (++reads === 1 ? "ENOENT" : "EACCES"),
     });
 
-    // Today isEnoentError(v) = isNodeError(v) && v.code === "ENOENT" reads
-    // `.code` twice: isNodeError's typeof check consumes the first read
-    // ("ENOENT"), then the `=== "ENOENT"` comparison re-reads and gets
-    // "EACCES" — so this returns false, having read twice, against a value
-    // that unambiguously carries ENOENT on its first (and only legitimate)
-    // read. A single-read implementation must read once and return true.
+    // isEnoentError reads `.code` exactly once via the shared readErrnoCode
+    // helper: a getter that answers differently across reads (ENOENT first,
+    // EACCES thereafter) must still be classified from its one legitimate
+    // read. Two reads would desynchronise validate-from-compare and return
+    // false for a value that unambiguously carries ENOENT — this pins the
+    // single-read guarantee as a regression test, not a TDD scratch note.
     expect(isEnoentError(cause)).toBe(true);
     expect(reads).toBe(1);
   });

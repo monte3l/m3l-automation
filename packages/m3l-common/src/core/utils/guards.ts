@@ -3,9 +3,10 @@
  *
  * All guards follow the signature `(v: unknown): v is T`.
  * They are pure functions with no side effects. They do not throw for any
- * ordinary value, but a hostile `Proxy` whose `has`/`getPrototypeOf` trap
- * throws will propagate that — a guard cannot be more total than the
- * operators it is built from.
+ * ordinary value, but a hostile `Proxy` whose
+ * `has`/`getPrototypeOf`/`getOwnPropertyDescriptor` trap throws will
+ * propagate that — a guard cannot be more total than the operators it is
+ * built from.
  *
  * @packageDocumentation
  */
@@ -113,6 +114,17 @@ function readErrnoCode(v: unknown): string | undefined {
  * Contrast {@link hasProperty}/{@link hasMessage}, which are `in`-based by
  * documented contract — they answer "can this property be read", not "did
  * this value carry it". Do not unify the two.
+ *
+ * Semver: this narrowed from an `in`-based check to this own-property check
+ * in a patch release. Every caller in this repository passes a real
+ * `node:fs`/libuv errno, which always sets `code` as an own property, so no
+ * in-repo caller is affected. A caller passing a custom `Error` subclass
+ * that intentionally exposes `code` only via a prototype getter would see
+ * this guard start returning `false` for it — treated as a patch because
+ * that shape was never a documented, supported use of this guard: the
+ * ownership guarantee stated above has always been this guard's contract,
+ * and the previous `in`-based implementation that let a prototype `code`
+ * satisfy it was the bug, not a feature being removed.
  *
  * @example
  * ```typescript
