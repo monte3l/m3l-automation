@@ -59,6 +59,7 @@ import path from "node:path";
 
 import { M3LError } from "../../core/errors/index.js";
 import { M3L_APPEND_ONLY_MANIFEST_NAME } from "../../core/storage/append-only-manifest-types.js";
+import { isEnoentError } from "../../core/utils/guards.js";
 import {
   APPEND_FLAGS,
   assertSegmentIsReadable,
@@ -147,19 +148,6 @@ const APPEND_FAILURE_MESSAGE =
 interface ManifestReadResult extends ManifestContents {
   /** `true` unless the manifest file is absent (`ENOENT` on open). */
   readonly present: boolean;
-}
-
-/**
- * `true` for a filesystem error meaning "there is nothing at that path".
- *
- * Only `ENOENT` is treated as absent, exactly as `./append-only-segments.js`
- * does. Every other open failure (`EACCES`, `ELOOP` from a planted symlink,
- * `ENOTDIR`, …) is a failure to READ the proof and is reported as one — a
- * blanket "absent" would let a tampered manifest read as a fresh stream and
- * invite a second, contradictory baseline over it.
- */
-function isFileNotFound(cause: unknown): boolean {
-  return cause instanceof Error && "code" in cause && cause.code === "ENOENT";
 }
 
 /** The manifest's absolute path within `directory`. */
@@ -273,7 +261,13 @@ async function readManifestFile(
   try {
     handle = await open(manifestPathIn(directory), SEGMENT_READ_FLAGS);
   } catch (cause) {
-    if (isFileNotFound(cause)) {
+    // ENOENT only, and only an OWN `code` (core/utils/guards.js's
+    // isEnoentError). Every other open failure — EACCES, ELOOP from a
+    // planted symlink, ENOTDIR — is a failure to READ the proof and is
+    // reported as one: a blanket "absent" would let a tampered manifest
+    // read as a fresh stream and invite a second, contradictory baseline
+    // over it.
+    if (isEnoentError(cause)) {
       return { present: false, baseline: undefined, seals: new Map() };
     }
     throw buildError(OPEN_FAILURE_MESSAGE, { cause });
