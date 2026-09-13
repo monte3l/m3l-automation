@@ -61,9 +61,9 @@ import type {
   M3LAppendOnlyVerificationStatus,
 } from "../../core/storage/append-only-verify-types.js";
 import type { M3LAppendOnlySegment } from "../../core/storage/append-only-read-types.js";
+import { isEnoentError } from "../../core/utils/guards.js";
 import type { SegmentDigestResult } from "./append-only-digest.js";
 import { digestSegmentFile } from "./append-only-digest.js";
-import { isFileNotFound } from "./append-only-fs.js";
 import type { AppendOnlyReadFailure } from "./append-only-lines.js";
 import type { ManifestContents } from "./append-only-manifest.js";
 import { readManifest } from "./append-only-manifest.js";
@@ -315,7 +315,14 @@ async function classifyClaimedSegment(
   try {
     await lstat(segmentPath);
   } catch (cause) {
-    if (isFileNotFound(cause)) {
+    // Only a genuine, OWN ENOENT (core/utils/guards.js's isEnoentError) is
+    // treated as "archived". A false positive here would turn an
+    // undetermined lstat failure — a permissions error, in particular —
+    // into the silent "archived" verdict, which is exactly the "archived
+    // absorbs undetermined" conflation this module's verify contract is
+    // built to prevent; anything else falls through to the failures entry
+    // below instead.
+    if (isEnoentError(cause)) {
       return { kind: "verdict", verdict: archivedVerdict(segment, claim) };
     }
     return {
