@@ -8,7 +8,7 @@
  * @packageDocumentation
  */
 
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 /**
  * The `errno` code a Node filesystem failure carries as its OWN property, or
@@ -114,7 +114,7 @@ const MAX_CAUSE_CHAIN_WALK = 10;
  *
  * @example
  * ```ts
- * import { Core } from "@m3l-automation/m3l-common";
+ * import { Core } from "@monte3l/m3l-common";
  *
  * try {
  *   await readAuditTrail();
