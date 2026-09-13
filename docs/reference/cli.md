@@ -4,10 +4,10 @@ The script-facing CLI activated by ADR-0042 (issue #333): discovery,
 introspection, and guided execution over the `configParameters` seam every
 `scripts/*` package declares in `src/config.ts`. Private, unpublished, and
 zero-_third-party_-dependency — every declared `dependencies` entry is a
-`@m3l-automation/*` workspace package (the library,
-`@m3l-automation/m3l-common`, aliased to `workspace:@monte3l/m3l-common@*`
-since ADR-0103's scope rename — the key stays the pre-rename specifier so no
-import site changes — plus one entry per `scripts/*` package at plain
+workspace package (the library, `@monte3l/m3l-common` at plain
+`workspace:*` since ADR-0103's scope rename — the CLI migrated off the
+transitional `@m3l-automation/m3l-common` alias — plus one entry per
+`scripts/*` package, each still `@m3l-automation/*`-scoped, at plain
 `workspace:*` since ADR-0054/U7 — see "Dependency-graph discovery" below);
 everything else is `node:` builtins.
 
@@ -36,8 +36,10 @@ This page is the CLI's contract. It grows one section per shipped phase
   counter-example that forced dist-first).
 - **Dependency-graph discovery, filesystem fallback (ADR-0054, U7).**
   `packages/m3l-cli/package.json` declares every `scripts/*` package as a
-  real `dependencies` entry (alongside `@m3l-automation/m3l-common`, the
-  library — excluded from discovery, since it is not a script); script
+  real `dependencies` entry alongside `@monte3l/m3l-common`, the library —
+  discovery filters declared dependencies down to the `@m3l-automation/*`
+  scope, which excludes the library automatically now that it no longer
+  shares that scope (no name-based exclusion needed); script
   discovery resolves each declared script package via Node's own module
   resolution over that declared graph
   (`createRequire(...).resolve("@m3l-automation/<name>/package.json")`)
@@ -495,7 +497,7 @@ names one of:
 The parent cannot learn the report's path directly (it's named after the
 _child's_ own start time), so it scans the managed output directory
 (`M3L_OUTPUT_DIR`, defaulting to `<workspaceRoot>/data/output` — the exact
-same variable name and default `@m3l-automation/m3l-common`'s own `M3LPaths`
+same variable name and default `@monte3l/m3l-common`'s own `M3LPaths`
 already uses, so setting it redirects both this scan and every spawned
 script's own output directory in agreement) for the newest directory, within
 the observed run window, whose report's `script.name` matches. Two known

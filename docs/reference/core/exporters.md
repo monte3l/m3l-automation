@@ -14,8 +14,8 @@ The `exporters` module writes typed items to files. List exporters share the `M3
 ## Public API
 
 ```typescript
-import { Core } from "@m3l-automation/m3l-common";
-// or: import { ... } from "@m3l-automation/m3l-common/core";
+import { Core } from "@monte3l/m3l-common";
+// or: import { ... } from "@monte3l/m3l-common/core";
 ```
 
 Exported symbols:
@@ -63,7 +63,7 @@ List exporters emit:
 ### Batch export (CSV)
 
 ```typescript
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 const exporter = new Core.M3LCSVListExporter<{ id: string; name: string }>({
   filePath: "./data/outputs/users.csv",
@@ -82,7 +82,7 @@ await exporter.export([
 ### Streaming export (CSV)
 
 ```typescript
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 const exporter = new Core.M3LCSVListExporter<{ id: string; name: string }>({
   filePath: "./data/outputs/users.csv",
@@ -98,7 +98,7 @@ await writer.close();
 ### JSON array vs JSONL
 
 ```typescript
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 // Array: writer emits `[` on open, `]` on close, commas between items.
 const arrayExporter = new Core.M3LJSONListExporter<{ id: string }>({
@@ -123,7 +123,7 @@ resuming an interrupted run must not simply reopen the same path. `resumeFromByt
 streaming resume safe without buffering the run's output a second time:
 
 ```typescript
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 // First run: append until the process is interrupted.
 const exporter = new Core.M3LJSONListExporter<{ id: string }>({

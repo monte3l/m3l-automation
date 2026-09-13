@@ -25,7 +25,7 @@ build-out tracker in `docs/plans/IMPLEMENTATION.md`.
 
 ## Boundaries
 
-- Zero runtime dependencies: only `@m3l-automation/m3l-common`
+- Zero runtime dependencies: only `@monte3l/m3l-common`
   (`workspace:*`) and `node:` builtins, enforced by ESLint + `check:zones`.
 - No `exports` map — this package is bin-first (`m3l`) and nothing in it is
   importable by other packages.

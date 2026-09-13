@@ -2,7 +2,7 @@
 /**
  * Published-declaration dependency gate — every module specifier that survives
  * into an emitted `.d.ts` must be resolvable, with types, by a consumer who
- * installed nothing but `@m3l-automation/m3l-common` and its declared
+ * installed nothing but `@monte3l/m3l-common` and its declared
  * `dependencies`/`peerDependencies`.
  *
  * The leak this catches: a public type alias over a third-party type
@@ -46,7 +46,7 @@ const LIB_DIR = join("packages", "m3l-common");
 /**
  * Strip block comments — the form TSDoc uses, and the only form whose contents
  * are never load-bearing. `dist/aws/**` is full of
- * `* import { X } from "@m3l-automation/m3l-common/aws";` `@example` lines,
+ * `* import { X } from "@monte3l/m3l-common/aws";` `@example` lines,
  * which would otherwise register as a self-referential dependency.
  *
  * @param {string} source contents of a `.d.ts` file

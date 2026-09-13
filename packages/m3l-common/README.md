@@ -45,21 +45,22 @@ for the per-module breakdown.
 ## Installation
 
 This package is not published to npm yet. Inside the monorepo, consumers
-depend on it via a pnpm workspace alias
+depend on it via a plain pnpm workspace specifier
 ([ADR-0029](https://github.com/monte3l/m3l-automation/blob/main/docs/adr/0029-script-dependency-boundary.md)):
 
 ```jsonc
 {
   "dependencies": {
-    "@m3l-automation/m3l-common": "workspace:@monte3l/m3l-common@*",
+    "@monte3l/m3l-common": "workspace:*",
   },
 }
 ```
 
-The dependency key stays this pre-rename specifier so no import site changes;
-the real package underneath it is `@monte3l/m3l-common`
+The package is scoped `@monte3l/m3l-common`
 ([ADR-0103](https://github.com/monte3l/m3l-automation/blob/main/docs/adr/0103-publish-scope-rename-and-staged-first-release.md))
-— the name GitHub Packages requires it to publish under. External
+— the name GitHub Packages requires it to publish under; every workspace
+consumer migrated onto this plain specifier from a transitional
+`@m3l-automation/m3l-common` alias, which no longer exists. External
 installation from that private registry is in progress
 ([ADR-0057](https://github.com/monte3l/m3l-automation/blob/main/docs/adr/0057-private-registry-distribution.md),
 roadmap U13) but not yet available.
@@ -67,7 +68,7 @@ roadmap U13) but not yet available.
 ## Quick start
 
 ```typescript
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 const script = new Core.M3LScript({
   metadata: { name: "hello-script", version: "1.0.0" },
@@ -80,11 +81,11 @@ await script.run(async () => {
 
 ## Import paths
 
-| Path                              | What you get                      |
-| --------------------------------- | --------------------------------- |
-| `@m3l-automation/m3l-common`      | Both namespaces: `Core` and `AWS` |
-| `@m3l-automation/m3l-common/core` | The `Core` namespace directly     |
-| `@m3l-automation/m3l-common/aws`  | The `AWS` namespace directly      |
+| Path                       | What you get                      |
+| -------------------------- | --------------------------------- |
+| `@monte3l/m3l-common`      | Both namespaces: `Core` and `AWS` |
+| `@monte3l/m3l-common/core` | The `Core` namespace directly     |
+| `@monte3l/m3l-common/aws`  | The `AWS` namespace directly      |
 
 - **`Core`** — application scaffolding, configuration, logging, prompts, I/O, data utilities, and resilience primitives.
 - **`AWS`** — AWS credential management and SDK client providers.

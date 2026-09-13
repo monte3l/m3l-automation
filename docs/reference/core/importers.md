@@ -14,8 +14,8 @@ The `importers` module reads structured data from files (or in-memory buffers) a
 ## Public API
 
 ```typescript
-import { Core } from "@m3l-automation/m3l-common";
-// or: import { ... } from "@m3l-automation/m3l-common/core";
+import { Core } from "@monte3l/m3l-common";
+// or: import { ... } from "@monte3l/m3l-common/core";
 ```
 
 Exported symbols:
@@ -64,7 +64,7 @@ List importers emit the following events, each carrying a structured payload (it
 ### Batch import (CSV)
 
 ```typescript
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 const importer = new Core.M3LCSVListImporter<{ id: string; name: string }>({
   filePath: "./data/inputs/users.csv",
@@ -83,7 +83,7 @@ for (const user of result.items) {
 ### Streaming import (CSV)
 
 ```typescript
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 const importer = new Core.M3LCSVListImporter<{ id: string; name: string }>({
   filePath: "./data/inputs/users.csv",
@@ -101,7 +101,7 @@ for await (const user of importer.importStream("./data/inputs/users.csv")) {
 ### JSON / JSONL with field paths
 
 ```typescript
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 const importer = new Core.M3LJSONListImporter<{ author: string }>({
   // extract a nested value via dot notation

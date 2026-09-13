@@ -4,7 +4,7 @@
 `CloudFormationClient`, so callers never import `@aws-sdk/client-cloudformation`
 command classes directly. Surfaced by `scripts/cloudformation-stacks` (roadmap
 W3) needing to avoid importing the SDK directly (ADR-0029 — scripts depend
-only on `@m3l-automation/m3l-common`).
+only on `@monte3l/m3l-common`).
 
 ## Overview
 

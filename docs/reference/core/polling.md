@@ -8,7 +8,7 @@ The `polling` module separates two concerns that are often conflated. `M3LPoller
 
 ## Public API
 
-Exported from `@m3l-automation/m3l-common/core` (and the `Core` namespace):
+Exported from `@monte3l/m3l-common/core` (and the `Core` namespace):
 
 - Primitives: `M3LPoller`, `M3LRetryRunner`, `M3LBackoff`, `M3LPollingPolicies`
 - Poller types: `M3LPollCheckFn`, `M3LPollDecision`
@@ -49,7 +49,7 @@ They compose naturally: an Athena query submission can use `M3LRetryRunner` for 
 ### Polling external state
 
 ```typescript
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 const poller = new Core.M3LPoller({
   backoff: Core.M3LBackoff.exponentialJittered(500, 10_000),
@@ -68,7 +68,7 @@ The check function returns a `M3LPollDecision`: `success` (with the resolved val
 ### Retrying a failing operation
 
 ```typescript
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 const runner = new Core.M3LRetryRunner({
   classifier: Core.awsThrottlingClassifier,
@@ -86,7 +86,7 @@ Both `M3LPollerOptions` and `M3LRetryRunnerOptions` accept an optional
 leaves behavior exactly as it was before the option existed.
 
 ```typescript
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 // `script.signal` aborts on the first SIGTERM/SIGINT/SIGQUIT.
 const poller = new Core.M3LPoller({
@@ -137,7 +137,7 @@ primitive itself, which also keeps the per-attempt cost `O(1)` and keeps the
 library from traversing a caller-controlled mutable graph.
 
 ```typescript
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 let pageToken: string | undefined;
 
@@ -430,7 +430,7 @@ can see from the event stream alone which attempt finally succeeded.
 ### Subscribing
 
 ```typescript
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 const runner = new Core.M3LRetryRunner({
   classifier: Core.awsThrottlingClassifier,
@@ -460,7 +460,7 @@ How `'unknown'` is resolved is controlled by the `unknownDecision` option on `M3
 `combineClassifiers()` merges several classifiers into one. They are consulted in order and the first non-`'unknown'` decision wins. Because each built-in classifier returns `'unknown'` for everything outside its narrow concern, they combine without overlap:
 
 ```typescript
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 const classifier = Core.combineClassifiers(
   Core.awsThrottlingClassifier,
@@ -496,7 +496,7 @@ const runner = new Core.M3LRetryRunner({ classifier });
 - `sqsBatchSend()`
 
 ```typescript
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 const runner = new Core.M3LRetryRunner(Core.M3LPollingPolicies.awsThrottling());
 ```

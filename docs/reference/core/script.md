@@ -12,7 +12,7 @@ Eight lifecycle hooks let you observe and extend each stage of execution. A proc
 
 ## Public API
 
-Exported from `@m3l-automation/m3l-common/core` (the `script` sub-module):
+Exported from `@monte3l/m3l-common/core` (the `script` sub-module):
 
 - `M3LScript`
 - `M3LScriptOptions`
@@ -180,7 +180,7 @@ error.
 | `trail`  | —       | An `M3LBreadcrumbTrail`; its `entries()` become the report's `timeline`, and its attempt breadcrumbs also derive `retryAttempts` |
 
 ```typescript
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 const script = new Core.M3LScript({
   metadata: { name: "report-builder", version: "1.0.0" },
@@ -341,7 +341,7 @@ import {
   M3LScript,
   captureRunFailures,
   runScript,
-} from "@m3l-automation/m3l-common/core";
+} from "@monte3l/m3l-common/core";
 
 const capture = captureRunFailures(hooks);
 const script = new M3LScript({ metadata, hooks: capture.hooks });
@@ -698,7 +698,7 @@ wholesale (not concatenated), with `extends` stripped.
 CLI script:
 
 ```typescript
-import { M3LScript } from "@m3l-automation/m3l-common/core";
+import { M3LScript } from "@monte3l/m3l-common/core";
 
 const script = new M3LScript({
   metadata: { name: "report-builder", version: "1.0.0" },
@@ -717,7 +717,7 @@ await script.run(async () => {
 Lambda handler:
 
 ```typescript
-import { M3LScript } from "@m3l-automation/m3l-common/core";
+import { M3LScript } from "@monte3l/m3l-common/core";
 
 const script = new M3LScript({
   metadata: { name: "report-builder", version: "1.0.0" },

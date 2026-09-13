@@ -15,8 +15,8 @@ export const root = join(dirname(fileURLToPath(import.meta.url)), "../..");
 
 const NAMESPACES = ["core", "aws"];
 const IMPORT_PATH = {
-  core: "@m3l-automation/m3l-common/core",
-  aws: "@m3l-automation/m3l-common/aws",
+  core: "@monte3l/m3l-common/core",
+  aws: "@monte3l/m3l-common/aws",
 };
 
 const BEGIN_MARKER = "<!-- BEGIN GENERATED CATALOG -->";

@@ -21,7 +21,7 @@ this submodule is the result.
 
 ## Public API
 
-Exported from `@m3l-automation/m3l-common/aws` (and re-exported under the `AWS`
+Exported from `@monte3l/m3l-common/aws` (and re-exported under the `AWS`
 namespace):
 
 | Export                      | Kind      | Summary                                                                                                                                                                                |
@@ -114,7 +114,7 @@ callers who prefer `provider.services.dynamoDBOperations.getItem(...)` over
 `getItem(provider.clients.dynamoDBDocument, ...)`.
 
 ```ts
-import { AWSProvider, parseAWSProfile } from "@m3l-automation/m3l-common/aws";
+import { AWSProvider, parseAWSProfile } from "@monte3l/m3l-common/aws";
 
 const provider = new AWSProvider({ profile: parseAWSProfile("my-profile") });
 const order = await provider.services.dynamoDBOperations.getItem("orders", {

@@ -102,7 +102,7 @@ pnpm --filter @m3l-automation/m3l-console-web preview   # serve the built bundle
   browser globals and React hooks rules on top of the workspace's TS-strict
   base; this package's source may not import a `node:` builtin (browser
   code cannot reach one) the same way `m3l-cli`/`m3l-console-server`'s
-  zones ban everything _except_ `node:` and `@m3l-automation/m3l-common`.
+  zones ban everything _except_ `node:` and `@monte3l/m3l-common`.
 - **Unit/component tests**: Vitest with a `jsdom` environment
   (`vitest.web.config.ts` at the repo root — the workspace's fourth Vitest
   config, alongside the Node, bin, and integration ones), same perFile

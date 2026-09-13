@@ -1,7 +1,7 @@
 # Style Guide
 
 The single source of truth for **how code and tests are written and changed** in
-`@m3l-automation/m3l-common`. It covers three things:
+`@monte3l/m3l-common`. It covers three things:
 
 1. **[Part 1 — Writing new code](#part-1--writing-new-code)**
 2. **[Part 2 — Writing new tests](#part-2--writing-new-tests)**

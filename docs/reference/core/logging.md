@@ -1,6 +1,6 @@
 # Core / logging
 
-Structured, multi-handler logging for `@m3l-automation/m3l-common`. A single `M3LLogger` fans each log event out to an ordered array of handlers — console, file, and JSON — and renders tables.
+Structured, multi-handler logging for `@monte3l/m3l-common`. A single `M3LLogger` fans each log event out to an ordered array of handlers — console, file, and JSON — and renders tables.
 
 ## Overview
 
@@ -180,7 +180,7 @@ new M3LLogger(handlers: readonly M3LLoggerHandler[], options?: M3LLoggerOptions)
 ### Composing handlers
 
 ```typescript
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 // Handlers run in array order; add JSON output for CloudWatch with no subclassing.
 const logger = new Core.M3LLogger([
@@ -198,7 +198,7 @@ logger.warning("3 rows skipped");
 ### Rendering a table
 
 ```typescript
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 logger.table(
   [
@@ -214,7 +214,7 @@ logger.keyValueTable({ region: "eu-south-1", mode: "standalone" });
 ### Redacting sensitive data
 
 ```typescript
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 const safeText = Core.redactSensitiveLogText("token=abc123 user=alice");
 const safeValue = Core.redactSensitiveLogValue({ apiKey: "secret" });
@@ -245,7 +245,7 @@ from a script's own schema via
 [`deriveSecretsSpecifier`](./config.md#derivesecretsspecifier):
 
 ```typescript
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 const secrets = script.configSchema
   ? Core.deriveSecretsSpecifier(script.configSchema)

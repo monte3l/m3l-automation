@@ -112,7 +112,7 @@ alarmNamePrefix?, stateValue?, nextToken?, maxRecords? }`.
   submodules' `types.ts` files each declare a structurally-identical copy
   (every submodule's types are self-contained, no cross-submodule imports),
   but only this module's copy is re-exported through the public
-  `@m3l-automation/m3l-common/aws` barrel to avoid an ambiguous duplicate
+  `@monte3l/m3l-common/aws` barrel to avoid an ambiguous duplicate
   export.
 - **`M3LCloudWatchStatistic`** — `"SampleCount" | "Average" | "Sum" | "Minimum" | "Maximum"`.
 - **`M3LCloudWatchComparisonOperator`** — `"GreaterThanOrEqualToThreshold" | "GreaterThanThreshold" | "LessThanThreshold" | "LessThanOrEqualToThreshold"` — the four static-threshold operators; the anomaly-detection-only operators are out of scope (see above).
@@ -148,7 +148,7 @@ const { alarms } = await cloudWatchAlarmsOperations.describeAlarms({
 ### Standalone construction
 
 ```typescript
-import { AWS } from "@m3l-automation/m3l-common";
+import { AWS } from "@monte3l/m3l-common";
 
 const provider = new AWS.AWSClientProvider({
   profile: AWS.parseAWSProfile("my-profile"),

@@ -1,6 +1,6 @@
 # Core / prompt
 
-Interactive CLI UI for `@m3l-automation/m3l-common`: a unified facade over spinners, a loading bar, and interactive input prompts that degrades gracefully in non-interactive environments.
+Interactive CLI UI for `@monte3l/m3l-common`: a unified facade over spinners, a loading bar, and interactive input prompts that degrades gracefully in non-interactive environments.
 
 ## Overview
 
@@ -176,7 +176,7 @@ through the error message.
 ### Interactive input
 
 ```typescript
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 const prompt = new Core.M3LPrompt();
 
@@ -195,7 +195,7 @@ const targets = await prompt.multiselect("Targets?", [
 ### Concurrent task spinners
 
 ```typescript
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 const spinner = new Core.M3LMultiSpinner();
 
@@ -209,7 +209,7 @@ spinner.spinFail("index", "Index failed");
 ### Loading bar
 
 ```typescript
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 const bar = new Core.M3LLoadingBar();
 bar.update(0, "Starting");

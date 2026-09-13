@@ -8,7 +8,7 @@ The `messaging` module describes how scripts emit outbound messages and read inb
 
 ## Public API
 
-Exported from `@m3l-automation/m3l-common/core` (and the `Core` namespace):
+Exported from `@monte3l/m3l-common/core` (and the `Core` namespace):
 
 - Facade: `M3LMessenger`
 - Abstract interfaces: `M3LMessageWriter`, `M3LMessageReader`
@@ -32,7 +32,7 @@ It provides three send helpers:
 - `sendError(errorMessage, error?, target?)` — send an error notification, optionally including the underlying error.
 
 ```typescript
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 // `writer` is your own M3LMessageWriter implementation for the chosen transport.
 const messenger = new Core.M3LMessenger({

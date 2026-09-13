@@ -2,7 +2,7 @@
   {
     "namespace": "core",
     "name": "agent",
-    "importPath": "@m3l-automation/m3l-common/core",
+    "importPath": "@monte3l/m3l-common/core",
     "status": "✅",
     "wired": true,
     "docPath": "docs/reference/core/agent.md",
@@ -48,7 +48,7 @@
   {
     "namespace": "core",
     "name": "analysis",
-    "importPath": "@m3l-automation/m3l-common/core",
+    "importPath": "@monte3l/m3l-common/core",
     "status": "✅",
     "wired": true,
     "docPath": "docs/reference/core/analysis.md",
@@ -67,7 +67,7 @@
   {
     "namespace": "core",
     "name": "checkpoint",
-    "importPath": "@m3l-automation/m3l-common/core",
+    "importPath": "@monte3l/m3l-common/core",
     "status": "✅",
     "wired": true,
     "docPath": "docs/reference/core/checkpoint.md",
@@ -84,7 +84,7 @@
   {
     "namespace": "core",
     "name": "cli-contract",
-    "importPath": "@m3l-automation/m3l-common/core",
+    "importPath": "@monte3l/m3l-common/core",
     "status": "✅",
     "wired": true,
     "docPath": "docs/reference/core/cli-contract.md",
@@ -108,7 +108,7 @@
   {
     "namespace": "core",
     "name": "config",
-    "importPath": "@m3l-automation/m3l-common/core",
+    "importPath": "@monte3l/m3l-common/core",
     "status": "✅",
     "wired": true,
     "docPath": "docs/reference/core/config.md",
@@ -165,7 +165,7 @@
   {
     "namespace": "core",
     "name": "diagnostics",
-    "importPath": "@m3l-automation/m3l-common/core",
+    "importPath": "@monte3l/m3l-common/core",
     "status": "✅",
     "wired": true,
     "docPath": "docs/reference/core/diagnostics.md",
@@ -209,7 +209,7 @@
   {
     "namespace": "core",
     "name": "environment",
-    "importPath": "@m3l-automation/m3l-common/core",
+    "importPath": "@monte3l/m3l-common/core",
     "status": "✅",
     "wired": true,
     "docPath": "docs/reference/core/environment.md",
@@ -227,7 +227,7 @@
   {
     "namespace": "core",
     "name": "errors",
-    "importPath": "@m3l-automation/m3l-common/core",
+    "importPath": "@monte3l/m3l-common/core",
     "status": "✅",
     "wired": true,
     "docPath": "docs/reference/core/errors.md",
@@ -270,7 +270,7 @@
   {
     "namespace": "core",
     "name": "events",
-    "importPath": "@m3l-automation/m3l-common/core",
+    "importPath": "@monte3l/m3l-common/core",
     "status": "✅",
     "wired": true,
     "docPath": "docs/reference/core/events.md",
@@ -279,7 +279,7 @@
   {
     "namespace": "core",
     "name": "exporters",
-    "importPath": "@m3l-automation/m3l-common/core",
+    "importPath": "@monte3l/m3l-common/core",
     "status": "✅",
     "wired": true,
     "docPath": "docs/reference/core/exporters.md",
@@ -311,7 +311,7 @@
   {
     "namespace": "core",
     "name": "files",
-    "importPath": "@m3l-automation/m3l-common/core",
+    "importPath": "@monte3l/m3l-common/core",
     "status": "✅",
     "wired": true,
     "docPath": "docs/reference/core/files.md",
@@ -332,7 +332,7 @@
   {
     "namespace": "core",
     "name": "importers",
-    "importPath": "@m3l-automation/m3l-common/core",
+    "importPath": "@monte3l/m3l-common/core",
     "status": "✅",
     "wired": true,
     "docPath": "docs/reference/core/importers.md",
@@ -358,7 +358,7 @@
   {
     "namespace": "core",
     "name": "json",
-    "importPath": "@m3l-automation/m3l-common/core",
+    "importPath": "@monte3l/m3l-common/core",
     "status": "✅",
     "wired": true,
     "docPath": "docs/reference/core/json.md",
@@ -381,7 +381,7 @@
   {
     "namespace": "core",
     "name": "logging",
-    "importPath": "@m3l-automation/m3l-common/core",
+    "importPath": "@monte3l/m3l-common/core",
     "status": "✅",
     "wired": true,
     "docPath": "docs/reference/core/logging.md",
@@ -411,7 +411,7 @@
   {
     "namespace": "core",
     "name": "messaging",
-    "importPath": "@m3l-automation/m3l-common/core",
+    "importPath": "@monte3l/m3l-common/core",
     "status": "✅",
     "wired": true,
     "docPath": "docs/reference/core/messaging.md",
@@ -431,7 +431,7 @@
   {
     "namespace": "core",
     "name": "network",
-    "importPath": "@m3l-automation/m3l-common/core",
+    "importPath": "@monte3l/m3l-common/core",
     "status": "✅",
     "wired": true,
     "docPath": "docs/reference/core/network.md",
@@ -455,7 +455,7 @@
   {
     "namespace": "core",
     "name": "orchestration",
-    "importPath": "@m3l-automation/m3l-common/core",
+    "importPath": "@monte3l/m3l-common/core",
     "status": "✅",
     "wired": true,
     "docPath": "docs/reference/core/orchestration.md",
@@ -475,7 +475,7 @@
   {
     "namespace": "core",
     "name": "pipeline",
-    "importPath": "@m3l-automation/m3l-common/core",
+    "importPath": "@monte3l/m3l-common/core",
     "status": "✅",
     "wired": true,
     "docPath": "docs/reference/core/pipeline.md",
@@ -498,7 +498,7 @@
   {
     "namespace": "core",
     "name": "polling",
-    "importPath": "@m3l-automation/m3l-common/core",
+    "importPath": "@monte3l/m3l-common/core",
     "status": "✅",
     "wired": true,
     "docPath": "docs/reference/core/polling.md",
@@ -538,7 +538,7 @@
   {
     "namespace": "core",
     "name": "procedure",
-    "importPath": "@m3l-automation/m3l-common/core",
+    "importPath": "@monte3l/m3l-common/core",
     "status": "✅",
     "wired": true,
     "docPath": "docs/reference/core/procedure.md",
@@ -595,7 +595,7 @@
   {
     "namespace": "core",
     "name": "prompt",
-    "importPath": "@m3l-automation/m3l-common/core",
+    "importPath": "@monte3l/m3l-common/core",
     "status": "✅",
     "wired": true,
     "docPath": "docs/reference/core/prompt.md",
@@ -623,7 +623,7 @@
   {
     "namespace": "core",
     "name": "script",
-    "importPath": "@m3l-automation/m3l-common/core",
+    "importPath": "@monte3l/m3l-common/core",
     "status": "✅",
     "wired": true,
     "docPath": "docs/reference/core/script.md",
@@ -652,7 +652,7 @@
   {
     "namespace": "core",
     "name": "security",
-    "importPath": "@m3l-automation/m3l-common/core",
+    "importPath": "@monte3l/m3l-common/core",
     "status": "✅",
     "wired": true,
     "docPath": "docs/reference/core/security.md",
@@ -661,7 +661,7 @@
   {
     "namespace": "core",
     "name": "storage",
-    "importPath": "@m3l-automation/m3l-common/core",
+    "importPath": "@monte3l/m3l-common/core",
     "status": "✅",
     "wired": true,
     "docPath": "docs/reference/core/storage.md",
@@ -696,7 +696,7 @@
   {
     "namespace": "core",
     "name": "text",
-    "importPath": "@m3l-automation/m3l-common/core",
+    "importPath": "@monte3l/m3l-common/core",
     "status": "✅",
     "wired": true,
     "docPath": "docs/reference/core/text.md",
@@ -718,7 +718,7 @@
   {
     "namespace": "core",
     "name": "utils",
-    "importPath": "@m3l-automation/m3l-common/core",
+    "importPath": "@monte3l/m3l-common/core",
     "status": "✅",
     "wired": true,
     "docPath": "docs/reference/core/utils.md",
@@ -770,7 +770,7 @@
   {
     "namespace": "aws",
     "name": "athena",
-    "importPath": "@m3l-automation/m3l-common/aws",
+    "importPath": "@monte3l/m3l-common/aws",
     "status": "✅",
     "wired": true,
     "docPath": "docs/reference/aws/athena.md",
@@ -793,7 +793,7 @@
   {
     "namespace": "aws",
     "name": "bedrock-runtime",
-    "importPath": "@m3l-automation/m3l-common/aws",
+    "importPath": "@monte3l/m3l-common/aws",
     "status": "✅",
     "wired": true,
     "docPath": "docs/reference/aws/bedrock-runtime.md",
@@ -848,7 +848,7 @@
   {
     "namespace": "aws",
     "name": "clients",
-    "importPath": "@m3l-automation/m3l-common/aws",
+    "importPath": "@monte3l/m3l-common/aws",
     "status": "✅",
     "wired": true,
     "docPath": "docs/reference/aws/clients.md",
@@ -864,7 +864,7 @@
   {
     "namespace": "aws",
     "name": "cloudformation",
-    "importPath": "@m3l-automation/m3l-common/aws",
+    "importPath": "@monte3l/m3l-common/aws",
     "status": "✅",
     "wired": true,
     "docPath": "docs/reference/aws/cloudformation.md",
@@ -893,7 +893,7 @@
   {
     "namespace": "aws",
     "name": "cloudwatch-alarms",
-    "importPath": "@m3l-automation/m3l-common/aws",
+    "importPath": "@monte3l/m3l-common/aws",
     "status": "✅",
     "wired": false,
     "docPath": "docs/reference/aws/cloudwatch-alarms.md",
@@ -914,7 +914,7 @@
   {
     "namespace": "aws",
     "name": "cloudwatch-logs-insights",
-    "importPath": "@m3l-automation/m3l-common/aws",
+    "importPath": "@monte3l/m3l-common/aws",
     "status": "✅",
     "wired": true,
     "docPath": "docs/reference/aws/cloudwatch-logs-insights.md",
@@ -933,7 +933,7 @@
   {
     "namespace": "aws",
     "name": "cloudwatch-metrics",
-    "importPath": "@m3l-automation/m3l-common/aws",
+    "importPath": "@monte3l/m3l-common/aws",
     "status": "✅",
     "wired": false,
     "docPath": "docs/reference/aws/cloudwatch-metrics.md",
@@ -953,7 +953,7 @@
   {
     "namespace": "aws",
     "name": "codepipeline",
-    "importPath": "@m3l-automation/m3l-common/aws",
+    "importPath": "@monte3l/m3l-common/aws",
     "status": "✅",
     "wired": true,
     "docPath": "docs/reference/aws/codepipeline.md",
@@ -998,7 +998,7 @@
   {
     "namespace": "aws",
     "name": "credentials",
-    "importPath": "@m3l-automation/m3l-common/aws",
+    "importPath": "@monte3l/m3l-common/aws",
     "status": "✅",
     "wired": true,
     "docPath": "docs/reference/aws/credentials.md",
@@ -1007,7 +1007,7 @@
   {
     "namespace": "aws",
     "name": "dynamodb",
-    "importPath": "@m3l-automation/m3l-common/aws",
+    "importPath": "@monte3l/m3l-common/aws",
     "status": "✅",
     "wired": true,
     "docPath": "docs/reference/aws/dynamodb.md",
@@ -1036,7 +1036,7 @@
   {
     "namespace": "aws",
     "name": "ecs",
-    "importPath": "@m3l-automation/m3l-common/aws",
+    "importPath": "@monte3l/m3l-common/aws",
     "status": "✅",
     "wired": true,
     "docPath": "docs/reference/aws/ecs.md",
@@ -1058,7 +1058,7 @@
   {
     "namespace": "aws",
     "name": "eks",
-    "importPath": "@m3l-automation/m3l-common/aws",
+    "importPath": "@monte3l/m3l-common/aws",
     "status": "✅",
     "wired": true,
     "docPath": "docs/reference/aws/eks.md",
@@ -1090,7 +1090,7 @@
   {
     "namespace": "aws",
     "name": "eventbridge",
-    "importPath": "@m3l-automation/m3l-common/aws",
+    "importPath": "@monte3l/m3l-common/aws",
     "status": "✅",
     "wired": true,
     "docPath": "docs/reference/aws/eventbridge.md",
@@ -1119,7 +1119,7 @@
   {
     "namespace": "aws",
     "name": "lambda",
-    "importPath": "@m3l-automation/m3l-common/aws",
+    "importPath": "@monte3l/m3l-common/aws",
     "status": "✅",
     "wired": true,
     "docPath": "docs/reference/aws/lambda.md",
@@ -1138,7 +1138,7 @@
   {
     "namespace": "aws",
     "name": "models",
-    "importPath": "@m3l-automation/m3l-common/aws",
+    "importPath": "@monte3l/m3l-common/aws",
     "status": "✅",
     "wired": true,
     "docPath": "docs/reference/aws/models.md",
@@ -1161,7 +1161,7 @@
   {
     "namespace": "aws",
     "name": "rds-data",
-    "importPath": "@m3l-automation/m3l-common/aws",
+    "importPath": "@monte3l/m3l-common/aws",
     "status": "✅",
     "wired": true,
     "docPath": "docs/reference/aws/rds-data.md",
@@ -1186,7 +1186,7 @@
   {
     "namespace": "aws",
     "name": "s3",
-    "importPath": "@m3l-automation/m3l-common/aws",
+    "importPath": "@monte3l/m3l-common/aws",
     "status": "✅",
     "wired": true,
     "docPath": "docs/reference/aws/s3.md",
@@ -1217,7 +1217,7 @@
   {
     "namespace": "aws",
     "name": "secrets-manager",
-    "importPath": "@m3l-automation/m3l-common/aws",
+    "importPath": "@monte3l/m3l-common/aws",
     "status": "✅",
     "wired": true,
     "docPath": "docs/reference/aws/secrets-manager.md",
@@ -1239,7 +1239,7 @@
   {
     "namespace": "aws",
     "name": "signing",
-    "importPath": "@m3l-automation/m3l-common/aws",
+    "importPath": "@monte3l/m3l-common/aws",
     "status": "✅",
     "wired": true,
     "docPath": "docs/reference/aws/signing.md",
@@ -1253,7 +1253,7 @@
   {
     "namespace": "aws",
     "name": "sqs",
-    "importPath": "@m3l-automation/m3l-common/aws",
+    "importPath": "@monte3l/m3l-common/aws",
     "status": "✅",
     "wired": true,
     "docPath": "docs/reference/aws/sqs.md",

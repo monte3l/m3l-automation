@@ -8,7 +8,7 @@ The `analysis` module provides `M3LThresholdEvaluator`, which applies a set of `
 
 ## Public API
 
-Exported from `@m3l-automation/m3l-common/core` (and the `Core` namespace):
+Exported from `@monte3l/m3l-common/core` (and the `Core` namespace):
 
 - `M3LThresholdEvaluator` — the evaluator class.
 - `M3LThresholdRule` — a single threshold-check definition.
@@ -80,7 +80,7 @@ for `any-row` (which is evaluated per-row, with no single aggregate) and for
 `avg`/`min`/`max` when the column holds no numeric values.
 
 ```typescript
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 const rules: Core.M3LThresholdRule[] = [
   {

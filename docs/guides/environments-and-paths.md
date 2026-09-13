@@ -8,7 +8,7 @@ based on that mode. Both honour a set of `M3L_*` environment-variable
 overrides.
 
 All examples are ESM. Import from the namespace
-(`import { Core } from "@m3l-automation/m3l-common";`) or from the
+(`import { Core } from "@monte3l/m3l-common";`) or from the
 `./core` subpath.
 
 ## Detecting the environment
@@ -20,7 +20,7 @@ consistent; call `detectFresh()` to force re-detection if the environment
 may have changed.
 
 ```typescript
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 const info = Core.M3LExecutionEnvironment.detect();
 
@@ -95,7 +95,7 @@ input, output, and cache — relative to the detected deployment mode. The
 `M3LPathType` type names the directory kinds.
 
 ```typescript
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 const paths = new Core.M3LPaths();
 
@@ -151,7 +151,7 @@ is the mechanism behind the `output/{timestamp}/` layout above.
 inside a path template:
 
 ```typescript
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 const expanded = Core.M3LDateTokens.expand("outputs/{YYYY}-{MM}-{DD}");
 // e.g. outputs/2026-06-27

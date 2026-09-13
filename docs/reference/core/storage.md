@@ -12,7 +12,7 @@ Two search modes cover distinct needs: a `full-text` mode using FTS5 `MATCH` wit
 
 ## Public API
 
-Exported from `@m3l-automation/m3l-common/core` (`storage` subpath):
+Exported from `@monte3l/m3l-common/core` (`storage` subpath):
 
 | Symbol                     | Kind  | Purpose                                                        |
 | -------------------------- | ----- | -------------------------------------------------------------- |
@@ -79,7 +79,7 @@ Prepared statements are cached by mode plus filter-signature tuple, so repeated 
 ## Usage
 
 ```typescript
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 const index = new Core.M3LFtsIndex({
   dbPath: "./data/search.sqlite",
@@ -101,7 +101,7 @@ for (const hit of hits) {
 Literal search for a punctuated token:
 
 ```typescript
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 const index = new Core.M3LFtsIndex({
   dbPath: "./data/search.sqlite",
@@ -116,7 +116,7 @@ const hits = index.search("550e8400-e29b-41d4-a716-446655440000", {
 Escape hatch for custom SQL:
 
 ```typescript
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 const index = new Core.M3LFtsIndex({
   dbPath: "./data/search.sqlite",
@@ -130,7 +130,7 @@ const row = db.prepare("SELECT COUNT(*) AS n FROM documents").get();
 ### Append-only stream
 
 ```ts
-import { M3LAppendOnlyStream } from "@m3l-automation/m3l-common/core";
+import { M3LAppendOnlyStream } from "@monte3l/m3l-common/core";
 
 const stream = new M3LAppendOnlyStream({ directory: "/var/lib/m3l/audit" });
 await stream.append({
@@ -152,7 +152,7 @@ Rotation seals the active segment (by no longer writing to it) and opens the nex
 import {
   M3LAppendOnlyStream,
   M3LAppendOnlyStreamReadError,
-} from "@m3l-automation/m3l-common/core";
+} from "@monte3l/m3l-common/core";
 
 const stream = new M3LAppendOnlyStream({ directory: "/var/lib/m3l/audit" });
 try {
@@ -191,7 +191,7 @@ It is explicitly **not** proof that a stream is complete, and it does not attemp
 ### Listing an append-only stream's segments
 
 ```ts
-import { M3LAppendOnlyStream } from "@m3l-automation/m3l-common/core";
+import { M3LAppendOnlyStream } from "@monte3l/m3l-common/core";
 
 const stream = new M3LAppendOnlyStream({ directory: "/var/lib/m3l/audit" });
 const { segments, skipped } = await stream.listSegments();

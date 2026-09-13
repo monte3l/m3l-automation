@@ -110,7 +110,7 @@ Consumers live in this monorepo and depend on the library via `workspace:*`
 ```jsonc
 {
   "dependencies": {
-    "@m3l-automation/m3l-common": "workspace:*",
+    "@monte3l/m3l-common": "workspace:*",
   },
 }
 ```
@@ -122,7 +122,7 @@ not yet available.
 ## Quick start
 
 ```typescript
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 const script = new Core.M3LScript({
   metadata: { name: "hello-script", version: "1.0.0" },
@@ -137,14 +137,14 @@ await script.run(async () => {
 
 The package exposes three import paths:
 
-| Path                              | What you get                      |
-| --------------------------------- | --------------------------------- |
-| `@m3l-automation/m3l-common`      | Both namespaces: `Core` and `AWS` |
-| `@m3l-automation/m3l-common/core` | The `Core` namespace directly     |
-| `@m3l-automation/m3l-common/aws`  | The `AWS` namespace directly      |
+| Path                       | What you get                      |
+| -------------------------- | --------------------------------- |
+| `@monte3l/m3l-common`      | Both namespaces: `Core` and `AWS` |
+| `@monte3l/m3l-common/core` | The `Core` namespace directly     |
+| `@monte3l/m3l-common/aws`  | The `AWS` namespace directly      |
 
 ```typescript
-import { Core, AWS } from "@m3l-automation/m3l-common";
+import { Core, AWS } from "@monte3l/m3l-common";
 ```
 
 - **`Core`** — application scaffolding, configuration, logging, prompts, I/O, data utilities, and resilience primitives.

@@ -912,8 +912,8 @@ case reachable with `retrySafe: true`.
 ### From within a script
 
 ```ts
-import type { M3LScript } from "@m3l-automation/m3l-common/core";
-import { M3LBedrockRuntimeOperations } from "@m3l-automation/m3l-common/aws";
+import type { M3LScript } from "@monte3l/m3l-common/core";
+import { M3LBedrockRuntimeOperations } from "@monte3l/m3l-common/aws";
 
 export async function run(script: M3LScript): Promise<void> {
   const ops = new M3LBedrockRuntimeOperations(
@@ -941,8 +941,8 @@ export async function run(script: M3LScript): Promise<void> {
 ### Streaming from within a script
 
 ```ts
-import type { M3LScript } from "@m3l-automation/m3l-common/core";
-import { M3LBedrockRuntimeOperations } from "@m3l-automation/m3l-common/aws";
+import type { M3LScript } from "@monte3l/m3l-common/core";
+import { M3LBedrockRuntimeOperations } from "@monte3l/m3l-common/aws";
 
 export async function run(script: M3LScript): Promise<void> {
   const ops = new M3LBedrockRuntimeOperations(
@@ -990,7 +990,7 @@ throwing, but only best-effort releases the underlying connection — see
 
 ```ts
 import { BedrockRuntimeClient } from "@aws-sdk/client-bedrock-runtime";
-import { M3LBedrockRuntimeOperations } from "@m3l-automation/m3l-common/aws";
+import { M3LBedrockRuntimeOperations } from "@monte3l/m3l-common/aws";
 
 const client = new BedrockRuntimeClient({ region: "us-east-1" });
 const ops = new M3LBedrockRuntimeOperations(client, {

@@ -16,7 +16,7 @@ The client exposes three request surfaces:
 
 ## Public API
 
-Exported from `@m3l-automation/m3l-common/core` (surfaced through the `Core`
+Exported from `@monte3l/m3l-common/core` (surfaced through the `Core`
 namespace barrel):
 
 | Symbol                     | Kind  | Purpose                                                                                                                                                               |
@@ -100,7 +100,7 @@ It always accepts any 2xx status (there is no `expectedStatus` option here, matc
 ## Usage
 
 ```typescript
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 const client = new Core.M3LHttpClient({
   baseUrl: "https://api.example.com",
@@ -116,7 +116,7 @@ console.log(data.name);
 General request (POST with a per-request header, a caller-serialized body, and an explicit accepted status):
 
 ```typescript
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 const client = new Core.M3LHttpClient({
   baseUrl: "https://api.example.com",
@@ -138,7 +138,7 @@ console.log(created.id);
 Cancellable request via `getAbortable`:
 
 ```typescript
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 const client = new Core.M3LHttpClient({ baseUrl: "https://api.example.com" });
 
@@ -166,7 +166,7 @@ try {
 Routing through a local debugging proxy:
 
 ```typescript
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 const client = new Core.M3LHttpClient({
   baseUrl: "https://api.example.com",
@@ -178,7 +178,7 @@ const client = new Core.M3LHttpClient({
 Downloading a file straight to disk without buffering the response in memory:
 
 ```typescript
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 const downloader = new Core.M3LFileDownloader({
   httpClient: new Core.M3LHttpClient(),

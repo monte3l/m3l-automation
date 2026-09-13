@@ -9,7 +9,7 @@ description: >-
   stance: adr_query (ADR-0096).
 ---
 
-Reconcile all documentation metadata for `@m3l-automation/m3l-common`. This
+Reconcile all documentation metadata for `@monte3l/m3l-common`. This
 task touches **only** docs metadata (provenance sidecars, count checks, markdown
 lint) — never source code, tests, or barrel exports.
 

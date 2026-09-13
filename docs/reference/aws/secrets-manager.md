@@ -152,7 +152,7 @@ await secretsManagerOperations.putSecretValue({
 ### Standalone construction
 
 ```typescript
-import { AWS } from "@m3l-automation/m3l-common";
+import { AWS } from "@monte3l/m3l-common";
 
 const provider = new AWS.AWSClientProvider({
   profile: AWS.parseAWSProfile("my-profile"),

@@ -22,8 +22,8 @@ success — those stay script-specific.
 ## Public API
 
 ```typescript
-import { Core } from "@m3l-automation/m3l-common";
-// or: import { ... } from "@m3l-automation/m3l-common/core";
+import { Core } from "@monte3l/m3l-common";
+// or: import { ... } from "@monte3l/m3l-common/core";
 ```
 
 Exported symbols:
@@ -359,7 +359,7 @@ options stay unexported (callers catch, they don't construct).
 ## Usage
 
 ```typescript
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 interface AthenaCheckpoint {
   readonly queryExecutionId?: string;

@@ -9,8 +9,8 @@ The `json` module provides three capabilities. **Field paths** parse a dot-notat
 ## Public API
 
 ```typescript
-import { Core } from "@m3l-automation/m3l-common";
-// or: import { ... } from "@m3l-automation/m3l-common/core";
+import { Core } from "@monte3l/m3l-common";
+// or: import { ... } from "@monte3l/m3l-common/core";
 ```
 
 Exported symbols:
@@ -34,7 +34,7 @@ Exported symbols:
 ### Field paths
 
 ```typescript
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 const segments = Core.parseFieldPath("metadata.author");
 // segments describe the path "metadata" -> "author"
@@ -63,7 +63,7 @@ Core.extractAll({ a: {} }, "a.__proto__"); // []
 ### Format detection
 
 ```typescript
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 const detector = new Core.M3LJSONFormatDetector();
 const result = await detector.detect("./data/inputs/records.jsonl");
@@ -82,7 +82,7 @@ if (result.format === "json") {
 ### Canonical JSON
 
 ```typescript
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 Core.canonicalJsonStringify({ zebra: 1, apple: 2 });
 // '{"apple":2,"zebra":1}' — keys sorted, insertion order ignored

@@ -2,7 +2,7 @@
 /**
  * PostToolUse reminder (Write|Edit): the `exports` map is the public contract.
  *
- * The `exports` map of `@m3l-automation/m3l-common` (`.`, `./core`, `./aws`,
+ * The `exports` map of `@monte3l/m3l-common` (`.`, `./core`, `./aws`,
  * and the ADR-0004-exception `./core/errors`) IS the public API surface.
  * Adding, removing, or retyping an entry is
  * a semver event that must ship as a `feat!:` / `BREAKING CHANGE:` commit and
@@ -46,7 +46,7 @@ const touchesExports = contentToCheck(input).some((s) =>
 if (!touchesExports) process.exit(0);
 
 process.stderr.write(
-  `Reminder: this edit touches the \`exports\` map of @m3l-automation/m3l-common, ` +
+  `Reminder: this edit touches the \`exports\` map of @monte3l/m3l-common, ` +
     `which is the public API contract (\`.\`, \`./core\`, \`./aws\`, and the ` +
     `ADR-0004-exception \`./core/errors\`). ` +
     `Adding/removing/retyping an entry is a SEMVER event:\n` +
