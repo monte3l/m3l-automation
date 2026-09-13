@@ -2330,6 +2330,16 @@
     "namespace": "core",
     "file": "packages/m3l-common/src/core/storage/append-only-manifest-types.ts"
   },
+  "M3LAppendOnlyStreamManifestError": {
+    "submodule": "storage",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/storage/M3LAppendOnlyStreamManifestError.ts"
+  },
+  "M3L_APPEND_ONLY_MANIFEST_NAME": {
+    "submodule": "storage",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/storage/append-only-manifest-types.ts"
+  },
   "M3LAppendOnlyEntry": {
     "submodule": "storage",
     "namespace": "core",

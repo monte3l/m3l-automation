@@ -65,6 +65,7 @@ import {
 } from "vitest";
 
 import {
+  M3L_APPEND_ONLY_MANIFEST_NAME,
   M3LAppendOnlyStream,
   M3LAppendOnlyStreamReadError,
 } from "../src/core/storage/index.js";
@@ -78,7 +79,6 @@ import {
   parseSegmentName,
   segmentFileName,
 } from "../src/internal/storage/append-only-segments.js";
-import { M3L_APPEND_ONLY_MANIFEST_NAME } from "../src/internal/storage/append-only-manifest.js";
 
 // ---------------------------------------------------------------------------
 // Fixture helpers

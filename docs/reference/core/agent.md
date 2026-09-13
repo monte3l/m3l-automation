@@ -1697,6 +1697,15 @@ handler is where that failure surfaces instead. **ADR-0061's loud-write rule is
 untouched:** a failed append still throws `M3LAgentDecisionLogWriteError` with
 its cause chained, never downgraded to a warning.
 
+The error that handler receives is `Core.M3LAppendOnlyStreamManifestError`
+(`ERR_APPEND_ONLY_STREAM_MANIFEST`), not `M3LAgentDecisionLogWriteError`. That
+is deliberate rather than a leak of the storage layer: the manifest is a
+storage-layer artifact that both owners of the append-only writer share, one
+direction-neutral class makes "the trail can no longer be proven" mean the same
+thing wherever it surfaces, and `M3LAgentDecisionLogWriteError` is this
+module's only error class -- it has no read counterpart, so it could never have
+discriminated a failed manifest read from a failed manifest append.
+
 Because the seal runs on the writer's internal chain rather than inside the
 promise `write()` awaits, an entry is durable when `write()` resolves but a
 `manifest.jsonl` write may still be in flight — so removing or archiving the

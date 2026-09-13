@@ -62,12 +62,10 @@ import {
 } from "vitest";
 
 import { M3LError } from "../src/core/errors/index.js";
+import { M3L_APPEND_ONLY_MANIFEST_NAME } from "../src/core/storage/index.js";
 import type { SegmentDigestResult } from "../src/internal/storage/append-only-digest.js";
 import type { AppendOnlyReadFailure } from "../src/internal/storage/append-only-lines.js";
-import {
-  M3L_APPEND_ONLY_MANIFEST_NAME,
-  readManifest,
-} from "../src/internal/storage/append-only-manifest.js";
+import { readManifest } from "../src/internal/storage/append-only-manifest.js";
 import {
   MANIFEST_FORMAT_VERSION,
   collectRecords,
@@ -757,6 +755,103 @@ describe("seal measurement shape", () => {
     expect(
       definedOrThrow(contents.seals.get(SEGMENT_NEW), "the seal"),
     ).toMatchObject({ entryCount: 0, byteLength: 0, sha256: SHA_A });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// A record's segment name, admitted only when parseSegmentName accepts it
+// ---------------------------------------------------------------------------
+
+describe("seal segment shape", () => {
+  // The security fix this suite pins (X8b4a): `parseSealRecord` reads
+  // `segment` with a bare `ownString` and, until this lands, applies no
+  // further validation — unlike its sibling `ownBaselineUpTo`, which requires
+  // `parseSegmentName` to accept `upTo` before admitting it. A `segment` this
+  // reader's own parser declines was not written by this trail's writer, so —
+  // same grounds as `ownDigest`/`ownMeasurement`/`ownBaselineUpTo` above — it
+  // must take the same fatal path a missing field takes, not be admitted and
+  // handed back verbatim. A segment name IS the one sanctioned exception to
+  // "no caller data in context" (this module's own header), but only when
+  // the library's own parser produced it; a name `parseSegmentName` declined
+  // provably did not, so admitting it turns the sanctioned exception into a
+  // channel for arbitrary attacker-controlled bytes read off disk.
+  const MALFORMED_RECORD_MESSAGE =
+    "append-only stream: a sealed-segment manifest record is incomplete";
+
+  test.each([
+    ["a foreign prefix", "EVIL-customer-secret.jsonl"],
+    // Mirrors `storage-append-only-segments-listing.test.ts`'s own
+    // five-digit fixture: parses to sequence 5 but re-renders as "-0005.jsonl"
+    // (four digits), never round-tripping back to this over-padded name.
+    ["an over-padded five-digit sequence", "2026-01-01-00005.jsonl"],
+    ["a plain non-segment string", "not-a-segment-at-all"],
+    ["a traversal-shaped value", "../../etc/passwd"],
+    ["an empty string", ""],
+  ])(
+    "is fatal on a mid-file seal whose segment is %s, and never echoes it back",
+    async (_label, foreignSegment) => {
+      await writeManifestBytes(
+        `${sealLine({ segment: foreignSegment })}${sealLine()}`,
+      );
+      const port = createFailurePort();
+
+      const thrown = await catchRejected(() =>
+        readManifest(sandbox, AMPLE_MAX_BYTES, port.build),
+      );
+
+      expect(thrown).toBeInstanceOf(M3LError);
+      const call = expectPortFailure(thrown, port);
+      // The SAME fatal path an existing malformed record takes — same
+      // message constant, same error code — not a new one.
+      expect(call.message).toBe(MALFORMED_RECORD_MESSAGE);
+      // The actual security claim: the offending bytes never reach either
+      // observable channel. `expectPortFailure` already covers the general
+      // no-caller-data rule against a fixed set of secrets; this asserts it
+      // specifically against THIS row's planted segment value. An empty
+      // string is skipped here since "" is trivially contained in any
+      // string, which would make the assertion meaningless for that row.
+      if (foreignSegment.length > 0) {
+        expect(call.message).not.toContain(foreignSegment);
+        expect(JSON.stringify(call.context)).not.toContain(foreignSegment);
+      }
+    },
+  );
+
+  test("is fatal on a mid-file seal whose segment is a non-string type", async () => {
+    const withNumericSegment = `${JSON.stringify({
+      kind: "seal",
+      formatVersion: MANIFEST_FORMAT_VERSION,
+      at: "2026-09-11T01:00:00.000Z",
+      segment: 42,
+      entryCount: 1,
+      byteLength: 10,
+      sha256: SHA_A,
+    })}\n`;
+    await writeManifestBytes(`${withNumericSegment}${sealLine()}`);
+    const port = createFailurePort();
+
+    const thrown = await catchRejected(() =>
+      readManifest(sandbox, AMPLE_MAX_BYTES, port.build),
+    );
+
+    expect(thrown).toBeInstanceOf(M3LError);
+    const call = expectPortFailure(thrown, port);
+    expect(call.message).toBe(MALFORMED_RECORD_MESSAGE);
+  });
+
+  test("accepts a seal whose segment IS a name parseSegmentName accepts, the positive control for the rows above", async () => {
+    // Without this, an implementation that rejected every segment outright
+    // — including a genuine one — would still pass every refusal row above.
+    // A test that only proves rejection would prove nothing by itself.
+    await writeManifestBytes(sealLine({ segment: SEGMENT_OLD }));
+    const port = createFailurePort();
+
+    const contents = await readManifest(sandbox, AMPLE_MAX_BYTES, port.build);
+
+    expect(port.calls).toHaveLength(0);
+    expect(
+      definedOrThrow(contents.seals.get(SEGMENT_OLD), "the seal"),
+    ).toMatchObject({ segment: SEGMENT_OLD });
   });
 });
 

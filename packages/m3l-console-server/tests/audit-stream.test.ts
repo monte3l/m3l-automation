@@ -19,10 +19,6 @@
  * written through the stream, the segment bytes are read back, and the secret
  * appears nowhere in them. `tests/audit-record.test.ts` proves the same
  * property at the type level.
- *
- * RED: `../src/audit/stream.js` and `../src/audit/port.js` do not exist yet —
- * every import below is expected to fail to resolve until the implementer
- * lands the module.
  */
 import {
   chmodSync,
@@ -62,13 +58,11 @@ const SECRET_VALUE = "shibboleth-9f2c-parameter-value-must-not-leak";
  * never surfaces it through `read()`/`listSegments()` — but it IS a real file
  * in the stream directory, so a raw `readdirSync`-based fixture here must
  * exclude it explicitly or its own JSONL lines get counted as recorded
- * actions. This package consumes the library through its built `exports`,
- * not `src/` by relative path, so the name is duplicated here rather than
- * imported; the canonical definition is
- * `packages/m3l-common/src/internal/storage/append-only-manifest.ts`'s
- * `M3L_APPEND_ONLY_MANIFEST_NAME`.
+ * actions. `Core.M3L_APPEND_ONLY_MANIFEST_NAME` is now public, so the name is
+ * reached through the same `Core` namespace as every other library symbol in
+ * this file rather than duplicated.
  */
-const APPEND_ONLY_MANIFEST_NAME = "manifest.jsonl";
+const APPEND_ONLY_MANIFEST_NAME = Core.M3L_APPEND_ONLY_MANIFEST_NAME;
 
 /** A declared operator email — `identity.ts:29` promises it is never logged. */
 const OPERATOR_EMAIL = "ada@example.invalid";

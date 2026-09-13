@@ -44,12 +44,10 @@ import {
 } from "vitest";
 
 import { M3LError } from "../src/core/errors/index.js";
+import { M3L_APPEND_ONLY_MANIFEST_NAME } from "../src/core/storage/index.js";
 import { APPEND_FLAGS } from "../src/internal/storage/append-only-fs.js";
 import type { AppendOnlyReadFailure } from "../src/internal/storage/append-only-lines.js";
-import {
-  M3L_APPEND_ONLY_MANIFEST_NAME,
-  readManifest,
-} from "../src/internal/storage/append-only-manifest.js";
+import { readManifest } from "../src/internal/storage/append-only-manifest.js";
 import type { SegmentSealClaim } from "../src/internal/storage/append-only-manifest.js";
 import type { ManifestSealRecord } from "../src/internal/storage/append-only-manifest-records.js";
 import {

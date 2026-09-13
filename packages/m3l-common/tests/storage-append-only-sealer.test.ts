@@ -70,10 +70,10 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 import { M3LError } from "../src/core/errors/index.js";
+import { M3L_APPEND_ONLY_MANIFEST_NAME } from "../src/core/storage/index.js";
 import type { AppendOnlyReadFailure } from "../src/internal/storage/append-only-lines.js";
 import type { ManifestSealRecord } from "../src/internal/storage/append-only-manifest-records.js";
 import {
-  M3L_APPEND_ONLY_MANIFEST_NAME,
   MANIFEST_FORMAT_VERSION,
   readManifest,
 } from "../src/internal/storage/append-only-manifest.js";

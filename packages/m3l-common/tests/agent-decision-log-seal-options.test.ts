@@ -55,7 +55,7 @@ import type {
   M3LAgentIdentity,
 } from "../src/core/agent/index.js";
 import { M3LError } from "../src/core/errors/index.js";
-import { M3L_APPEND_ONLY_MANIFEST_NAME } from "../src/internal/storage/append-only-manifest.js";
+import { M3L_APPEND_ONLY_MANIFEST_NAME } from "../src/core/storage/index.js";
 
 /**
  * Constructs through an `unknown` seam so an options bag carrying a value
