@@ -413,6 +413,17 @@ If the `git pull --rebase` stops on conflicts, do not force past it — hand off
 to the `/resolving-merge-conflicts` skill (it auto-resolves derived-artifact
 conflicts and hands back any real `src/`/test logic), then finish the push.
 
+**A conflict-free rebase here is not proof the branch still builds.** Git's
+no-conflict result only means the two histories didn't touch the same lines —
+it says nothing about whether a pulled-in commit renamed or moved something
+this branch's own new code (added since the last push, so never reviewed
+against the rename) depends on. A rebase across an in-flight specifier/rename
+migration PR landed exactly this way: zero conflicts, then a `TS2307` module-
+resolution failure on code this branch itself had just written
+(`docs/logs/2026-09-13-x8c-cleanup-errno.md`). Run the affected package's
+`typecheck` after any rebase that pulls in new commits, not only when git
+reports a conflict.
+
 Capture the resulting commit SHA:
 
 ```bash

@@ -179,6 +179,7 @@ target was renamed is repaired via `RENAMED_TARGETS` in
 | 2026-09-05 | X8 — self-telemetry + retention, wave close-out (issue #556)   | [x8-close-out](./2026-09-05-x8-close-out.md)                                                             |
 | 2026-09-11 | X8a — reconcile human-action specs against routes (PR #1183)   | [x8a-human-action-reconciliation](./2026-09-11-x8a-human-action-reconciliation.md)                       |
 | 2026-09-12 | X13 — session → flow export, 7-PR sequence (issue #561)        | [x13-session-flow-export](./2026-09-12-x13-session-flow-export.md)                                       |
+| 2026-09-13 | X8c — cleanup failure context reports the errno (PR #1236)     | [x8c-cleanup-errno](./2026-09-13-x8c-cleanup-errno.md)                                                   |
 
 > X1 (governance docs) and X2 (`m3l-console-server` skeleton) shipped without
 > logs; X3 is the first entry in this wave.
