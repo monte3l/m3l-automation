@@ -61,7 +61,15 @@ export const CLI_LIBRARY_DEPENDENCY = "@monte3l/m3l-common";
  */
 export const CLI_LIBRARY_DEPENDENCY_VALUE = "workspace:*";
 
-/** Workspace-internal packages share this scope; anything else is third-party. */
+/**
+ * The scope every `scripts/*` sibling dependency still carries. Since ADR-0103
+ * moved the library itself to `@monte3l/m3l-common`, this scope no longer
+ * covers every workspace-internal dependency — only the non-library ones
+ * (`scripts/*`, `console-server`, etc.) that haven't migrated. The library
+ * name is excluded from this check entirely (see the `continue` above), so a
+ * second `@monte3l/*` workspace dependency is not yet a live gap, only a
+ * latent one.
+ */
 export const WORKSPACE_SCOPE = "@m3l-automation/";
 
 /** The single `bin` entry name and its target. */

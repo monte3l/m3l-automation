@@ -262,7 +262,11 @@ describe("cliPackageManifestErrors — synthetic fixtures", () => {
       }),
     );
     expect(errors).toHaveLength(2);
-    expect(errors.some((e) => e.includes(CLI_LIBRARY_DEPENDENCY))).toBe(true);
+    expect(
+      errors.some((e) =>
+        e.includes(`dependencies must include "${CLI_LIBRARY_DEPENDENCY}"`),
+      ),
+    ).toBe(true);
     expect(
       errors.some((e) => e.includes('must be pinned to "workspace:*"')),
     ).toBe(true);

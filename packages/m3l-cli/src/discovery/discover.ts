@@ -231,8 +231,8 @@ function discoverScriptsFromFilesystem(
  * @example
  * ```ts
  * const candidates = discoverScriptsFromDependencyGraph();
- * // one M3LCliScriptCandidate per @m3l-automation/* dependency this CLI
- * // package declares (excluding @monte3l/m3l-common) that resolves
+ * // one M3LCliScriptCandidate per @m3l-automation/*-scoped script dependency
+ * // this CLI package declares that resolves
  * ```
  */
 export function discoverScriptsFromDependencyGraph(
