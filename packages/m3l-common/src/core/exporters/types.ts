@@ -18,7 +18,7 @@ import type { M3LError } from "../errors/index.js";
  *
  * @example
  * ```typescript
- * import type { ColumnConflictStrategy } from "@m3l-automation/m3l-common/core";
+ * import type { ColumnConflictStrategy } from "@monte3l/m3l-common/core";
  * const strategy: ColumnConflictStrategy = "keep-original";
  * ```
  */
@@ -34,7 +34,7 @@ export type ColumnConflictStrategy = "keep-generated" | "keep-original";
  * @typeParam TItem - The shape of each appended item.
  * @example
  * ```typescript
- * import type { M3LListExporterStreamWriter } from "@m3l-automation/m3l-common/core";
+ * import type { M3LListExporterStreamWriter } from "@monte3l/m3l-common/core";
  *
  * async function writeAll(
  *   writer: M3LListExporterStreamWriter<{ id: string }>,
@@ -95,7 +95,7 @@ export interface M3LListExporterStreamWriter<TItem extends object> {
  * @typeParam TItem - The shape of each exported item.
  * @example
  * ```typescript
- * import type { M3LListExporter } from "@m3l-automation/m3l-common/core";
+ * import type { M3LListExporter } from "@monte3l/m3l-common/core";
  *
  * async function exportAll(
  *   exporter: M3LListExporter<{ id: string }>,
@@ -160,7 +160,7 @@ export interface M3LListExporterCompletedPayload {
  *
  * @example
  * ```typescript
- * import { Core } from "@m3l-automation/m3l-common";
+ * import { Core } from "@monte3l/m3l-common";
  *
  * const exporter = new Core.M3LCSVListExporter<{ id: string }>({
  *   filePath: "./data/outputs/rows.csv",
@@ -193,7 +193,7 @@ export interface M3LListExporterEvents {
  *
  * @example
  * ```typescript
- * import type { M3LCSVListExporterOptions } from "@m3l-automation/m3l-common/core";
+ * import type { M3LCSVListExporterOptions } from "@monte3l/m3l-common/core";
  * const options: M3LCSVListExporterOptions = {
  *   filePath: "./data/outputs/users.csv",
  *   conflictStrategy: "keep-original",
@@ -241,7 +241,7 @@ export type M3LJSONListExporterFormat = "array" | "jsonl";
  *
  * @example
  * ```typescript
- * import type { M3LJSONListExporterOptions } from "@m3l-automation/m3l-common/core";
+ * import type { M3LJSONListExporterOptions } from "@monte3l/m3l-common/core";
  * const options: M3LJSONListExporterOptions = {
  *   filePath: "./data/outputs/records.jsonl",
  *   format: "jsonl",
@@ -274,7 +274,7 @@ export interface M3LJSONListExporterOptions {
  *
  * @example
  * ```typescript
- * import type { M3LHTMLListExporterOptions } from "@m3l-automation/m3l-common/core";
+ * import type { M3LHTMLListExporterOptions } from "@monte3l/m3l-common/core";
  * const options: M3LHTMLListExporterOptions = {
  *   filePath: "./data/outputs/report.html",
  *   columns: ["id", "name"],

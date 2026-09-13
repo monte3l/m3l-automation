@@ -20,7 +20,7 @@ import { extractAll, navigateFieldPath } from "./fieldPath.js";
  *
  * @example
  * ```typescript
- * import { M3LJSONFieldExtractor } from "@m3l-automation/m3l-common/core";
+ * import { M3LJSONFieldExtractor } from "@monte3l/m3l-common/core";
  * const extractor = new M3LJSONFieldExtractor("metadata.author");
  * extractor.extract({ metadata: { author: "Ada" } }); // "Ada"
  * extractor.extract({ metadata: {} }); // undefined
@@ -49,7 +49,7 @@ export class M3LJSONFieldExtractor {
    *
    * @example
    * ```typescript
-   * import { M3LJSONFieldExtractor } from "@m3l-automation/m3l-common/core";
+   * import { M3LJSONFieldExtractor } from "@monte3l/m3l-common/core";
    * const extractor = new M3LJSONFieldExtractor("items.0");
    * extractor.extract({ items: ["x"] }); // "x" — a digit segment indexes into the array
    * ```
@@ -69,7 +69,7 @@ export class M3LJSONFieldExtractor {
    *
    * @example
    * ```typescript
-   * import { M3LJSONFieldExtractor } from "@m3l-automation/m3l-common/core";
+   * import { M3LJSONFieldExtractor } from "@monte3l/m3l-common/core";
    * const extractor = new M3LJSONFieldExtractor("items.*.id");
    * extractor.extractAll({ items: [{ id: 1 }, { id: 2 }] }); // [1, 2]
    * ```

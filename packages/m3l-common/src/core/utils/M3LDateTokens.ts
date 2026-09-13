@@ -29,7 +29,7 @@ function pad2(n: number): string {
  *
  * @example
  * ```typescript
- * import { M3LDateTokens } from "@m3l-automation/m3l-common/core";
+ * import { M3LDateTokens } from "@monte3l/m3l-common/core";
  * const path = M3LDateTokens.expand("outputs/{YYYY}-{MM}-{DD}");
  * // returns e.g. "outputs/2026-06-27"
  * ```
@@ -45,7 +45,7 @@ export class M3LDateTokens {
    *
    * @example
    * ```typescript
-   * import { M3LDateTokens } from "@m3l-automation/m3l-common/core";
+   * import { M3LDateTokens } from "@monte3l/m3l-common/core";
    * const path = M3LDateTokens.expand("outputs/{YYYY}-{MM}-{DD}");
    * // returns e.g. "outputs/2026-06-27"
    * ```

@@ -45,7 +45,7 @@ const SQS_CAP_MS = 3_000;
  *
  * @example
  * ```ts
- * import { Core } from "@m3l-automation/m3l-common/core";
+ * import { Core } from "@monte3l/m3l-common/core";
  *
  * const runner = new Core.M3LRetryRunner(
  *   Core.M3LPollingPolicies.awsThrottling(),

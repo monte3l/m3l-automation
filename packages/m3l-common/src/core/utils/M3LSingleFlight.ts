@@ -20,7 +20,7 @@
  *
  * @example
  * ```typescript
- * import { M3LSingleFlight } from "@m3l-automation/m3l-common/core";
+ * import { M3LSingleFlight } from "@monte3l/m3l-common/core";
  *
  * const single = new M3LSingleFlight();
  *
@@ -51,7 +51,7 @@ export class M3LSingleFlight {
    *
    * @example
    * ```typescript
-   * import { M3LSingleFlight } from "@m3l-automation/m3l-common/core";
+   * import { M3LSingleFlight } from "@monte3l/m3l-common/core";
    *
    * const single = new M3LSingleFlight();
    * const value = await single.run("k", async () => 42);

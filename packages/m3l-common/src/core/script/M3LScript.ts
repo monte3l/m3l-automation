@@ -263,7 +263,7 @@ function projectReportedRecoveryEntry(
  *
  * @example
  * ```ts
- * import { M3LScript } from "@m3l-automation/m3l-common/core";
+ * import { M3LScript } from "@monte3l/m3l-common/core";
  *
  * const script = new M3LScript({
  *   metadata: { name: "report-builder", version: "1.0.0" },
@@ -446,7 +446,7 @@ export class M3LScript {
    *
    * @example
    * ```ts
-   * import { M3LScript } from "@m3l-automation/m3l-common/core";
+   * import { M3LScript } from "@monte3l/m3l-common/core";
    *
    * const script = new M3LScript({ metadata: { name: "x", version: "1.0.0" } });
    * await script.run(async () => {
@@ -490,7 +490,7 @@ export class M3LScript {
    *
    * @example
    * ```ts
-   * import { M3LLogger, M3LScript, confirmDestructive, runScript, sensitiveTargets } from "@m3l-automation/m3l-common/core";
+   * import { M3LLogger, M3LScript, confirmDestructive, runScript, sensitiveTargets } from "@monte3l/m3l-common/core";
    *
    * const script = new M3LScript({ metadata: { name: "x", version: "1.0.0" } });
    * const logger = new M3LLogger([]);
@@ -526,7 +526,7 @@ export class M3LScript {
    *
    * @example
    * ```ts
-   * import { M3LScript } from "@m3l-automation/m3l-common/core";
+   * import { M3LScript } from "@monte3l/m3l-common/core";
    *
    * const script = new M3LScript({ metadata: { name: "x", version: "1.0.0" } });
    * await script.run(async () => {
@@ -561,7 +561,7 @@ export class M3LScript {
    *
    * @example
    * ```ts
-   * import { M3LScript, runScript, M3LPoller, M3LBackoff } from "@m3l-automation/m3l-common/core";
+   * import { M3LScript, runScript, M3LPoller, M3LBackoff } from "@monte3l/m3l-common/core";
    *
    * const script = new M3LScript({ metadata: { name: "x", version: "1.0.0" } });
    *
@@ -672,7 +672,7 @@ export class M3LScript {
    *
    * @example
    * ```ts
-   * import { M3LScript } from "@m3l-automation/m3l-common/core";
+   * import { M3LScript } from "@monte3l/m3l-common/core";
    *
    * const script = new M3LScript({ metadata: { name: "x", version: "1.0.0" } });
    * const config = await script.getConfiguration();
@@ -696,7 +696,7 @@ export class M3LScript {
    *
    * @example
    * ```ts
-   * import { M3LScript } from "@m3l-automation/m3l-common/core";
+   * import { M3LScript } from "@monte3l/m3l-common/core";
    *
    * const script = new M3LScript({ metadata: { name: "x", version: "1.0.0" } });
    * console.log(script.configSchema); // undefined — no config declared
@@ -718,7 +718,7 @@ export class M3LScript {
    *
    * @example
    * ```ts
-   * import { M3LScript } from "@m3l-automation/m3l-common/core";
+   * import { M3LScript } from "@monte3l/m3l-common/core";
    *
    * const script = new M3LScript({ metadata: { name: "x", version: "1.0.0" } });
    * await script.getConfiguration();
@@ -740,7 +740,7 @@ export class M3LScript {
    *
    * @example
    * ```ts
-   * import { M3LScript } from "@m3l-automation/m3l-common/core";
+   * import { M3LScript } from "@monte3l/m3l-common/core";
    *
    * const script = new M3LScript({ metadata: { name: "x", version: "1.0.0" } });
    * console.log(script.metadata.name); // "x"
@@ -761,7 +761,7 @@ export class M3LScript {
    *
    * @example
    * ```ts
-   * import { M3LScript } from "@m3l-automation/m3l-common/core";
+   * import { M3LScript } from "@monte3l/m3l-common/core";
    *
    * const script = new M3LScript({ metadata: { name: "x", version: "1.0.0" } });
    * await script.run(async () => {});
@@ -788,7 +788,7 @@ export class M3LScript {
    *
    * @example
    * ```ts
-   * import { M3LScript } from "@m3l-automation/m3l-common/core";
+   * import { M3LScript } from "@monte3l/m3l-common/core";
    *
    * const script = new M3LScript({ metadata: { name: "x", version: "1.0.0" } });
    * try {
@@ -823,7 +823,7 @@ export class M3LScript {
    *
    * @example
    * ```ts
-   * import { M3LScript } from "@m3l-automation/m3l-common/core";
+   * import { M3LScript } from "@monte3l/m3l-common/core";
    *
    * const script = new M3LScript({ metadata: { name: "x", version: "1.0.0" } });
    * await script.run(async () => {});
@@ -861,7 +861,7 @@ export class M3LScript {
    *
    * @example
    * ```ts
-   * import { M3LScript, runScript } from "@m3l-automation/m3l-common/core";
+   * import { M3LScript, runScript } from "@monte3l/m3l-common/core";
    *
    * const script = new M3LScript({ metadata: { name: "batch", version: "1.0.0" } });
    *
@@ -909,7 +909,7 @@ export class M3LScript {
    *
    * @example
    * ```ts
-   * import { M3LScript } from "@m3l-automation/m3l-common/core";
+   * import { M3LScript } from "@monte3l/m3l-common/core";
    *
    * const script = new M3LScript({ metadata: { name: "batch", version: "1.0.0" } });
    * console.log(script.recovery.length); // 0 before any reportRecovery call
@@ -933,7 +933,7 @@ export class M3LScript {
    *
    * @example
    * ```ts
-   * import { M3LScript } from "@m3l-automation/m3l-common/core";
+   * import { M3LScript } from "@monte3l/m3l-common/core";
    *
    * const script = new M3LScript({ metadata: { name: "batch", version: "1.0.0" } });
    * console.log(script.recoveryTotal); // 0 before any reportRecovery call
@@ -1076,7 +1076,7 @@ export class M3LScript {
    *
    * @example
    * ```ts
-   * import { M3LScript } from "@m3l-automation/m3l-common/core";
+   * import { M3LScript } from "@monte3l/m3l-common/core";
    *
    * interface MyEvent { readonly id: string }
    * interface MyResult { readonly ok: boolean }

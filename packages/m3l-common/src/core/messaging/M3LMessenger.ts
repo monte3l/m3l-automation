@@ -51,8 +51,8 @@ function resolveTarget(
  *
  * @example
  * ```typescript
- * import { M3LMessenger, M3LError } from "@m3l-automation/m3l-common/core";
- * import type { M3LMessageWriter } from "@m3l-automation/m3l-common/core";
+ * import { M3LMessenger, M3LError } from "@monte3l/m3l-common/core";
+ * import type { M3LMessageWriter } from "@monte3l/m3l-common/core";
  *
  * declare const writer: M3LMessageWriter;
  *

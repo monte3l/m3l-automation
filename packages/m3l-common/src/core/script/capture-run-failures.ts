@@ -18,8 +18,8 @@ import type { M3LScriptLifecycleHooks } from "./M3LScriptOptions.js";
  *
  * @example
  * ```ts
- * import { captureRunFailures } from "@m3l-automation/m3l-common/core";
- * import type { M3LCapturedRunFailures } from "@m3l-automation/m3l-common/core";
+ * import { captureRunFailures } from "@monte3l/m3l-common/core";
+ * import type { M3LCapturedRunFailures } from "@monte3l/m3l-common/core";
  *
  * const capture: M3LCapturedRunFailures = captureRunFailures(hooks);
  * ```
@@ -58,7 +58,7 @@ export interface M3LCapturedRunFailures {
  *
  * @example
  * ```ts
- * import { captureRunFailures, runScript } from "@m3l-automation/m3l-common/core";
+ * import { captureRunFailures, runScript } from "@monte3l/m3l-common/core";
  *
  * const capture = captureRunFailures(hooks);
  * const script = new M3LScript({ metadata, hooks: capture.hooks });

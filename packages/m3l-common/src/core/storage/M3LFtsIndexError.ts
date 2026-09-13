@@ -61,7 +61,7 @@ interface M3LFtsIndexErrorOptions {
  * import {
  *   M3LFtsIndex,
  *   M3LFtsIndexError,
- * } from "@m3l-automation/m3l-common/core";
+ * } from "@monte3l/m3l-common/core";
  *
  * try {
  *   const index = new M3LFtsIndex({ dbPath: ":memory:", table: "bad name" });

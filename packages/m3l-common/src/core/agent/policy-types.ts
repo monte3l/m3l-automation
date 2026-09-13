@@ -19,7 +19,7 @@ import type { M3LSensitiveTargetSpec } from "../prompt/index.js";
  *
  * @example
  * ```ts
- * import type { M3LAgentScriptGrant } from "@m3l-automation/m3l-common/core";
+ * import type { M3LAgentScriptGrant } from "@monte3l/m3l-common/core";
  *
  * const grant: M3LAgentScriptGrant = {
  *   script: "dynamodb-crud",
@@ -67,7 +67,7 @@ export interface M3LAgentScriptGrant {
  *
  * @example
  * ```ts
- * import type { M3LAgentPolicyDeclaration } from "@m3l-automation/m3l-common/core";
+ * import type { M3LAgentPolicyDeclaration } from "@monte3l/m3l-common/core";
  *
  * const declaration: M3LAgentPolicyDeclaration = {
  *   version: 1,
@@ -133,7 +133,7 @@ export interface M3LAgentPolicyDeclaration {
  *
  * @example
  * ```ts
- * import type { M3LAgentBudgets } from "@m3l-automation/m3l-common/core";
+ * import type { M3LAgentBudgets } from "@monte3l/m3l-common/core";
  *
  * const budgets: M3LAgentBudgets = { invocationsPerRun: 50, costPerRun: 5 };
  * ```
@@ -171,8 +171,8 @@ export interface M3LAgentBudgets {
  *
  * @example
  * ```ts
- * import { validateAgentPolicy } from "@m3l-automation/m3l-common/core";
- * import type { M3LAgentPolicy } from "@m3l-automation/m3l-common/core";
+ * import { validateAgentPolicy } from "@monte3l/m3l-common/core";
+ * import type { M3LAgentPolicy } from "@monte3l/m3l-common/core";
  *
  * const policy: M3LAgentPolicy = validateAgentPolicy({
  *   version: 1,
@@ -192,7 +192,7 @@ export type M3LAgentPolicy = M3LAgentPolicyDeclaration & {
  *
  * @example
  * ```ts
- * import { M3L_AGENT_MAX_SCRIPT_GRANTS } from "@m3l-automation/m3l-common/core";
+ * import { M3L_AGENT_MAX_SCRIPT_GRANTS } from "@monte3l/m3l-common/core";
  *
  * const room = M3L_AGENT_MAX_SCRIPT_GRANTS; // 128
  * ```
@@ -207,7 +207,7 @@ export const M3L_AGENT_MAX_SCRIPT_GRANTS = 128;
  *
  * @example
  * ```ts
- * import { M3L_AGENT_MAX_OPERATIONS_PER_GRANT } from "@m3l-automation/m3l-common/core";
+ * import { M3L_AGENT_MAX_OPERATIONS_PER_GRANT } from "@monte3l/m3l-common/core";
  *
  * const room = M3L_AGENT_MAX_OPERATIONS_PER_GRANT; // 128
  * ```
@@ -226,7 +226,7 @@ export const M3L_AGENT_MAX_OPERATIONS_PER_GRANT = 128;
  *
  * @example
  * ```ts
- * import { M3L_AGENT_MAX_SENSITIVE_TARGET_ENTRIES } from "@m3l-automation/m3l-common/core";
+ * import { M3L_AGENT_MAX_SENSITIVE_TARGET_ENTRIES } from "@monte3l/m3l-common/core";
  *
  * const room = M3L_AGENT_MAX_SENSITIVE_TARGET_ENTRIES; // 256
  * ```

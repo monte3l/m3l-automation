@@ -77,7 +77,7 @@ interface CountRow {
  *
  * @example
  * ```ts
- * import { M3LFtsIndex } from "@m3l-automation/m3l-common/core";
+ * import { M3LFtsIndex } from "@monte3l/m3l-common/core";
  *
  * const index = new M3LFtsIndex({ dbPath: ":memory:", table: "documents" });
  *
@@ -347,7 +347,7 @@ export class M3LFtsIndex {
    *
    * @example
    * ```ts
-   * import { M3LFtsIndex } from "@m3l-automation/m3l-common/core";
+   * import { M3LFtsIndex } from "@monte3l/m3l-common/core";
    *
    * const index = new M3LFtsIndex({ dbPath: "./data/search.sqlite", table: "documents" });
    * try {

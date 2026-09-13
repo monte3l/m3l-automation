@@ -63,7 +63,7 @@ interface SerializedError {
  *
  * @example
  * ```ts
- * import { serializeError } from "@m3l-automation/m3l-common/core";
+ * import { serializeError } from "@monte3l/m3l-common/core";
  *
  * try {
  *   throw new Error("boom");
@@ -122,7 +122,7 @@ function describeNonError(error: unknown): string {
  *
  * @example
  * ```ts
- * import { installProcessGuards } from "@m3l-automation/m3l-common/core";
+ * import { installProcessGuards } from "@monte3l/m3l-common/core";
  *
  * installProcessGuards();
  * ```
@@ -161,7 +161,7 @@ export function installProcessGuards(): void {
  *
  * @example
  * ```ts
- * import { setProcessGuardRequestId } from "@m3l-automation/m3l-common/core";
+ * import { setProcessGuardRequestId } from "@monte3l/m3l-common/core";
  *
  * export const handler = async (event: unknown, context: { awsRequestId: string }) => {
  *   setProcessGuardRequestId(context.awsRequestId);

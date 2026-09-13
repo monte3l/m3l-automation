@@ -47,7 +47,7 @@ export type M3LThresholdSeverity = "info" | "warning" | "critical";
  *
  * @example
  * ```typescript
- * import type { M3LThresholdRule } from "@m3l-automation/m3l-common/core";
+ * import type { M3LThresholdRule } from "@monte3l/m3l-common/core";
  *
  * const rule: M3LThresholdRule = {
  *   name: "error-rate-too-high",
@@ -82,7 +82,7 @@ export interface M3LThresholdRule {
  *
  * @example
  * ```typescript
- * import type { M3LThresholdRuleResult } from "@m3l-automation/m3l-common/core";
+ * import type { M3LThresholdRuleResult } from "@monte3l/m3l-common/core";
  *
  * const result: M3LThresholdRuleResult = {
  *   name: "error-rate-too-high",
@@ -135,7 +135,7 @@ export type M3LThresholdVerdict = "breached" | "clear" | "no-rules";
  *
  * @example
  * ```typescript
- * import type { M3LThresholdEvaluation } from "@m3l-automation/m3l-common/core";
+ * import type { M3LThresholdEvaluation } from "@monte3l/m3l-common/core";
  *
  * function report(evaluation: M3LThresholdEvaluation): void {
  *   if (evaluation.verdict === "no-rules") {
@@ -452,8 +452,8 @@ function buildSummary(results: readonly M3LThresholdRuleResult[]): string {
  *
  * @example
  * ```typescript
- * import { M3LThresholdEvaluator } from "@m3l-automation/m3l-common/core";
- * import type { M3LThresholdRule } from "@m3l-automation/m3l-common/core";
+ * import { M3LThresholdEvaluator } from "@monte3l/m3l-common/core";
+ * import type { M3LThresholdRule } from "@monte3l/m3l-common/core";
  *
  * const rules: M3LThresholdRule[] = [
  *   {

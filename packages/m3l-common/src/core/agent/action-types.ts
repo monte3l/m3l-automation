@@ -19,7 +19,7 @@ import type { M3LDestructiveTarget } from "../prompt/index.js";
  *
  * @example
  * ```ts
- * import type { M3LAgentActionKind } from "@m3l-automation/m3l-common/core";
+ * import type { M3LAgentActionKind } from "@monte3l/m3l-common/core";
  *
  * const kind: M3LAgentActionKind = "mutating";
  * ```
@@ -37,7 +37,7 @@ export type M3LAgentActionKind = "read-only" | "mutating";
  *
  * @example
  * ```ts
- * import type { M3LAgentAction } from "@m3l-automation/m3l-common/core";
+ * import type { M3LAgentAction } from "@monte3l/m3l-common/core";
  *
  * const action: M3LAgentAction = {
  *   script: "dynamodb-crud",
@@ -136,7 +136,7 @@ export interface M3LAgentActionRecordTarget {
  *
  * @example
  * ```ts
- * import type { M3LAgentActionRecord } from "@m3l-automation/m3l-common/core";
+ * import type { M3LAgentActionRecord } from "@monte3l/m3l-common/core";
  *
  * function describe(record: M3LAgentActionRecord): string {
  *   return `${record.script}:${record.operation ?? "-"} (${record.kind})`;
@@ -181,7 +181,7 @@ export interface M3LAgentActionRecord {
  *
  * @example
  * ```ts
- * import { M3L_AGENT_MAX_PARAMETER_NAMES } from "@m3l-automation/m3l-common/core";
+ * import { M3L_AGENT_MAX_PARAMETER_NAMES } from "@monte3l/m3l-common/core";
  *
  * const withinBound = (names: readonly string[]): boolean =>
  *   names.length <= M3L_AGENT_MAX_PARAMETER_NAMES;

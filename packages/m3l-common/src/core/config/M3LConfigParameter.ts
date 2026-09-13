@@ -121,7 +121,7 @@ interface M3LConfigParameterOptions<TType extends M3LConfigParameterType> {
  *   M3LConfigParameterType,
  *   M3LConfigReader,
  *   M3LEnvironmentConfigProvider,
- * } from "@m3l-automation/m3l-common/core";
+ * } from "@monte3l/m3l-common/core";
  *
  * const reader = new M3LConfigReader([new M3LEnvironmentConfigProvider()]);
  * const port = new M3LConfigParameter({

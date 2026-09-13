@@ -43,7 +43,7 @@ interface M3LConfigMissingErrorOptions {
  *   M3LConfigParameter,
  *   M3LConfigParameterType,
  *   M3LConfigReader,
- * } from "@m3l-automation/m3l-common/core";
+ * } from "@monte3l/m3l-common/core";
  *
  * const reader = new M3LConfigReader([]);
  * const apiKey = new M3LConfigParameter({

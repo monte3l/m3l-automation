@@ -49,7 +49,7 @@ const REQUIRED_PARAMETER_METHODS = [
  *
  * @example
  * ```ts
- * import type { M3LCommandLoggerOptions } from "@m3l-automation/m3l-common/core";
+ * import type { M3LCommandLoggerOptions } from "@monte3l/m3l-common/core";
  *
  * const options: M3LCommandLoggerOptions = {
  *   handlers: [],
@@ -142,7 +142,7 @@ function assertParametersAreShaped(
  *
  * @example
  * ```ts
- * import { createCommandLogger } from "@m3l-automation/m3l-common/core";
+ * import { createCommandLogger } from "@monte3l/m3l-common/core";
  *
  * const logger = createCommandLogger({
  *   handlers: [hostHandler],

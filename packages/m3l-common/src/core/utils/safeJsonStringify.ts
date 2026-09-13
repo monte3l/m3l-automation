@@ -136,7 +136,7 @@ function prepareForJson(
  *
  * @example
  * ```typescript
- * import { safeJsonStringify } from "@m3l-automation/m3l-common/core";
+ * import { safeJsonStringify } from "@monte3l/m3l-common/core";
  * const obj: Record<string, unknown> = { name: "test" };
  * obj["self"] = obj;
  * const json = safeJsonStringify(obj); // contains "[Circular]"
@@ -184,7 +184,7 @@ function primitiveValueToString(
  *
  * @example
  * ```typescript
- * import { valueToString } from "@m3l-automation/m3l-common/core";
+ * import { valueToString } from "@monte3l/m3l-common/core";
  * const msg = valueToString(new Error("oops")); // "oops"
  * ```
  */

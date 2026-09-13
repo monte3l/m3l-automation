@@ -8,75 +8,75 @@
         {
           "file": "packages/m3l-common/src/core/cli-contract/types.ts",
           "symbol": "M3LCommandModule",
-          "blob": "13823000474d76e00e9ab2f5d6f2ac97b1b1a327"
+          "blob": "7473eac367467401bb2bb535d29b352b8951988f"
         },
         {
           "file": "packages/m3l-common/src/core/cli-contract/types.ts",
           "symbol": "M3LCommandContext",
-          "blob": "13823000474d76e00e9ab2f5d6f2ac97b1b1a327"
+          "blob": "7473eac367467401bb2bb535d29b352b8951988f"
         },
         {
           "file": "packages/m3l-common/src/core/cli-contract/types.ts",
           "symbol": "M3LCommandOutcome",
-          "blob": "13823000474d76e00e9ab2f5d6f2ac97b1b1a327"
+          "blob": "7473eac367467401bb2bb535d29b352b8951988f"
         },
         {
           "file": "packages/m3l-common/src/core/cli-contract/exit-codes.ts",
           "symbol": "mapCommandOutcomeToExitCode",
-          "blob": "ef3ea2713f0ae5ad6dcbdcfce24e052d4546e118"
+          "blob": "925568a5334643d4ba812361f4f21377e08ca586"
         },
         {
           "file": "packages/m3l-common/src/core/cli-contract/output.ts",
           "symbol": "M3LCommandOutput",
-          "blob": "fb727acfa8919437b04707e2695bd7363e3048df"
+          "blob": "6f982d70f6a1554d9af260d73128d0f6e64ed06e"
         },
         {
           "file": "packages/m3l-common/src/core/cli-contract/output.ts",
           "symbol": "M3LCommandOutputStream",
-          "blob": "fb727acfa8919437b04707e2695bd7363e3048df"
+          "blob": "6f982d70f6a1554d9af260d73128d0f6e64ed06e"
         },
         {
           "file": "packages/m3l-common/src/core/cli-contract/output.ts",
           "symbol": "M3LCommandOutputOptions",
-          "blob": "fb727acfa8919437b04707e2695bd7363e3048df"
+          "blob": "6f982d70f6a1554d9af260d73128d0f6e64ed06e"
         },
         {
           "file": "packages/m3l-common/src/core/cli-contract/output.ts",
           "symbol": "createCommandOutput",
-          "blob": "fb727acfa8919437b04707e2695bd7363e3048df"
+          "blob": "6f982d70f6a1554d9af260d73128d0f6e64ed06e"
         },
         {
           "file": "packages/m3l-common/src/core/cli-contract/logger.ts",
           "symbol": "M3LCommandLoggerOptions",
-          "blob": "8ec69547492c22181b3e95c38f383728c5f90018"
+          "blob": "4ac6afcc2e6feb49170547379c434051e36923f0"
         },
         {
           "file": "packages/m3l-common/src/core/cli-contract/logger.ts",
           "symbol": "createCommandLogger",
-          "blob": "8ec69547492c22181b3e95c38f383728c5f90018"
+          "blob": "4ac6afcc2e6feb49170547379c434051e36923f0"
         },
         {
           "file": "packages/m3l-common/src/core/cli-contract/guards.ts",
           "symbol": "isM3LCommandModule",
-          "blob": "39f5d19dfd9e188d15743639b04448da58043db8"
+          "blob": "95ed2ff6667cb039e2beac1feedd9ab15ad1e448"
         },
         {
           "file": "packages/m3l-common/src/core/cli-contract/guards.ts",
           "symbol": "isM3LCommandOutcome",
-          "blob": "39f5d19dfd9e188d15743639b04448da58043db8"
+          "blob": "95ed2ff6667cb039e2beac1feedd9ab15ad1e448"
         },
         {
           "file": "packages/m3l-common/src/core/cli-contract/outcome.ts",
           "symbol": "M3LCommandRunState",
-          "blob": "428680af29f145b20052bf862f05654063011b92"
+          "blob": "ebc7d2154c63c928ccb408dfa76966eb1c0dce89"
         },
         {
           "file": "packages/m3l-common/src/core/cli-contract/outcome.ts",
           "symbol": "deriveCommandOutcome",
-          "blob": "428680af29f145b20052bf862f05654063011b92"
+          "blob": "ebc7d2154c63c928ccb408dfa76966eb1c0dce89"
         }
       ],
-      "retrieved": "2026-09-01"
+      "retrieved": "2026-09-13"
     },
     {
       "heading": "The command-module descriptor",
@@ -84,10 +84,10 @@
         {
           "file": "packages/m3l-common/src/core/cli-contract/types.ts",
           "symbol": "M3LCommandModule",
-          "blob": "13823000474d76e00e9ab2f5d6f2ac97b1b1a327"
+          "blob": "7473eac367467401bb2bb535d29b352b8951988f"
         }
       ],
-      "retrieved": "2026-09-01"
+      "retrieved": "2026-09-13"
     },
     {
       "heading": "The execution context",
@@ -95,10 +95,10 @@
         {
           "file": "packages/m3l-common/src/core/cli-contract/types.ts",
           "symbol": "M3LCommandContext",
-          "blob": "13823000474d76e00e9ab2f5d6f2ac97b1b1a327"
+          "blob": "7473eac367467401bb2bb535d29b352b8951988f"
         }
       ],
-      "retrieved": "2026-09-01"
+      "retrieved": "2026-09-13"
     },
     {
       "heading": "Outcomes",
@@ -106,10 +106,10 @@
         {
           "file": "packages/m3l-common/src/core/cli-contract/types.ts",
           "symbol": "M3LCommandOutcome",
-          "blob": "13823000474d76e00e9ab2f5d6f2ac97b1b1a327"
+          "blob": "7473eac367467401bb2bb535d29b352b8951988f"
         }
       ],
-      "retrieved": "2026-09-01"
+      "retrieved": "2026-09-13"
     },
     {
       "heading": "Exit-code mapping",
@@ -117,10 +117,10 @@
         {
           "file": "packages/m3l-common/src/core/cli-contract/exit-codes.ts",
           "symbol": "mapCommandOutcomeToExitCode",
-          "blob": "ef3ea2713f0ae5ad6dcbdcfce24e052d4546e118"
+          "blob": "925568a5334643d4ba812361f4f21377e08ca586"
         }
       ],
-      "retrieved": "2026-08-26"
+      "retrieved": "2026-09-13"
     },
     {
       "heading": "The output port",
@@ -128,10 +128,10 @@
         {
           "file": "packages/m3l-common/src/core/cli-contract/output.ts",
           "symbol": "M3LCommandOutput",
-          "blob": "fb727acfa8919437b04707e2695bd7363e3048df"
+          "blob": "6f982d70f6a1554d9af260d73128d0f6e64ed06e"
         }
       ],
-      "retrieved": "2026-08-26"
+      "retrieved": "2026-09-13"
     },
     {
       "heading": "A default output port — `M3LCommandOutputStream` / `createCommandOutput`",
@@ -139,20 +139,20 @@
         {
           "file": "packages/m3l-common/src/core/cli-contract/output.ts",
           "symbol": "M3LCommandOutputStream",
-          "blob": "fb727acfa8919437b04707e2695bd7363e3048df"
+          "blob": "6f982d70f6a1554d9af260d73128d0f6e64ed06e"
         },
         {
           "file": "packages/m3l-common/src/core/cli-contract/output.ts",
           "symbol": "M3LCommandOutputOptions",
-          "blob": "fb727acfa8919437b04707e2695bd7363e3048df"
+          "blob": "6f982d70f6a1554d9af260d73128d0f6e64ed06e"
         },
         {
           "file": "packages/m3l-common/src/core/cli-contract/output.ts",
           "symbol": "createCommandOutput",
-          "blob": "fb727acfa8919437b04707e2695bd7363e3048df"
+          "blob": "6f982d70f6a1554d9af260d73128d0f6e64ed06e"
         }
       ],
-      "retrieved": "2026-08-26"
+      "retrieved": "2026-09-13"
     },
     {
       "heading": "Deriving an outcome",
@@ -160,15 +160,15 @@
         {
           "file": "packages/m3l-common/src/core/cli-contract/outcome.ts",
           "symbol": "M3LCommandRunState",
-          "blob": "428680af29f145b20052bf862f05654063011b92"
+          "blob": "ebc7d2154c63c928ccb408dfa76966eb1c0dce89"
         },
         {
           "file": "packages/m3l-common/src/core/cli-contract/outcome.ts",
           "symbol": "deriveCommandOutcome",
-          "blob": "428680af29f145b20052bf862f05654063011b92"
+          "blob": "ebc7d2154c63c928ccb408dfa76966eb1c0dce89"
         }
       ],
-      "retrieved": "2026-08-26"
+      "retrieved": "2026-09-13"
     },
     {
       "heading": "Building the host's logger",
@@ -176,15 +176,15 @@
         {
           "file": "packages/m3l-common/src/core/cli-contract/logger.ts",
           "symbol": "M3LCommandLoggerOptions",
-          "blob": "8ec69547492c22181b3e95c38f383728c5f90018"
+          "blob": "4ac6afcc2e6feb49170547379c434051e36923f0"
         },
         {
           "file": "packages/m3l-common/src/core/cli-contract/logger.ts",
           "symbol": "createCommandLogger",
-          "blob": "8ec69547492c22181b3e95c38f383728c5f90018"
+          "blob": "4ac6afcc2e6feb49170547379c434051e36923f0"
         }
       ],
-      "retrieved": "2026-08-26"
+      "retrieved": "2026-09-13"
     },
     {
       "heading": "Validating a foreign descriptor",
@@ -192,15 +192,15 @@
         {
           "file": "packages/m3l-common/src/core/cli-contract/guards.ts",
           "symbol": "isM3LCommandModule",
-          "blob": "39f5d19dfd9e188d15743639b04448da58043db8"
+          "blob": "95ed2ff6667cb039e2beac1feedd9ab15ad1e448"
         },
         {
           "file": "packages/m3l-common/src/core/cli-contract/guards.ts",
           "symbol": "isM3LCommandOutcome",
-          "blob": "39f5d19dfd9e188d15743639b04448da58043db8"
+          "blob": "95ed2ff6667cb039e2beac1feedd9ab15ad1e448"
         }
       ],
-      "retrieved": "2026-08-26"
+      "retrieved": "2026-09-13"
     }
   ]
 }

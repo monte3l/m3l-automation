@@ -13,7 +13,7 @@ import { readSourceBytes } from "../../internal/importers/resolveSource.js";
  *
  * @example
  * ```typescript
- * import { M3LFileImporter } from "@m3l-automation/m3l-common/core";
+ * import { M3LFileImporter } from "@monte3l/m3l-common/core";
  *
  * const importer = new M3LFileImporter();
  * const bytes = await importer.read("./data/inputs/report.pdf");
@@ -31,7 +31,7 @@ export class M3LFileImporter {
    *
    * @example
    * ```typescript
-   * import { M3LError, M3LFileImporter } from "@m3l-automation/m3l-common/core";
+   * import { M3LError, M3LFileImporter } from "@monte3l/m3l-common/core";
    *
    * const importer = new M3LFileImporter();
    * try {

@@ -41,8 +41,8 @@ const STDERR_CATEGORIES: ReadonlySet<M3LLogEventCategory> = new Set([
  *
  * @example
  * ```ts
- * import type { M3LConsoleLoggerHandlerOptions } from "@m3l-automation/m3l-common/core";
- * import { M3LLogEventCategory } from "@m3l-automation/m3l-common/core";
+ * import type { M3LConsoleLoggerHandlerOptions } from "@monte3l/m3l-common/core";
+ * import { M3LLogEventCategory } from "@monte3l/m3l-common/core";
  *
  * const options: M3LConsoleLoggerHandlerOptions = {
  *   minLevel: M3LLogEventCategory.WARNING,
@@ -67,7 +67,7 @@ export interface M3LConsoleLoggerHandlerOptions {
  *
  * @example
  * ```ts
- * import { Core } from "@m3l-automation/m3l-common";
+ * import { Core } from "@monte3l/m3l-common";
  *
  * const handler = new Core.M3LConsoleLoggerHandler();
  * const logger = new Core.M3LLogger([handler]);

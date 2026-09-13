@@ -17,7 +17,7 @@ import type { M3LPathType } from "../utils/index.js";
  *
  * @example
  * ```ts
- * import { getDefaultSubdirForPathType } from "@m3l-automation/m3l-common/core";
+ * import { getDefaultSubdirForPathType } from "@monte3l/m3l-common/core";
  *
  * const subdir = getDefaultSubdirForPathType("input"); // "inputs"
  * ```

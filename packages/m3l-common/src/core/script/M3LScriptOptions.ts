@@ -19,7 +19,7 @@ import type { M3LPrompt } from "../prompt/index.js";
  *
  * @example
  * ```ts
- * import type { M3LScriptMetadata } from "@m3l-automation/m3l-common/core";
+ * import type { M3LScriptMetadata } from "@monte3l/m3l-common/core";
  *
  * const metadata: M3LScriptMetadata = {
  *   name: "report-builder",
@@ -144,7 +144,7 @@ interface M3LScriptHostOptions {
  *
  * @example
  * ```ts
- * import type { M3LScriptHookContext } from "@m3l-automation/m3l-common/core";
+ * import type { M3LScriptHookContext } from "@monte3l/m3l-common/core";
  *
  * function onAfterConfigLoad(ctx: M3LScriptHookContext): void {
  *   console.log(ctx.config.get("region"));
@@ -202,7 +202,7 @@ type M3LScriptErrorHook = (
  *
  * @example
  * ```ts
- * import type { M3LScriptLifecycleHooks } from "@m3l-automation/m3l-common/core";
+ * import type { M3LScriptLifecycleHooks } from "@monte3l/m3l-common/core";
  *
  * const hooks: M3LScriptLifecycleHooks = {
  *   onAfterConfigLoad: (ctx) => {
@@ -247,7 +247,7 @@ export interface M3LScriptLifecycleHooks {
  *
  * @example
  * ```ts
- * import type { M3LScriptOptions } from "@m3l-automation/m3l-common/core";
+ * import type { M3LScriptOptions } from "@monte3l/m3l-common/core";
  *
  * const options: M3LScriptOptions = {
  *   metadata: { name: "report-builder", version: "1.0.0" },
@@ -366,7 +366,7 @@ export interface M3LScriptOptions {
  *
  * @example
  * ```ts
- * import { M3LScript } from "@m3l-automation/m3l-common/core";
+ * import { M3LScript } from "@monte3l/m3l-common/core";
  *
  * const script = new M3LScript({ metadata: { name: "x", version: "1.0.0" } });
  *

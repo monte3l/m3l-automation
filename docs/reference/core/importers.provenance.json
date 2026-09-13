@@ -8,85 +8,85 @@
         {
           "file": "packages/m3l-common/src/core/importers/M3LFileImporter.ts",
           "symbol": "M3LFileImporter",
-          "blob": "8fffd52b4863dfd290167afcdc172cf3bcedddf3"
+          "blob": "af64c5f9aff6fca681b54b0c756a4060f9c7a46d"
         },
         {
           "file": "packages/m3l-common/src/core/importers/M3LListImporter.ts",
           "symbol": "M3LListImporter",
-          "blob": "70c0888088a4527f819d2db33a8f83c3c9771597"
+          "blob": "f6c09c8ee12186522d1223b41864936de7646bf4"
         },
         {
           "file": "packages/m3l-common/src/core/importers/M3LListImporter.ts",
           "symbol": "M3LListImporterEvents",
-          "blob": "70c0888088a4527f819d2db33a8f83c3c9771597"
+          "blob": "f6c09c8ee12186522d1223b41864936de7646bf4"
         },
         {
           "file": "packages/m3l-common/src/core/importers/M3LListImporter.ts",
           "symbol": "M3LListImporterResult",
-          "blob": "70c0888088a4527f819d2db33a8f83c3c9771597"
+          "blob": "f6c09c8ee12186522d1223b41864936de7646bf4"
         },
         {
           "file": "packages/m3l-common/src/core/importers/M3LListImporter.ts",
           "symbol": "M3LImportStreamSummary",
-          "blob": "70c0888088a4527f819d2db33a8f83c3c9771597"
+          "blob": "f6c09c8ee12186522d1223b41864936de7646bf4"
         },
         {
           "file": "packages/m3l-common/src/core/importers/M3LCSVListImporter.ts",
           "symbol": "M3LCSVListImporter",
-          "blob": "e42ea94ea3c1a0f65bcc37bf6cac39c267f55a50"
+          "blob": "bc8d16e7bf00501c2e5e7033a113e69d5da1f16a"
         },
         {
           "file": "packages/m3l-common/src/core/importers/M3LCSVListImporter.ts",
           "symbol": "M3LCSVListImporterOptions",
-          "blob": "e42ea94ea3c1a0f65bcc37bf6cac39c267f55a50"
+          "blob": "bc8d16e7bf00501c2e5e7033a113e69d5da1f16a"
         },
         {
           "file": "packages/m3l-common/src/core/importers/M3LCSVFormatAdapter.ts",
           "symbol": "M3LCSVFormatAdapter",
-          "blob": "8dad8efe7e90b29dee019c9d4d895ec3ff737d49"
+          "blob": "9788fa4508b266f4af46333ff803010486dc4296"
         },
         {
           "file": "packages/m3l-common/src/core/importers/M3LCSVAdapterFactory.ts",
           "symbol": "M3LCSVAdapterFactory",
-          "blob": "c90ca7c33443d6df6341aedaaed3c2c32fc16155"
+          "blob": "2eeeaa792b0716476ee347db77647f7b750976de"
         },
         {
           "file": "packages/m3l-common/src/core/importers/M3LJSONFileImporter.ts",
           "symbol": "M3LJSONFileImporter",
-          "blob": "2c8a366727c4381ca131bf5de2cf1607e94ffd4b"
+          "blob": "efbccbe17da16ff7186fac8df448da4b78b427fc"
         },
         {
           "file": "packages/m3l-common/src/core/importers/M3LJSONFileImporter.ts",
           "symbol": "M3LJSONFileImporterOptions",
-          "blob": "2c8a366727c4381ca131bf5de2cf1607e94ffd4b"
+          "blob": "efbccbe17da16ff7186fac8df448da4b78b427fc"
         },
         {
           "file": "packages/m3l-common/src/core/importers/M3LJSONListImporter.ts",
           "symbol": "M3LJSONListImporter",
-          "blob": "003c763c794ceaab35a7476e502fdf0d1352cf40"
+          "blob": "0bdf6ab13a4da1c73246a4ef8a380442bc6b0c03"
         },
         {
           "file": "packages/m3l-common/src/core/importers/M3LJSONListImporter.ts",
           "symbol": "M3LJSONListImporterOptions",
-          "blob": "003c763c794ceaab35a7476e502fdf0d1352cf40"
+          "blob": "0bdf6ab13a4da1c73246a4ef8a380442bc6b0c03"
         },
         {
           "file": "packages/m3l-common/src/core/importers/M3LFileListImporter.ts",
           "symbol": "M3LFileListImporter",
-          "blob": "2175c0a8b51ca192789770c4d988383ab42e7053"
+          "blob": "d7ed92d98275cb19dd0bca2312bcf9fca4f5c437"
         },
         {
           "file": "packages/m3l-common/src/core/importers/M3LTextFileImporter.ts",
           "symbol": "M3LTextFileImporter",
-          "blob": "27823ff442749345dec72aca116f34b4cb9d0297"
+          "blob": "4c0d5fc87268c33c9a2cf29edebf7aa3fb679037"
         },
         {
           "file": "packages/m3l-common/src/core/importers/M3LTextFileImporter.ts",
           "symbol": "M3LTextFileImporterOptions",
-          "blob": "27823ff442749345dec72aca116f34b4cb9d0297"
+          "blob": "4c0d5fc87268c33c9a2cf29edebf7aa3fb679037"
         }
       ],
-      "retrieved": "2026-08-12"
+      "retrieved": "2026-09-13"
     },
     {
       "heading": "Notes and behavior",
@@ -94,40 +94,40 @@
         {
           "file": "packages/m3l-common/src/core/importers/M3LCSVListImporter.ts",
           "symbol": "M3LCSVListImporter",
-          "blob": "e42ea94ea3c1a0f65bcc37bf6cac39c267f55a50"
+          "blob": "bc8d16e7bf00501c2e5e7033a113e69d5da1f16a"
         },
         {
           "file": "packages/m3l-common/src/core/importers/M3LCSVFormatAdapter.ts",
           "symbol": "M3LCSVFormatAdapter",
-          "blob": "8dad8efe7e90b29dee019c9d4d895ec3ff737d49"
+          "blob": "9788fa4508b266f4af46333ff803010486dc4296"
         },
         {
           "file": "packages/m3l-common/src/core/importers/M3LCSVAdapterFactory.ts",
           "symbol": "M3LCSVAdapterFactory",
-          "blob": "c90ca7c33443d6df6341aedaaed3c2c32fc16155"
+          "blob": "2eeeaa792b0716476ee347db77647f7b750976de"
         },
         {
           "file": "packages/m3l-common/src/core/importers/M3LJSONListImporter.ts",
           "symbol": "M3LJSONListImporter",
-          "blob": "003c763c794ceaab35a7476e502fdf0d1352cf40"
+          "blob": "0bdf6ab13a4da1c73246a4ef8a380442bc6b0c03"
         },
         {
           "file": "packages/m3l-common/src/core/importers/M3LListImporter.ts",
           "symbol": "M3LListImporterEvents",
-          "blob": "70c0888088a4527f819d2db33a8f83c3c9771597"
+          "blob": "f6c09c8ee12186522d1223b41864936de7646bf4"
         },
         {
           "file": "packages/m3l-common/src/core/importers/M3LTextFileImporter.ts",
           "symbol": "M3LTextFileImporter",
-          "blob": "27823ff442749345dec72aca116f34b4cb9d0297"
+          "blob": "4c0d5fc87268c33c9a2cf29edebf7aa3fb679037"
         },
         {
           "file": "packages/m3l-common/src/core/importers/M3LJSONFileImporter.ts",
           "symbol": "M3LJSONFileImporter",
-          "blob": "2c8a366727c4381ca131bf5de2cf1607e94ffd4b"
+          "blob": "efbccbe17da16ff7186fac8df448da4b78b427fc"
         }
       ],
-      "retrieved": "2026-08-12"
+      "retrieved": "2026-09-13"
     }
   ]
 }

@@ -44,7 +44,7 @@ import { M3LFileCopyError } from "./M3LFileCopyError.js";
  *
  * @example
  * ```ts
- * import type { M3LFileCopySkipReason } from "@m3l-automation/m3l-common/core";
+ * import type { M3LFileCopySkipReason } from "@monte3l/m3l-common/core";
  *
  * function describe(reason: M3LFileCopySkipReason): string {
  *   return `skipped: ${reason}`;
@@ -60,7 +60,7 @@ export type M3LFileCopySkipReason = FileCopySkipReason;
  *
  * @example
  * ```ts
- * import type { M3LFileCopyResult } from "@m3l-automation/m3l-common/core";
+ * import type { M3LFileCopyResult } from "@monte3l/m3l-common/core";
  *
  * function report(result: M3LFileCopyResult): string {
  *   return result.skipped
@@ -76,7 +76,7 @@ export type M3LFileCopyResult = FileCopyOutcome;
  *
  * @example
  * ```ts
- * import type { M3LFileCopyReportSummary } from "@m3l-automation/m3l-common/core";
+ * import type { M3LFileCopyReportSummary } from "@monte3l/m3l-common/core";
  *
  * function isClean(summary: M3LFileCopyReportSummary): boolean {
  *   return summary.skipped === 0;
@@ -90,7 +90,7 @@ export type M3LFileCopyReportSummary = CopyReportSummary;
  *
  * @example
  * ```ts
- * import type { M3LFileCopyReport } from "@m3l-automation/m3l-common/core";
+ * import type { M3LFileCopyReport } from "@monte3l/m3l-common/core";
  *
  * function summarize(report: M3LFileCopyReport): number {
  *   return report.summary.copied;
@@ -112,7 +112,7 @@ export type M3LFileCopyReport = CopyReport;
  *
  * @example
  * ```ts
- * import type { M3LFileCopierOptions } from "@m3l-automation/m3l-common/core";
+ * import type { M3LFileCopierOptions } from "@monte3l/m3l-common/core";
  *
  * const options: M3LFileCopierOptions = {
  *   maxFileSizeBytes: 10_000_000,
@@ -177,7 +177,7 @@ export interface M3LFileCopierOptions {
  *
  * @example
  * ```ts
- * import { M3L_FILE_COPIER_DEFAULTS } from "@m3l-automation/m3l-common/core";
+ * import { M3L_FILE_COPIER_DEFAULTS } from "@monte3l/m3l-common/core";
  *
  * console.log(M3L_FILE_COPIER_DEFAULTS.manifestFileName); // "manifest.json"
  * ```
@@ -286,7 +286,7 @@ function resolveOptions(options: M3LFileCopierOptions): ResolvedOptions {
  *
  * @example
  * ```ts
- * import { M3LFileCopier } from "@m3l-automation/m3l-common/core";
+ * import { M3LFileCopier } from "@monte3l/m3l-common/core";
  *
  * const copier = new M3LFileCopier();
  * copier.registerFile("./data/inputs/source.csv", { subdir: "inputs" });
@@ -309,7 +309,7 @@ export class M3LFileCopier {
    *
    * @example
    * ```ts
-   * import { M3LFileCopier } from "@m3l-automation/m3l-common/core";
+   * import { M3LFileCopier } from "@monte3l/m3l-common/core";
    *
    * const copier = new M3LFileCopier({ overwrite: true });
    * ```
@@ -336,7 +336,7 @@ export class M3LFileCopier {
    *
    * @example
    * ```ts
-   * import { M3LFileCopier } from "@m3l-automation/m3l-common/core";
+   * import { M3LFileCopier } from "@monte3l/m3l-common/core";
    *
    * const copier = new M3LFileCopier();
    * copier.registerFile("./config.yaml", { subdir: "configs" });
@@ -366,7 +366,7 @@ export class M3LFileCopier {
    *
    * @example
    * ```ts
-   * import { M3LFileCopier } from "@m3l-automation/m3l-common/core";
+   * import { M3LFileCopier } from "@monte3l/m3l-common/core";
    *
    * const copier = new M3LFileCopier();
    * copier.registerFile("./report.csv", { subdir: "inputs" });

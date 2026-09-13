@@ -257,7 +257,7 @@ const EMBEDDED_SENSITIVE_PATTERN = buildEmbeddedSensitivePattern();
  *
  * @example
  * ```ts
- * import type { M3LSecretNamesPort } from "@m3l-automation/m3l-common/core";
+ * import type { M3LSecretNamesPort } from "@monte3l/m3l-common/core";
  *
  * const secrets: M3LSecretNamesPort = {
  *   isSecret: (name) => name === "tenantRef",
@@ -275,7 +275,7 @@ export interface M3LSecretNamesPort {
  *
  * @example
  * ```ts
- * import type { M3LRedactOptions } from "@m3l-automation/m3l-common/core";
+ * import type { M3LRedactOptions } from "@monte3l/m3l-common/core";
  *
  * const options: M3LRedactOptions = {
  *   secrets: { isSecret: (name) => name === "tenantRef" },
@@ -419,7 +419,7 @@ function redactBareMatch(
  * @returns `text` with every sensitive value replaced by `[REDACTED]`.
  * @example
  * ```ts
- * import { Core } from "@m3l-automation/m3l-common";
+ * import { Core } from "@monte3l/m3l-common";
  *
  * const safe = Core.redactSensitiveLogText("token=abc123 user=alice");
  * // "token=[REDACTED] user=alice"
@@ -593,7 +593,7 @@ function redactSetSafely(
  * @returns A redacted, deep-cloned copy of `value`.
  * @example
  * ```ts
- * import { Core } from "@m3l-automation/m3l-common";
+ * import { Core } from "@monte3l/m3l-common";
  *
  * const safe = Core.redactSensitiveLogValue({ apiKey: "secret" });
  * // { apiKey: "[REDACTED]" }

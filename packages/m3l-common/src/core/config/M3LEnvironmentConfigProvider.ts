@@ -46,7 +46,7 @@ function readDotenvFile(dotenvPath: string): Map<string, string> {
  *
  * @example
  * ```ts
- * import { M3LEnvironmentConfigProvider } from "@m3l-automation/m3l-common/core";
+ * import { M3LEnvironmentConfigProvider } from "@monte3l/m3l-common/core";
  *
  * const provider = new M3LEnvironmentConfigProvider();
  * provider.getRawValue("canonical.name"); // reads process.env.CANONICAL_NAME

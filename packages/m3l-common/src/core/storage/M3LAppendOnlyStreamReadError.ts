@@ -72,7 +72,7 @@ interface M3LAppendOnlyStreamReadErrorOptions {
  *   M3LAppendOnlyStream,
  *   M3LAppendOnlyStreamReadError,
  *   M3LError,
- * } from "@m3l-automation/m3l-common/core";
+ * } from "@monte3l/m3l-common/core";
  *
  * async function rebuild(stream: M3LAppendOnlyStream): Promise<void> {
  *   try {

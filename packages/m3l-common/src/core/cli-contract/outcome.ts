@@ -32,7 +32,7 @@ import type { M3LCommandOutcome } from "./types.js";
  *
  * @example
  * ```ts
- * import type { M3LCommandRunState } from "@m3l-automation/m3l-common/core";
+ * import type { M3LCommandRunState } from "@monte3l/m3l-common/core";
  *
  * const clean: M3LCommandRunState = { recovery: [], recoveryTotal: 0 };
  * ```
@@ -114,7 +114,7 @@ function isAbortFailure(error: unknown): boolean {
  *
  * @example
  * ```ts
- * import { deriveCommandOutcome } from "@m3l-automation/m3l-common/core";
+ * import { deriveCommandOutcome } from "@monte3l/m3l-common/core";
  *
  * const outcome = deriveCommandOutcome(script, capture.failures, context.dryRun);
  * ```

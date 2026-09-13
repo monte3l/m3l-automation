@@ -14,7 +14,7 @@ import {
  *
  * @example
  * ```typescript
- * import type { M3LTextFileImporterOptions } from "@m3l-automation/m3l-common/core";
+ * import type { M3LTextFileImporterOptions } from "@monte3l/m3l-common/core";
  *
  * const options: M3LTextFileImporterOptions = { maxBytes: 1_000_000 };
  * ```
@@ -40,7 +40,7 @@ export interface M3LTextFileImporterOptions {
  *
  * @example
  * ```typescript
- * import { M3LTextFileImporter } from "@m3l-automation/m3l-common/core";
+ * import { M3LTextFileImporter } from "@monte3l/m3l-common/core";
  *
  * const importer = new M3LTextFileImporter({ maxBytes: 1_000_000 });
  * const text = await importer.read("./data/inputs/notes.txt");
@@ -71,7 +71,7 @@ export class M3LTextFileImporter {
    *
    * @example
    * ```typescript
-   * import { M3LError, M3LTextFileImporter } from "@m3l-automation/m3l-common/core";
+   * import { M3LError, M3LTextFileImporter } from "@monte3l/m3l-common/core";
    *
    * const importer = new M3LTextFileImporter();
    * try {

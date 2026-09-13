@@ -14,7 +14,7 @@ import { M3LError } from "../errors/index.js";
  *
  * @example
  * ```ts
- * import type { M3LTableColumn } from "@m3l-automation/m3l-common/core";
+ * import type { M3LTableColumn } from "@monte3l/m3l-common/core";
  *
  * const column: M3LTableColumn = { key: "rows", header: "Row Count", align: "right" };
  * ```
@@ -33,7 +33,7 @@ export interface M3LTableColumn {
  *
  * @example
  * ```ts
- * import type { M3LTableOptions } from "@m3l-automation/m3l-common/core";
+ * import type { M3LTableOptions } from "@monte3l/m3l-common/core";
  *
  * const options: M3LTableOptions = { border: "compact" };
  * ```
@@ -128,7 +128,7 @@ function cellText(value: unknown): string {
  *
  * @example
  * ```ts
- * import { Core } from "@m3l-automation/m3l-common";
+ * import { Core } from "@monte3l/m3l-common";
  *
  * const formatter = new Core.M3LTableFormatter();
  * const output = formatter.format(

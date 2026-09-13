@@ -8,70 +8,70 @@
         {
           "file": "packages/m3l-common/src/core/json/fieldPath.ts",
           "symbol": "parseFieldPath",
-          "blob": "1bcc8e3ead9f90a526abbbf05eec8690a20dfcd0"
+          "blob": "fa02260f8e7442b86b85143d23934531ba3f6929"
         },
         {
           "file": "packages/m3l-common/src/core/json/fieldPath.ts",
           "symbol": "navigateFieldPath",
-          "blob": "1bcc8e3ead9f90a526abbbf05eec8690a20dfcd0"
+          "blob": "fa02260f8e7442b86b85143d23934531ba3f6929"
         },
         {
           "file": "packages/m3l-common/src/core/json/fieldPath.ts",
           "symbol": "extractAll",
-          "blob": "1bcc8e3ead9f90a526abbbf05eec8690a20dfcd0"
+          "blob": "fa02260f8e7442b86b85143d23934531ba3f6929"
         },
         {
           "file": "packages/m3l-common/src/core/json/M3LJSONFieldExtractor.ts",
           "symbol": "M3LJSONFieldExtractor",
-          "blob": "dbf4c20aea99c6588b372b09b117841c47f9719e"
+          "blob": "2fe6c942dbb9c58e03d6ca1ba893aab36c403135"
         },
         {
           "file": "packages/m3l-common/src/core/json/M3LJSONFormatDetector.ts",
           "symbol": "M3LJSONFormatDetector",
-          "blob": "214d482ec252cac8fa503669a140b95b527b35c6"
+          "blob": "b24f34a068a911a1c1545afb9b89b6b022e45698"
         },
         {
           "file": "packages/m3l-common/src/core/json/types.ts",
           "symbol": "M3LJSONFormat",
-          "blob": "be49d176c3f7a186f429d1ac655cbf4c2d6f100a"
+          "blob": "41b8891e3e4f4a7001969aae0162d3ea91f96410"
         },
         {
           "file": "packages/m3l-common/src/core/json/types.ts",
           "symbol": "M3LJSONDetectionDepth",
-          "blob": "be49d176c3f7a186f429d1ac655cbf4c2d6f100a"
+          "blob": "41b8891e3e4f4a7001969aae0162d3ea91f96410"
         },
         {
           "file": "packages/m3l-common/src/core/json/types.ts",
           "symbol": "M3LJSONDetectorOptions",
-          "blob": "be49d176c3f7a186f429d1ac655cbf4c2d6f100a"
+          "blob": "41b8891e3e4f4a7001969aae0162d3ea91f96410"
         },
         {
           "file": "packages/m3l-common/src/core/json/types.ts",
           "symbol": "M3LJSONDetectionResult",
-          "blob": "be49d176c3f7a186f429d1ac655cbf4c2d6f100a"
+          "blob": "41b8891e3e4f4a7001969aae0162d3ea91f96410"
         },
         {
           "file": "packages/m3l-common/src/core/json/types.ts",
           "symbol": "M3LConfidence",
-          "blob": "be49d176c3f7a186f429d1ac655cbf4c2d6f100a"
+          "blob": "41b8891e3e4f4a7001969aae0162d3ea91f96410"
         },
         {
           "file": "packages/m3l-common/src/core/json/M3LJSONFormatDetectionError.ts",
           "symbol": "M3LJSONFormatDetectionError",
-          "blob": "a2412f24167ea3bfcf07e542f85ca258882ea2f3"
+          "blob": "fd75a214d774c63a0c2c960b8d1039f41d5c04f3"
         },
         {
           "file": "packages/m3l-common/src/core/json/canonicalJson.ts",
           "symbol": "canonicalJsonStringify",
-          "blob": "96256cb8c15769507cdefa39330e8e45f31a2e31"
+          "blob": "f095954063be6305eb33cce39f85662f2b2a710c"
         },
         {
           "file": "packages/m3l-common/src/core/json/canonicalJson.ts",
           "symbol": "canonicalJsonHash",
-          "blob": "96256cb8c15769507cdefa39330e8e45f31a2e31"
+          "blob": "f095954063be6305eb33cce39f85662f2b2a710c"
         }
       ],
-      "retrieved": "2026-08-29"
+      "retrieved": "2026-09-13"
     },
     {
       "heading": "Notes and behavior",
@@ -79,40 +79,40 @@
         {
           "file": "packages/m3l-common/src/core/json/fieldPath.ts",
           "symbol": "parseFieldPath",
-          "blob": "1bcc8e3ead9f90a526abbbf05eec8690a20dfcd0"
+          "blob": "fa02260f8e7442b86b85143d23934531ba3f6929"
         },
         {
           "file": "packages/m3l-common/src/core/json/fieldPath.ts",
           "symbol": "navigateFieldPath",
-          "blob": "1bcc8e3ead9f90a526abbbf05eec8690a20dfcd0"
+          "blob": "fa02260f8e7442b86b85143d23934531ba3f6929"
         },
         {
           "file": "packages/m3l-common/src/core/json/fieldPath.ts",
           "symbol": "extractAll",
-          "blob": "1bcc8e3ead9f90a526abbbf05eec8690a20dfcd0"
+          "blob": "fa02260f8e7442b86b85143d23934531ba3f6929"
         },
         {
           "file": "packages/m3l-common/src/core/json/M3LJSONFieldExtractor.ts",
           "symbol": "M3LJSONFieldExtractor",
-          "blob": "dbf4c20aea99c6588b372b09b117841c47f9719e"
+          "blob": "2fe6c942dbb9c58e03d6ca1ba893aab36c403135"
         },
         {
           "file": "packages/m3l-common/src/core/json/M3LJSONFormatDetector.ts",
           "symbol": "M3LJSONFormatDetector",
-          "blob": "214d482ec252cac8fa503669a140b95b527b35c6"
+          "blob": "b24f34a068a911a1c1545afb9b89b6b022e45698"
         },
         {
           "file": "packages/m3l-common/src/core/json/types.ts",
           "symbol": "M3LConfidence",
-          "blob": "be49d176c3f7a186f429d1ac655cbf4c2d6f100a"
+          "blob": "41b8891e3e4f4a7001969aae0162d3ea91f96410"
         },
         {
           "file": "packages/m3l-common/src/core/json/M3LJSONFormatDetectionError.ts",
           "symbol": "M3LJSONFormatDetectionError",
-          "blob": "a2412f24167ea3bfcf07e542f85ca258882ea2f3"
+          "blob": "fd75a214d774c63a0c2c960b8d1039f41d5c04f3"
         }
       ],
-      "retrieved": "2026-07-11"
+      "retrieved": "2026-09-13"
     }
   ]
 }

@@ -24,7 +24,7 @@ import { M3LError } from "../../core/errors/index.js";
  *
  * @example
  * ```ts
- * import { M3LError } from "@m3l-automation/m3l-common/core";
+ * import { M3LError } from "@monte3l/m3l-common/core";
  *
  * try {
  *   // builder.build(fallback);
@@ -76,7 +76,7 @@ export class M3LProcedureInvalidDefinitionError extends M3LError {
  *
  * @example
  * ```ts
- * import { M3LError } from "@m3l-automation/m3l-common/core";
+ * import { M3LError } from "@monte3l/m3l-common/core";
  *
  * declare const procedure: { run(options: unknown): Promise<unknown> };
  *
@@ -125,7 +125,7 @@ export class M3LProcedureInvalidOptionError extends M3LError {
  *
  * @example
  * ```ts
- * import { M3LError } from "@m3l-automation/m3l-common/core";
+ * import { M3LError } from "@monte3l/m3l-common/core";
  *
  * declare const outcome: { status: string; error?: unknown };
  *
@@ -165,7 +165,7 @@ export class M3LProcedureIterationLimitError extends M3LError {
  *
  * @example
  * ```ts
- * import { M3LError } from "@m3l-automation/m3l-common/core";
+ * import { M3LError } from "@monte3l/m3l-common/core";
  *
  * declare const outcome: { status: string; error?: unknown };
  *
@@ -212,7 +212,7 @@ export class M3LProcedureUndeclaredJumpError extends M3LError {
  *
  * @example
  * ```ts
- * import { M3LError } from "@m3l-automation/m3l-common/core";
+ * import { M3LError } from "@monte3l/m3l-common/core";
  *
  * declare const outcome: { status: string; error?: unknown };
  *

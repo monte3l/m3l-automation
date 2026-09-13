@@ -87,7 +87,7 @@ import { M3LAppendOnlyStreamReadError } from "./M3LAppendOnlyStreamReadError.js"
  *
  * @example
  * ```ts
- * import type { M3LAppendOnlyValue } from "@m3l-automation/m3l-common/core";
+ * import type { M3LAppendOnlyValue } from "@monte3l/m3l-common/core";
  *
  * const actor: M3LAppendOnlyValue = { id: "u-1", roles: ["reader"] };
  * ```
@@ -119,7 +119,7 @@ export type M3LAppendOnlyValue =
  *
  * @example
  * ```ts
- * import type { M3LAppendOnlyEntry } from "@m3l-automation/m3l-common/core";
+ * import type { M3LAppendOnlyEntry } from "@monte3l/m3l-common/core";
  *
  * const entry: M3LAppendOnlyEntry = {
  *   at: new Date().toISOString(),
@@ -140,7 +140,7 @@ export type M3LAppendOnlyEntry = { readonly [key: string]: M3LAppendOnlyValue };
  *
  * @example
  * ```ts
- * import type { M3LAppendOnlyStreamOptions } from "@m3l-automation/m3l-common/core";
+ * import type { M3LAppendOnlyStreamOptions } from "@monte3l/m3l-common/core";
  *
  * const options: M3LAppendOnlyStreamOptions = {
  *   directory: "data/output/human-actions",
@@ -287,7 +287,7 @@ function renderEntryLine(entry: unknown): string {
  *
  * @example
  * ```ts
- * import { M3LAppendOnlyStream } from "@m3l-automation/m3l-common/core";
+ * import { M3LAppendOnlyStream } from "@monte3l/m3l-common/core";
  *
  * const stream = new M3LAppendOnlyStream({
  *   directory: "data/output/human-actions",
@@ -338,7 +338,7 @@ export class M3LAppendOnlyStream {
    *
    * @example
    * ```ts
-   * import { M3LAppendOnlyStream } from "@m3l-automation/m3l-common/core";
+   * import { M3LAppendOnlyStream } from "@monte3l/m3l-common/core";
    *
    * const stream = new M3LAppendOnlyStream({ directory: "data/output/audit" });
    * console.log(stream.directory); // "data/output/audit"
@@ -391,7 +391,7 @@ export class M3LAppendOnlyStream {
    * import {
    *   M3LAppendOnlyStream,
    *   M3LAppendOnlyStreamError,
-   * } from "@m3l-automation/m3l-common/core";
+   * } from "@monte3l/m3l-common/core";
    *
    * const stream = new M3LAppendOnlyStream({ directory: "data/output/audit" });
    * try {
@@ -431,7 +431,7 @@ export class M3LAppendOnlyStream {
    *
    * @example
    * ```ts
-   * import { M3LAppendOnlyStream } from "@m3l-automation/m3l-common/core";
+   * import { M3LAppendOnlyStream } from "@monte3l/m3l-common/core";
    *
    * const stream = new M3LAppendOnlyStream({ directory: "data/output/audit" });
    * for await (const entry of stream.read()) console.log(entry);
@@ -480,7 +480,7 @@ export class M3LAppendOnlyStream {
    *
    * @example
    * ```ts
-   * import { M3LAppendOnlyStream } from "@m3l-automation/m3l-common/core";
+   * import { M3LAppendOnlyStream } from "@monte3l/m3l-common/core";
    *
    * const stream = new M3LAppendOnlyStream({ directory: "data/output/audit" });
    * const listing = await stream.listSegments();

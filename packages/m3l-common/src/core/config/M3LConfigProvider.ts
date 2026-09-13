@@ -15,7 +15,7 @@
  *
  * @example
  * ```ts
- * import { M3LConfigProvider } from "@m3l-automation/m3l-common/core";
+ * import { M3LConfigProvider } from "@monte3l/m3l-common/core";
  *
  * class StaticConfigProvider extends M3LConfigProvider {
  *   constructor(private readonly values: Record<string, unknown>) {
@@ -74,7 +74,7 @@ export abstract class M3LConfigProvider {
    *
    * @example
    * ```ts
-   * import { M3LYAMLConfigProvider } from "@m3l-automation/m3l-common/core";
+   * import { M3LYAMLConfigProvider } from "@monte3l/m3l-common/core";
    *
    * const knownKeys = new Set(["region", "profile"]);
    * const provider = new M3LYAMLConfigProvider("./data/config/app.yaml");

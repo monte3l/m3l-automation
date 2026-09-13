@@ -168,7 +168,7 @@ function createDispatcher(
  *
  * @example
  * ```ts
- * import type { M3LHttpClientOptions } from "@m3l-automation/m3l-common/core";
+ * import type { M3LHttpClientOptions } from "@monte3l/m3l-common/core";
  *
  * const options: M3LHttpClientOptions = {
  *   baseUrl: "https://api.example.com",
@@ -215,7 +215,7 @@ export type M3LHttpMethod =
  *
  * @example
  * ```ts
- * import type { M3LHttpRequestOptions } from "@m3l-automation/m3l-common/core";
+ * import type { M3LHttpRequestOptions } from "@monte3l/m3l-common/core";
  *
  * const options: M3LHttpRequestOptions = {
  *   method: "POST",
@@ -324,7 +324,7 @@ export interface M3LHttpErrorEvent {
  *
  * @example
  * ```ts
- * import type { M3LHttpClientEventMap } from "@m3l-automation/m3l-common/core";
+ * import type { M3LHttpClientEventMap } from "@monte3l/m3l-common/core";
  *
  * declare const handler: (event: M3LHttpClientEventMap["response"]) => void;
  * ```
@@ -357,7 +357,7 @@ export interface M3LHttpAbortableRequest<T> {
  *
  * @example
  * ```ts
- * import { M3LHttpClient, M3LHttpClientError } from "@m3l-automation/m3l-common/core";
+ * import { M3LHttpClient, M3LHttpClientError } from "@monte3l/m3l-common/core";
  *
  * const client = new M3LHttpClient({
  *   baseUrl: "https://api.example.com",
@@ -466,7 +466,7 @@ export class M3LHttpClient extends M3LEventEmitterBase<M3LHttpClientEventMap> {
    *   network failure, or on a timeout.
    * @example
    * ```ts
-   * import { M3LHttpClient } from "@m3l-automation/m3l-common/core";
+   * import { M3LHttpClient } from "@monte3l/m3l-common/core";
    *
    * const client = new M3LHttpClient({ baseUrl: "https://api.example.com" });
    *
@@ -524,7 +524,7 @@ export class M3LHttpClient extends M3LEventEmitterBase<M3LHttpClientEventMap> {
    *   failure, a timeout, or a 2xx response with no body at all.
    * @example
    * ```ts
-   * import { M3LHttpClient } from "@m3l-automation/m3l-common/core";
+   * import { M3LHttpClient } from "@monte3l/m3l-common/core";
    * import { createWriteStream } from "node:fs";
    * import { Readable } from "node:stream";
    * import { pipeline } from "node:stream/promises";

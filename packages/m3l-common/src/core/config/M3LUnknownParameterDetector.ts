@@ -58,7 +58,7 @@ const DEFAULT_MAX_SUGGESTIONS = 3;
  *   M3LConfigParameter,
  *   M3LConfigParameterType,
  *   M3LUnknownParameterDetector,
- * } from "@m3l-automation/m3l-common/core";
+ * } from "@monte3l/m3l-common/core";
  *
  * const schema = new M3LConfigSchema([
  *   new M3LConfigParameter({ name: "region", type: M3LConfigParameterType.STRING }),

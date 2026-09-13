@@ -20,7 +20,7 @@
  *
  * @example
  * ```typescript
- * import { parseLocaleNumber } from "@m3l-automation/m3l-common/core";
+ * import { parseLocaleNumber } from "@monte3l/m3l-common/core";
  * parseLocaleNumber("1.5");   // 1.5
  * parseLocaleNumber("1,5");   // 1.5 — comma as decimal separator
  * parseLocaleNumber("1,000"); // 1 — NOT 1000; no thousands grouping

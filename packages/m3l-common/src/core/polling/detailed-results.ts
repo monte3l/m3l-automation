@@ -20,7 +20,7 @@
  *
  * @example
  * ```ts
- * import type { M3LPollAttemptEntry } from "@m3l-automation/m3l-common/core";
+ * import type { M3LPollAttemptEntry } from "@monte3l/m3l-common/core";
  *
  * function describe(entry: M3LPollAttemptEntry): string {
  *   return `attempt ${String(entry.attempt)} waited ${String(entry.delayMs)}ms`;
@@ -46,7 +46,7 @@ export interface M3LPollAttemptEntry {
  *
  * @example
  * ```ts
- * import type { M3LRetryAttemptEntry } from "@m3l-automation/m3l-common/core";
+ * import type { M3LRetryAttemptEntry } from "@monte3l/m3l-common/core";
  *
  * function describe(entry: M3LRetryAttemptEntry): string {
  *   return `attempt ${String(entry.attempt)} classified "${entry.classification}", waited ${String(entry.delayMs)}ms`;
@@ -74,7 +74,7 @@ export interface M3LRetryAttemptEntry {
  *
  * @example
  * ```ts
- * import { Core } from "@m3l-automation/m3l-common/core";
+ * import { Core } from "@monte3l/m3l-common/core";
  *
  * const poller = new Core.M3LPoller({
  *   backoff: Core.M3LBackoff.exponentialJittered(500, 10_000),
@@ -110,7 +110,7 @@ export interface M3LPollDetailedResult<T> {
  *
  * @example
  * ```ts
- * import { Core } from "@m3l-automation/m3l-common/core";
+ * import { Core } from "@monte3l/m3l-common/core";
  *
  * const runner = new Core.M3LRetryRunner({
  *   classifier: Core.awsThrottlingClassifier,

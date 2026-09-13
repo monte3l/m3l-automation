@@ -17,8 +17,8 @@ import type { M3LPaths } from "../utils/index.js";
  *
  * @example
  * ```ts
- * import type { M3LInputFileReaderOptions } from "@m3l-automation/m3l-common/core";
- * import { M3LPaths } from "@m3l-automation/m3l-common/core";
+ * import type { M3LInputFileReaderOptions } from "@monte3l/m3l-common/core";
+ * import { M3LPaths } from "@monte3l/m3l-common/core";
  *
  * const options: M3LInputFileReaderOptions = {
  *   paths: new M3LPaths(),
@@ -52,7 +52,7 @@ export interface M3LInputFileReaderOptions {
  *
  * @example
  * ```ts
- * import { M3LInputFileReader, M3LPaths } from "@m3l-automation/m3l-common/core";
+ * import { M3LInputFileReader, M3LPaths } from "@monte3l/m3l-common/core";
  *
  * const reader = new M3LInputFileReader({
  *   paths: new M3LPaths(),

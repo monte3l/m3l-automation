@@ -22,7 +22,7 @@ const DEFAULT_WARNING_SYMBOL = "⚠";
  *
  * @example
  * ```ts
- * import type { M3LMultiSpinnerOptions } from "@m3l-automation/m3l-common/core";
+ * import type { M3LMultiSpinnerOptions } from "@monte3l/m3l-common/core";
  *
  * const symbols: M3LMultiSpinnerOptions["symbols"] = {
  *   success: "OK",
@@ -45,7 +45,7 @@ interface M3LMultiSpinnerSymbols {
  *
  * @example
  * ```ts
- * import type { M3LMultiSpinnerOptions } from "@m3l-automation/m3l-common/core";
+ * import type { M3LMultiSpinnerOptions } from "@monte3l/m3l-common/core";
  *
  * const options: M3LMultiSpinnerOptions = {
  *   stream: process.stderr,
@@ -86,7 +86,7 @@ interface SpinnerTask {
  *
  * @example
  * ```ts
- * import { M3LMultiSpinner } from "@m3l-automation/m3l-common/core";
+ * import { M3LMultiSpinner } from "@monte3l/m3l-common/core";
  *
  * const spinner = new M3LMultiSpinner();
  * spinner.spin("upload", "Uploading…");

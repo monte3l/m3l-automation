@@ -15,7 +15,7 @@ import type { M3LTextExtractionResult, M3LTextExtractor } from "./contract.js";
  *
  * @example
  * ```ts
- * import { M3LPlainTextExtractor } from "@m3l-automation/m3l-common/core";
+ * import { M3LPlainTextExtractor } from "@monte3l/m3l-common/core";
  *
  * const extractor = new M3LPlainTextExtractor();
  * const { text } = await extractor.extract("./notes.txt");

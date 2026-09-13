@@ -65,7 +65,7 @@ const _m3lCommandOutcomeStatusPin: M3LCommandOutcome["status"] extends M3LRunOut
  *
  * @example
  * ```ts
- * import { mapCommandOutcomeToExitCode } from "@m3l-automation/m3l-common/core";
+ * import { mapCommandOutcomeToExitCode } from "@monte3l/m3l-common/core";
  *
  * const outcome = await commandModule.execute(parameters, context);
  * process.exitCode = mapCommandOutcomeToExitCode(outcome);

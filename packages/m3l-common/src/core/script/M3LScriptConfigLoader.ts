@@ -64,7 +64,7 @@ interface M3LScriptConfigLoadOptions {
  *
  * @example
  * ```ts
- * import { M3LScriptConfigLoader } from "@m3l-automation/m3l-common/core";
+ * import { M3LScriptConfigLoader } from "@monte3l/m3l-common/core";
  *
  * const loader = new M3LScriptConfigLoader();
  * const config = await loader.load({ params: [] });

@@ -31,7 +31,7 @@ import type {
  *
  * @example
  * ```ts
- * import type { Core } from "@m3l-automation/m3l-common";
+ * import type { Core } from "@monte3l/m3l-common";
  *
  * interface Deps extends Core.M3LOperationPipelineBaseDeps {
  *   readonly correlationId: string;
@@ -59,7 +59,7 @@ export interface M3LOperationPipelineBaseDeps {
  *
  * @example
  * ```ts
- * import type { Core } from "@m3l-automation/m3l-common";
+ * import type { Core } from "@monte3l/m3l-common";
  *
  * interface Settings {
  *   readonly key?: string;
@@ -94,7 +94,7 @@ export type M3LGuardableKey<TSettings extends object> = {
  *
  * @example
  * ```ts
- * import type { Core } from "@m3l-automation/m3l-common";
+ * import type { Core } from "@monte3l/m3l-common";
  *
  * type Handlers = Core.M3LOperationHandlers<
  *   "list" | "get",
@@ -141,7 +141,7 @@ export type M3LOperationHandlers<
  *
  * @example
  * ```ts
- * import type { Core } from "@m3l-automation/m3l-common";
+ * import type { Core } from "@monte3l/m3l-common";
  *
  * const policy: Core.M3LPipelineDeclinePolicy<
  *   "delete",
@@ -190,7 +190,7 @@ export type M3LPipelineDeclinePolicy<
  *
  * @example
  * ```ts
- * import type { Core } from "@m3l-automation/m3l-common";
+ * import type { Core } from "@monte3l/m3l-common";
  *
  * interface Settings {
  *   readonly key: string;
@@ -293,7 +293,7 @@ export interface M3LPipelineDestructiveOptions<
  *
  * @example
  * ```ts
- * import type { Core } from "@m3l-automation/m3l-common";
+ * import type { Core } from "@monte3l/m3l-common";
  *
  * function label(phase: Core.M3LPipelinePhase): string {
  *   return `phase: ${phase}`;
@@ -332,7 +332,7 @@ export type M3LPipelinePhase =
  *
  * @example
  * ```ts
- * import type { Core } from "@m3l-automation/m3l-common";
+ * import type { Core } from "@monte3l/m3l-common";
  *
  * function describeSnapshot(
  *   snapshot: Core.M3LPipelineTraceSnapshot<
@@ -369,7 +369,7 @@ export interface M3LPipelineTraceSnapshot<
  *
  * @example
  * ```ts
- * import type { M3LPipelineTraceSink } from "@m3l-automation/m3l-common/core";
+ * import type { M3LPipelineTraceSink } from "@monte3l/m3l-common/core";
  *
  * const sink: M3LPipelineTraceSink = {
  *   record: (source, event, payload) => console.log(source, event, payload),
@@ -398,7 +398,7 @@ export interface M3LPipelineTraceSink {
  *
  * @example
  * ```ts
- * import type { Core } from "@m3l-automation/m3l-common";
+ * import type { Core } from "@monte3l/m3l-common";
  *
  * declare const trail: Core.M3LBreadcrumbTrail;
  *
@@ -599,7 +599,7 @@ interface M3LOperationPipelineCoreOptions<
  *
  * @example
  * ```ts
- * import type { Core } from "@m3l-automation/m3l-common";
+ * import type { Core } from "@monte3l/m3l-common";
  *
  * interface Settings {
  *   readonly key?: string;
@@ -677,7 +677,7 @@ export type M3LOperationPipelineOptions<
  *
  * @example
  * ```ts
- * import type { Core } from "@m3l-automation/m3l-common";
+ * import type { Core } from "@monte3l/m3l-common";
  *
  * // Extend the base to add cross-cutting fields that every arm should carry.
  * interface TimedOutcome<TOp extends string, TResult>
@@ -713,7 +713,7 @@ export interface M3LOperationPipelineOutcomeBase<TOp extends string, TResult> {
  *
  * @example
  * ```ts
- * import type { Core } from "@m3l-automation/m3l-common";
+ * import type { Core } from "@monte3l/m3l-common";
  *
  * function summarize(
  *   outcome: Core.M3LOperationPipelineOutcome<"list" | "delete", { readonly count: number }>,

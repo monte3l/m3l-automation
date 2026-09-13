@@ -8,95 +8,95 @@
         {
           "file": "packages/m3l-common/src/core/prompt/M3LDestructiveGate.ts",
           "symbol": "confirmDestructive",
-          "blob": "719ad411cabfb285c213e4371fa978b354100b7e"
+          "blob": "a4223c3e1ed2fc3a2af163a51e38b9e62ad22ffa"
         },
         {
           "file": "packages/m3l-common/src/core/prompt/M3LDestructiveGate.ts",
           "symbol": "M3LConfirmDestructiveOptions",
-          "blob": "719ad411cabfb285c213e4371fa978b354100b7e"
+          "blob": "a4223c3e1ed2fc3a2af163a51e38b9e62ad22ffa"
         },
         {
           "file": "packages/m3l-common/src/core/prompt/M3LPrompt.ts",
           "symbol": "M3LPrompt",
-          "blob": "d064ea73396d576d2b67161a486514c2ddd5055e"
+          "blob": "2aaf318c8c4bc613dd9ef8b1a79485de0d7683d7"
         },
         {
           "file": "packages/m3l-common/src/core/prompt/M3LPrompt.ts",
           "symbol": "M3LPromptOptions",
-          "blob": "d064ea73396d576d2b67161a486514c2ddd5055e"
+          "blob": "2aaf318c8c4bc613dd9ef8b1a79485de0d7683d7"
         },
         {
           "file": "packages/m3l-common/src/core/prompt/M3LMultiSpinner.ts",
           "symbol": "M3LMultiSpinner",
-          "blob": "48e6712cfa6f2b9b59ac559a433d434f530b69a1"
+          "blob": "54b6b5d16c3d6766d38ed996da8920f922a852c4"
         },
         {
           "file": "packages/m3l-common/src/core/prompt/M3LMultiSpinner.ts",
           "symbol": "M3LMultiSpinnerOptions",
-          "blob": "48e6712cfa6f2b9b59ac559a433d434f530b69a1"
+          "blob": "54b6b5d16c3d6766d38ed996da8920f922a852c4"
         },
         {
           "file": "packages/m3l-common/src/core/prompt/M3LLoadingBar.ts",
           "symbol": "M3LLoadingBar",
-          "blob": "b573e5203a8b08271afc46ffd3e0ff4362363da9"
+          "blob": "2fe8f64904d5d7c2fccde078627fe95892c1ff04"
         },
         {
           "file": "packages/m3l-common/src/core/prompt/M3LLoadingBar.ts",
           "symbol": "M3LLoadingBarOptions",
-          "blob": "b573e5203a8b08271afc46ffd3e0ff4362363da9"
+          "blob": "2fe8f64904d5d7c2fccde078627fe95892c1ff04"
         },
         {
           "file": "packages/m3l-common/src/core/prompt/M3LPromptValidationError.ts",
           "symbol": "M3LPromptValidationError",
-          "blob": "ebb893f958f0362cea2dccc5dd315a1ecc4c7683"
+          "blob": "ae546b066e7bb7bc37e5d7158a8a8b2d1c4b9224"
         },
         {
           "file": "packages/m3l-common/src/core/prompt/types.ts",
           "symbol": "M3LPromptAdapter",
-          "blob": "fd0d5311d3176645eea6a49c17a29f00a3522f88"
+          "blob": "40ec2a4abc0d04561f14ff328484bd801cdabb5c"
         },
         {
           "file": "packages/m3l-common/src/core/prompt/types.ts",
           "symbol": "M3LChoice",
-          "blob": "fd0d5311d3176645eea6a49c17a29f00a3522f88"
+          "blob": "40ec2a4abc0d04561f14ff328484bd801cdabb5c"
         },
         {
           "file": "packages/m3l-common/src/core/prompt/types.ts",
           "symbol": "M3LChoices",
-          "blob": "fd0d5311d3176645eea6a49c17a29f00a3522f88"
+          "blob": "40ec2a4abc0d04561f14ff328484bd801cdabb5c"
         },
         {
           "file": "packages/m3l-common/src/core/prompt/types.ts",
           "symbol": "M3LNumberPromptOptions",
-          "blob": "fd0d5311d3176645eea6a49c17a29f00a3522f88"
+          "blob": "40ec2a4abc0d04561f14ff328484bd801cdabb5c"
         },
         {
           "file": "packages/m3l-common/src/core/prompt/types.ts",
           "symbol": "M3LSuggestFn",
-          "blob": "fd0d5311d3176645eea6a49c17a29f00a3522f88"
+          "blob": "40ec2a4abc0d04561f14ff328484bd801cdabb5c"
         },
         {
           "file": "packages/m3l-common/src/core/prompt/M3LDestructiveGate.ts",
           "symbol": "M3LDestructiveTarget",
-          "blob": "719ad411cabfb285c213e4371fa978b354100b7e"
+          "blob": "a4223c3e1ed2fc3a2af163a51e38b9e62ad22ffa"
         },
         {
           "file": "packages/m3l-common/src/core/prompt/M3LDestructiveGate.ts",
           "symbol": "M3LDestructiveTargetPredicate",
-          "blob": "719ad411cabfb285c213e4371fa978b354100b7e"
+          "blob": "a4223c3e1ed2fc3a2af163a51e38b9e62ad22ffa"
         },
         {
           "file": "packages/m3l-common/src/core/prompt/M3LDestructiveGate.ts",
           "symbol": "M3LSensitiveTargetSpec",
-          "blob": "719ad411cabfb285c213e4371fa978b354100b7e"
+          "blob": "a4223c3e1ed2fc3a2af163a51e38b9e62ad22ffa"
         },
         {
           "file": "packages/m3l-common/src/core/prompt/M3LDestructiveGate.ts",
           "symbol": "sensitiveTargets",
-          "blob": "719ad411cabfb285c213e4371fa978b354100b7e"
+          "blob": "a4223c3e1ed2fc3a2af163a51e38b9e62ad22ffa"
         }
       ],
-      "retrieved": "2026-08-29"
+      "retrieved": "2026-09-13"
     },
     {
       "heading": "`M3LPrompt`",
@@ -104,40 +104,40 @@
         {
           "file": "packages/m3l-common/src/core/prompt/M3LPrompt.ts",
           "symbol": "M3LPrompt",
-          "blob": "d064ea73396d576d2b67161a486514c2ddd5055e"
+          "blob": "2aaf318c8c4bc613dd9ef8b1a79485de0d7683d7"
         },
         {
           "file": "packages/m3l-common/src/core/prompt/M3LPrompt.ts",
           "symbol": "M3LPromptOptions",
-          "blob": "d064ea73396d576d2b67161a486514c2ddd5055e"
+          "blob": "2aaf318c8c4bc613dd9ef8b1a79485de0d7683d7"
         },
         {
           "file": "packages/m3l-common/src/core/prompt/types.ts",
           "symbol": "M3LPromptAdapter",
-          "blob": "fd0d5311d3176645eea6a49c17a29f00a3522f88"
+          "blob": "40ec2a4abc0d04561f14ff328484bd801cdabb5c"
         },
         {
           "file": "packages/m3l-common/src/core/prompt/types.ts",
           "symbol": "M3LChoice",
-          "blob": "fd0d5311d3176645eea6a49c17a29f00a3522f88"
+          "blob": "40ec2a4abc0d04561f14ff328484bd801cdabb5c"
         },
         {
           "file": "packages/m3l-common/src/core/prompt/types.ts",
           "symbol": "M3LChoices",
-          "blob": "fd0d5311d3176645eea6a49c17a29f00a3522f88"
+          "blob": "40ec2a4abc0d04561f14ff328484bd801cdabb5c"
         },
         {
           "file": "packages/m3l-common/src/core/prompt/types.ts",
           "symbol": "M3LNumberPromptOptions",
-          "blob": "fd0d5311d3176645eea6a49c17a29f00a3522f88"
+          "blob": "40ec2a4abc0d04561f14ff328484bd801cdabb5c"
         },
         {
           "file": "packages/m3l-common/src/core/prompt/types.ts",
           "symbol": "M3LSuggestFn",
-          "blob": "fd0d5311d3176645eea6a49c17a29f00a3522f88"
+          "blob": "40ec2a4abc0d04561f14ff328484bd801cdabb5c"
         }
       ],
-      "retrieved": "2026-07-30"
+      "retrieved": "2026-09-13"
     },
     {
       "heading": "`M3LMultiSpinner`",
@@ -145,15 +145,15 @@
         {
           "file": "packages/m3l-common/src/core/prompt/M3LMultiSpinner.ts",
           "symbol": "M3LMultiSpinner",
-          "blob": "48e6712cfa6f2b9b59ac559a433d434f530b69a1"
+          "blob": "54b6b5d16c3d6766d38ed996da8920f922a852c4"
         },
         {
           "file": "packages/m3l-common/src/core/prompt/M3LMultiSpinner.ts",
           "symbol": "M3LMultiSpinnerOptions",
-          "blob": "48e6712cfa6f2b9b59ac559a433d434f530b69a1"
+          "blob": "54b6b5d16c3d6766d38ed996da8920f922a852c4"
         }
       ],
-      "retrieved": "2026-07-11"
+      "retrieved": "2026-09-13"
     },
     {
       "heading": "`M3LLoadingBar`",
@@ -161,15 +161,15 @@
         {
           "file": "packages/m3l-common/src/core/prompt/M3LLoadingBar.ts",
           "symbol": "M3LLoadingBar",
-          "blob": "b573e5203a8b08271afc46ffd3e0ff4362363da9"
+          "blob": "2fe8f64904d5d7c2fccde078627fe95892c1ff04"
         },
         {
           "file": "packages/m3l-common/src/core/prompt/M3LLoadingBar.ts",
           "symbol": "M3LLoadingBarOptions",
-          "blob": "b573e5203a8b08271afc46ffd3e0ff4362363da9"
+          "blob": "2fe8f64904d5d7c2fccde078627fe95892c1ff04"
         }
       ],
-      "retrieved": "2026-07-11"
+      "retrieved": "2026-09-13"
     },
     {
       "heading": "Notes and behavior",
@@ -177,25 +177,25 @@
         {
           "file": "packages/m3l-common/src/core/prompt/M3LPrompt.ts",
           "symbol": "M3LPrompt",
-          "blob": "d064ea73396d576d2b67161a486514c2ddd5055e"
+          "blob": "2aaf318c8c4bc613dd9ef8b1a79485de0d7683d7"
         },
         {
           "file": "packages/m3l-common/src/core/prompt/M3LMultiSpinner.ts",
           "symbol": "M3LMultiSpinner",
-          "blob": "48e6712cfa6f2b9b59ac559a433d434f530b69a1"
+          "blob": "54b6b5d16c3d6766d38ed996da8920f922a852c4"
         },
         {
           "file": "packages/m3l-common/src/core/prompt/M3LLoadingBar.ts",
           "symbol": "M3LLoadingBar",
-          "blob": "b573e5203a8b08271afc46ffd3e0ff4362363da9"
+          "blob": "2fe8f64904d5d7c2fccde078627fe95892c1ff04"
         },
         {
           "file": "packages/m3l-common/src/core/prompt/M3LPromptValidationError.ts",
           "symbol": "M3LPromptValidationError",
-          "blob": "ebb893f958f0362cea2dccc5dd315a1ecc4c7683"
+          "blob": "ae546b066e7bb7bc37e5d7158a8a8b2d1c4b9224"
         }
       ],
-      "retrieved": "2026-07-30"
+      "retrieved": "2026-09-13"
     }
   ]
 }

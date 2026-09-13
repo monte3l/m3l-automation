@@ -37,7 +37,7 @@ import type { M3LCommandOutput } from "./output.js";
  *
  * @example
  * ```ts
- * import type { M3LCommandOutcome } from "@m3l-automation/m3l-common/core";
+ * import type { M3LCommandOutcome } from "@monte3l/m3l-common/core";
  *
  * function describe(outcome: M3LCommandOutcome): string {
  *   return outcome.status === "partial"
@@ -62,7 +62,7 @@ export type M3LCommandOutcome =
  *
  * @example
  * ```ts
- * import type { M3LCommandContext } from "@m3l-automation/m3l-common/core";
+ * import type { M3LCommandContext } from "@monte3l/m3l-common/core";
  *
  * function shouldStop(context: M3LCommandContext): boolean {
  *   return context.signal !== undefined && context.signal.aborted;
@@ -158,7 +158,7 @@ export interface M3LCommandContext {
  * import type {
  *   M3LCommandModule,
  *   M3LCommandOutcome,
- * } from "@m3l-automation/m3l-common/core";
+ * } from "@monte3l/m3l-common/core";
  *
  * interface ExportParameters {
  *   readonly bucket: string;

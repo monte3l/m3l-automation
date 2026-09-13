@@ -154,7 +154,7 @@ function wrapCSVError(cause: unknown, filePath: string): M3LError {
  * @typeParam TItem - The shape of each exported item.
  * @example
  * ```typescript
- * import { Core } from "@m3l-automation/m3l-common";
+ * import { Core } from "@monte3l/m3l-common";
  *
  * const exporter = new Core.M3LCSVListExporter<{ id: string; name: string }>({
  *   filePath: "./data/outputs/users.csv",

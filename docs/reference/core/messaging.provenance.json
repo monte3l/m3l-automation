@@ -8,55 +8,55 @@
         {
           "file": "packages/m3l-common/src/core/messaging/M3LMessenger.ts",
           "symbol": "M3LMessenger",
-          "blob": "45313ed8b3bac804596c7c128be1225d7ebbe30d"
+          "blob": "e4813fa284df6dbdfeb07992e22ca8eeddc18e25"
         },
         {
           "file": "packages/m3l-common/src/core/messaging/types.ts",
           "symbol": "M3LMessageWriter",
-          "blob": "8c6309284bf94770c7c9c43b6e53208021f002d7"
+          "blob": "8fc96d1332ad9226d83520bffccd124befda0f70"
         },
         {
           "file": "packages/m3l-common/src/core/messaging/types.ts",
           "symbol": "M3LMessageReader",
-          "blob": "8c6309284bf94770c7c9c43b6e53208021f002d7"
+          "blob": "8fc96d1332ad9226d83520bffccd124befda0f70"
         },
         {
           "file": "packages/m3l-common/src/core/messaging/types.ts",
           "symbol": "M3LOutboundMessage",
-          "blob": "8c6309284bf94770c7c9c43b6e53208021f002d7"
+          "blob": "8fc96d1332ad9226d83520bffccd124befda0f70"
         },
         {
           "file": "packages/m3l-common/src/core/messaging/types.ts",
           "symbol": "M3LReceivedMessage",
-          "blob": "8c6309284bf94770c7c9c43b6e53208021f002d7"
+          "blob": "8fc96d1332ad9226d83520bffccd124befda0f70"
         },
         {
           "file": "packages/m3l-common/src/core/messaging/types.ts",
           "symbol": "M3LMessageTarget",
-          "blob": "8c6309284bf94770c7c9c43b6e53208021f002d7"
+          "blob": "8fc96d1332ad9226d83520bffccd124befda0f70"
         },
         {
           "file": "packages/m3l-common/src/core/messaging/types.ts",
           "symbol": "M3LMessageAuthor",
-          "blob": "8c6309284bf94770c7c9c43b6e53208021f002d7"
+          "blob": "8fc96d1332ad9226d83520bffccd124befda0f70"
         },
         {
           "file": "packages/m3l-common/src/core/messaging/types.ts",
           "symbol": "M3LMessageReceipt",
-          "blob": "8c6309284bf94770c7c9c43b6e53208021f002d7"
+          "blob": "8fc96d1332ad9226d83520bffccd124befda0f70"
         },
         {
           "file": "packages/m3l-common/src/core/messaging/types.ts",
           "symbol": "M3LInboundAttachment",
-          "blob": "8c6309284bf94770c7c9c43b6e53208021f002d7"
+          "blob": "8fc96d1332ad9226d83520bffccd124befda0f70"
         },
         {
           "file": "packages/m3l-common/src/core/messaging/types.ts",
           "symbol": "M3LOutboundAttachment",
-          "blob": "8c6309284bf94770c7c9c43b6e53208021f002d7"
+          "blob": "8fc96d1332ad9226d83520bffccd124befda0f70"
         }
       ],
-      "retrieved": "2026-07-11"
+      "retrieved": "2026-09-13"
     },
     {
       "heading": "Writer and reader interfaces",
@@ -64,30 +64,30 @@
         {
           "file": "packages/m3l-common/src/core/messaging/types.ts",
           "symbol": "M3LMessageWriter",
-          "blob": "8c6309284bf94770c7c9c43b6e53208021f002d7"
+          "blob": "8fc96d1332ad9226d83520bffccd124befda0f70"
         },
         {
           "file": "packages/m3l-common/src/core/messaging/types.ts",
           "symbol": "M3LMessageReader",
-          "blob": "8c6309284bf94770c7c9c43b6e53208021f002d7"
+          "blob": "8fc96d1332ad9226d83520bffccd124befda0f70"
         },
         {
           "file": "packages/m3l-common/src/core/messaging/types.ts",
           "symbol": "M3LOutboundMessage",
-          "blob": "8c6309284bf94770c7c9c43b6e53208021f002d7"
+          "blob": "8fc96d1332ad9226d83520bffccd124befda0f70"
         },
         {
           "file": "packages/m3l-common/src/core/messaging/types.ts",
           "symbol": "M3LReceivedMessage",
-          "blob": "8c6309284bf94770c7c9c43b6e53208021f002d7"
+          "blob": "8fc96d1332ad9226d83520bffccd124befda0f70"
         },
         {
           "file": "packages/m3l-common/src/core/messaging/types.ts",
           "symbol": "M3LMessageReceipt",
-          "blob": "8c6309284bf94770c7c9c43b6e53208021f002d7"
+          "blob": "8fc96d1332ad9226d83520bffccd124befda0f70"
         }
       ],
-      "retrieved": "2026-07-11"
+      "retrieved": "2026-09-13"
     },
     {
       "heading": "The `M3LMessenger` facade",
@@ -95,10 +95,10 @@
         {
           "file": "packages/m3l-common/src/core/messaging/M3LMessenger.ts",
           "symbol": "M3LMessenger",
-          "blob": "45313ed8b3bac804596c7c128be1225d7ebbe30d"
+          "blob": "e4813fa284df6dbdfeb07992e22ca8eeddc18e25"
         }
       ],
-      "retrieved": "2026-07-11"
+      "retrieved": "2026-09-13"
     },
     {
       "heading": "Notes and behavior",
@@ -106,15 +106,15 @@
         {
           "file": "packages/m3l-common/src/core/messaging/M3LMessenger.ts",
           "symbol": "M3LMessenger",
-          "blob": "45313ed8b3bac804596c7c128be1225d7ebbe30d"
+          "blob": "e4813fa284df6dbdfeb07992e22ca8eeddc18e25"
         },
         {
           "file": "packages/m3l-common/src/core/messaging/types.ts",
           "symbol": "M3LMessageReader",
-          "blob": "8c6309284bf94770c7c9c43b6e53208021f002d7"
+          "blob": "8fc96d1332ad9226d83520bffccd124befda0f70"
         }
       ],
-      "retrieved": "2026-07-11"
+      "retrieved": "2026-09-13"
     }
   ]
 }

@@ -41,7 +41,7 @@ export type M3LConfigParameterValue =
  *
  * @example
  * ```ts
- * import type { M3LConfigParameterLike } from "@m3l-automation/m3l-common/core";
+ * import type { M3LConfigParameterLike } from "@monte3l/m3l-common/core";
  *
  * const duckTyped: M3LConfigParameterLike = {
  *   getName: () => "PORT",
@@ -377,8 +377,8 @@ function safeIsSecret(parameter: M3LConfigParameterLike): boolean {
  *
  * @example
  * ```ts
- * import { M3LConfigParameter, M3LConfigParameterType } from "@m3l-automation/m3l-common/core";
- * import { describeConfigParameters } from "@m3l-automation/m3l-common/core";
+ * import { M3LConfigParameter, M3LConfigParameterType } from "@monte3l/m3l-common/core";
+ * import { describeConfigParameters } from "@monte3l/m3l-common/core";
  *
  * const port = new M3LConfigParameter({
  *   name: "PORT",

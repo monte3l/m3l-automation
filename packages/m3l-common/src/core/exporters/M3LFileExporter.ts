@@ -21,7 +21,7 @@ export interface M3LFileExporterOptions {
  *
  * @example
  * ```typescript
- * import { Core } from "@m3l-automation/m3l-common";
+ * import { Core } from "@monte3l/m3l-common";
  *
  * const exporter = new Core.M3LFileExporter({
  *   filePath: "./data/outputs/notes.txt",
@@ -51,8 +51,8 @@ export class M3LFileExporter {
    *
    * @example
    * ```typescript
-   * import { M3LError } from "@m3l-automation/m3l-common/core";
-   * import { Core } from "@m3l-automation/m3l-common";
+   * import { M3LError } from "@monte3l/m3l-common/core";
+   * import { Core } from "@monte3l/m3l-common";
    *
    * const exporter = new Core.M3LFileExporter({
    *   filePath: "./data/outputs/notes.txt",

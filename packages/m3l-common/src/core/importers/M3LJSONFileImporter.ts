@@ -17,7 +17,7 @@ import {
  *
  * @example
  * ```typescript
- * import type { M3LJSONFileImporterOptions } from "@m3l-automation/m3l-common/core";
+ * import type { M3LJSONFileImporterOptions } from "@monte3l/m3l-common/core";
  *
  * const options: M3LJSONFileImporterOptions = { maxBytes: 1_000_000 };
  * ```
@@ -44,7 +44,7 @@ export interface M3LJSONFileImporterOptions {
  *
  * @example
  * ```typescript
- * import { M3LJSONFileImporter } from "@m3l-automation/m3l-common/core";
+ * import { M3LJSONFileImporter } from "@monte3l/m3l-common/core";
  *
  * const importer = new M3LJSONFileImporter({ maxBytes: 1_000_000 });
  * const doc = await importer.read<{ id: number }[]>("./data/inputs/records.json");
@@ -79,7 +79,7 @@ export class M3LJSONFileImporter {
    *
    * @example
    * ```typescript
-   * import { M3LError, M3LJSONFileImporter } from "@m3l-automation/m3l-common/core";
+   * import { M3LError, M3LJSONFileImporter } from "@monte3l/m3l-common/core";
    *
    * const importer = new M3LJSONFileImporter();
    * try {

@@ -32,7 +32,7 @@ import type {
  *
  * @example
  * ```ts
- * import { Core } from "@m3l-automation/m3l-common";
+ * import { Core } from "@monte3l/m3l-common";
  *
  * interface Shape extends Core.M3LProcedureShape {
  *   deps: unknown;

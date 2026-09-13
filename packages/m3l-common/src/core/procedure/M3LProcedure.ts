@@ -26,7 +26,7 @@ import type {
  * `core/procedure` barrel) purely so its one legitimate caller,
  * `M3LProcedureBuilder.build()` — a sibling module within `core/procedure`
  * — can invoke the guarded static factory below. A consumer of
- * `@m3l-automation/m3l-common/core` has no route to this symbol: it is not
+ * `@monte3l/m3l-common/core` has no route to this symbol: it is not
  * part of the barrel's exports, and the package's `exports` map admits no
  * subpath that would let a deep import reach this module directly.
  *
@@ -67,7 +67,7 @@ export const kCreateProcedure: unique symbol = Symbol(
  *
  * @example
  * ```ts
- * import { Core } from "@m3l-automation/m3l-common";
+ * import { Core } from "@monte3l/m3l-common";
  *
  * interface Triage extends Core.M3LProcedureShape {
  *   deps: Record<string, never>;

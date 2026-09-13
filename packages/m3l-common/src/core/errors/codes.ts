@@ -34,7 +34,7 @@
  *
  * @example
  * ```ts
- * import { M3L_ERROR_CODES } from "@m3l-automation/m3l-common/core";
+ * import { M3L_ERROR_CODES } from "@monte3l/m3l-common/core";
  *
  * function isKnownCode(code: string): boolean {
  *   return (M3L_ERROR_CODES as readonly string[]).includes(code);
@@ -175,7 +175,7 @@ export const M3L_ERROR_CODES = [
  *
  * @example
  * ```ts
- * import type { M3LErrorCode } from "@m3l-automation/m3l-common/core";
+ * import type { M3LErrorCode } from "@monte3l/m3l-common/core";
  *
  * function isRetryable(code: M3LErrorCode): boolean {
  *   return code === "ERR_POLL_EXHAUSTED" || code === "ERR_HTTP_REQUEST";

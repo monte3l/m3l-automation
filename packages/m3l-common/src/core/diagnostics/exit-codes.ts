@@ -19,7 +19,7 @@ import { M3LError } from "../errors/index.js";
  *
  * @example
  * ```ts
- * import { M3L_EXIT_CODES } from "@m3l-automation/m3l-common/core";
+ * import { M3L_EXIT_CODES } from "@monte3l/m3l-common/core";
  *
  * process.exitCode = M3L_EXIT_CODES.EXTERNAL;
  * ```
@@ -46,7 +46,7 @@ export const M3L_EXIT_CODES = {
  *
  * @example
  * ```ts
- * import type { M3LExitCode } from "@m3l-automation/m3l-common/core";
+ * import type { M3LExitCode } from "@monte3l/m3l-common/core";
  *
  * function isFailure(code: M3LExitCode): boolean {
  *   return code !== 0;
@@ -65,7 +65,7 @@ export type M3LExitCode = (typeof M3L_EXIT_CODES)[keyof typeof M3L_EXIT_CODES];
  *
  * @example
  * ```ts
- * import type { M3LErrorExitCode } from "@m3l-automation/m3l-common/core";
+ * import type { M3LErrorExitCode } from "@monte3l/m3l-common/core";
  *
  * function isConfigFault(code: M3LErrorExitCode): boolean {
  *   return code === 2;
@@ -116,7 +116,7 @@ function readStringProperty(value: unknown, key: string): string | undefined {
  *
  * @example
  * ```ts
- * import { isM3LErrorOrigin } from "@m3l-automation/m3l-common/core";
+ * import { isM3LErrorOrigin } from "@monte3l/m3l-common/core";
  *
  * isM3LErrorOrigin("caller"); // true
  * isM3LErrorOrigin("some-future-origin"); // false
@@ -196,7 +196,7 @@ function resolveExitCode(error: unknown): M3LErrorExitCode | undefined {
  *
  * @example
  * ```ts
- * import { mapErrorToExitCode } from "@m3l-automation/m3l-common/core";
+ * import { mapErrorToExitCode } from "@monte3l/m3l-common/core";
  *
  * try {
  *   await runTask();

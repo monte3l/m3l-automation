@@ -20,7 +20,7 @@ import { M3LConfigValidationError } from "./M3LConfigValidationError.js";
  *
  * @example
  * ```ts
- * import type { M3LOperationDeclaration } from "@m3l-automation/m3l-common/core";
+ * import type { M3LOperationDeclaration } from "@monte3l/m3l-common/core";
  *
  * const getItem: M3LOperationDeclaration = {
  *   name: "get",
@@ -60,7 +60,7 @@ export interface M3LOperationDeclaration {
  * widens every `name` to `string` before {@link deriveOperationNames} ever
  * sees the list, defeating its `const TName` literal-union inference.
  * ```ts
- * import type { M3LOperationDeclarationList } from "@m3l-automation/m3l-common/core";
+ * import type { M3LOperationDeclarationList } from "@monte3l/m3l-common/core";
  *
  * const operations = [
  *   { name: "get", description: "Fetch one item by key." },
@@ -99,7 +99,7 @@ export type M3LOperationDeclarationList<TName extends string = string> =
  *
  * @example
  * ```ts
- * import { deriveOperationNames } from "@m3l-automation/m3l-common/core";
+ * import { deriveOperationNames } from "@monte3l/m3l-common/core";
  *
  * const names = deriveOperationNames([
  *   { name: "get", description: "Fetch one item by key." },

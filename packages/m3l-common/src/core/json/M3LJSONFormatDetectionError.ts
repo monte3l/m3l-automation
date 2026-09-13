@@ -31,7 +31,7 @@ interface M3LJSONFormatDetectionErrorOptions {
  * import {
  *   M3LJSONFormatDetector,
  *   M3LJSONFormatDetectionError,
- * } from "@m3l-automation/m3l-common/core";
+ * } from "@monte3l/m3l-common/core";
  *
  * const detector = new M3LJSONFormatDetector();
  * try {

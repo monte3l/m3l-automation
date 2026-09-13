@@ -137,7 +137,7 @@ function readHttpStatus(value: unknown): number | undefined {
  *
  * @example
  * ```ts
- * import { Core } from "@m3l-automation/m3l-common/core";
+ * import { Core } from "@monte3l/m3l-common/core";
  *
  * const classifier = Core.combineClassifiers(
  *   Core.awsThrottlingClassifier,

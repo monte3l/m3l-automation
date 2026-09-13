@@ -24,8 +24,8 @@ import type { M3LAgentDecision } from "./verdict-types.js";
  *
  * @example
  * ```ts
- * import type { M3LAgentEvaluationOptions } from "@m3l-automation/m3l-common/core";
- * import { validateAgentPolicy } from "@m3l-automation/m3l-common/core";
+ * import type { M3LAgentEvaluationOptions } from "@monte3l/m3l-common/core";
+ * import { validateAgentPolicy } from "@monte3l/m3l-common/core";
  *
  * const options: M3LAgentEvaluationOptions = {
  *   policy: validateAgentPolicy({
@@ -106,7 +106,7 @@ export interface M3LAgentEvaluationOptions {
  *   evaluateAgentAction,
  *   isAgentActionAutoApproved,
  *   validateAgentPolicy,
- * } from "@m3l-automation/m3l-common/core";
+ * } from "@monte3l/m3l-common/core";
  *
  * const policy = validateAgentPolicy({
  *   version: 1,

@@ -18,7 +18,7 @@
  *
  * @example
  * ```ts
- * import { M3LLogEventCategory } from "@m3l-automation/m3l-common/core";
+ * import { M3LLogEventCategory } from "@monte3l/m3l-common/core";
  *
  * const category: M3LLogEventCategory = M3LLogEventCategory.SUCCESS;
  * ```
@@ -57,7 +57,7 @@ export const M3LLogEventCategory = {
  *
  * @example
  * ```ts
- * import type { M3LLogEventCategory } from "@m3l-automation/m3l-common/core";
+ * import type { M3LLogEventCategory } from "@monte3l/m3l-common/core";
  *
  * function describe(category: M3LLogEventCategory): string {
  *   return `event category: ${category}`;
@@ -84,8 +84,8 @@ export type M3LLogEventCategory =
  *
  * @example
  * ```ts
- * import type { M3LLogLevelFloor } from "@m3l-automation/m3l-common/core";
- * import { M3LLogEventCategory, M3LLogger } from "@m3l-automation/m3l-common/core";
+ * import type { M3LLogLevelFloor } from "@monte3l/m3l-common/core";
+ * import { M3LLogEventCategory, M3LLogger } from "@monte3l/m3l-common/core";
  *
  * const floor: M3LLogLevelFloor = M3LLogEventCategory.WARNING;
  * const logger = new M3LLogger([], { minLevel: floor });

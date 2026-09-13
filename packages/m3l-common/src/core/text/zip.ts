@@ -88,7 +88,7 @@ interface RegistryLike {
  * import {
  *   M3LTextExtractorRegistry,
  *   M3LZipTextExtractor,
- * } from "@m3l-automation/m3l-common/core";
+ * } from "@monte3l/m3l-common/core";
  *
  * const registry = new M3LTextExtractorRegistry();
  * registry.register(new M3LZipTextExtractor(registry));

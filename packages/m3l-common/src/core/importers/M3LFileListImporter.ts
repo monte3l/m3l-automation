@@ -14,7 +14,7 @@ import { readSourceBytes } from "../../internal/importers/resolveSource.js";
  *
  * @example
  * ```typescript
- * import { M3LFileListImporter } from "@m3l-automation/m3l-common/core";
+ * import { M3LFileListImporter } from "@monte3l/m3l-common/core";
  *
  * const importer = new M3LFileListImporter();
  * const contents = await importer.read([
@@ -36,7 +36,7 @@ export class M3LFileListImporter {
    *
    * @example
    * ```typescript
-   * import { M3LError, M3LFileListImporter } from "@m3l-automation/m3l-common/core";
+   * import { M3LError, M3LFileListImporter } from "@monte3l/m3l-common/core";
    *
    * const importer = new M3LFileListImporter();
    * try {

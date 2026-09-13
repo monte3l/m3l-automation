@@ -39,7 +39,7 @@ import type { M3LConfig } from "./M3LConfig.js";
  *
  * @example
  * ```ts
- * import type { M3LConfigSchemaValidator } from "@m3l-automation/m3l-common/core";
+ * import type { M3LConfigSchemaValidator } from "@monte3l/m3l-common/core";
  *
  * const sortRequiresLimit: M3LConfigSchemaValidator = (config) =>
  *   config.get("sort") === undefined || config.get("limit") !== undefined
@@ -68,7 +68,7 @@ export type M3LConfigSchemaValidator = (config: M3LConfig) => true | string;
  * import {
  *   M3LConfigSchema,
  *   M3LConfigSchemaValidators,
- * } from "@m3l-automation/m3l-common/core";
+ * } from "@monte3l/m3l-common/core";
  *
  * const schema = new M3LConfigSchema(
  *   [sortParam, limitParam],
@@ -105,7 +105,7 @@ export const M3LConfigSchemaValidators = {
    * ```ts
    * import {
    *   M3LConfigSchemaValidators,
-   * } from "@m3l-automation/m3l-common/core";
+   * } from "@monte3l/m3l-common/core";
    *
    * // Sensitive opt-in requires the plain bypass to also be present.
    * const v = M3LConfigSchemaValidators.requires("yesSensitive", "yes");

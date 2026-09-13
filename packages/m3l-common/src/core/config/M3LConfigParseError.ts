@@ -34,7 +34,7 @@ interface M3LConfigParseErrorOptions {
  * import {
  *   M3LJSONConfigProvider,
  *   M3LConfigParseError,
- * } from "@m3l-automation/m3l-common/core";
+ * } from "@monte3l/m3l-common/core";
  *
  * try {
  *   new M3LJSONConfigProvider("./data/config/app.json");

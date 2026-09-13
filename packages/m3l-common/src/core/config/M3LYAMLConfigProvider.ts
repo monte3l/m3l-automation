@@ -66,7 +66,7 @@ function readYamlFile(filePath: string): Map<string, unknown> {
  *
  * @example
  * ```ts
- * import { M3LYAMLConfigProvider } from "@m3l-automation/m3l-common/core";
+ * import { M3LYAMLConfigProvider } from "@monte3l/m3l-common/core";
  *
  * const provider = new M3LYAMLConfigProvider("./data/config/app.yaml");
  * provider.getRawValue("region");
@@ -118,7 +118,7 @@ export class M3LYAMLConfigProvider extends M3LConfigProvider {
    *
    * @example
    * ```ts
-   * import { M3LYAMLConfigProvider } from "@m3l-automation/m3l-common/core";
+   * import { M3LYAMLConfigProvider } from "@monte3l/m3l-common/core";
    *
    * // app.yaml: "region: eu-west-1\nprofile: dev\n"
    * const provider = new M3LYAMLConfigProvider("./data/config/app.yaml");

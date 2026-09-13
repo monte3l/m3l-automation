@@ -64,7 +64,7 @@ function readJsonFile(filePath: string): Map<string, unknown> {
  *
  * @example
  * ```ts
- * import { M3LJSONConfigProvider } from "@m3l-automation/m3l-common/core";
+ * import { M3LJSONConfigProvider } from "@monte3l/m3l-common/core";
  *
  * const provider = new M3LJSONConfigProvider("./data/config/app.json");
  * provider.getRawValue("region");

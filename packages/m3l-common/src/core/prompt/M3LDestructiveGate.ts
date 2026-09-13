@@ -29,7 +29,7 @@ import type { M3LPrompt } from "./M3LPrompt.js";
  *
  * @example
  * ```ts
- * import type { M3LDestructiveTarget } from "@m3l-automation/m3l-common/core";
+ * import type { M3LDestructiveTarget } from "@monte3l/m3l-common/core";
  *
  * const target: M3LDestructiveTarget = {
  *   profile: "prod",
@@ -64,7 +64,7 @@ export interface M3LDestructiveTarget {
  *
  * @example
  * ```ts
- * import type { M3LDestructiveTargetPredicate } from "@m3l-automation/m3l-common/core";
+ * import type { M3LDestructiveTargetPredicate } from "@monte3l/m3l-common/core";
  *
  * const alwaysSensitive: M3LDestructiveTargetPredicate = () => true;
  * ```
@@ -83,7 +83,7 @@ export type M3LDestructiveTargetPredicate = (
  *
  * @example
  * ```ts
- * import type { M3LSensitiveTargetSpec } from "@m3l-automation/m3l-common/core";
+ * import type { M3LSensitiveTargetSpec } from "@monte3l/m3l-common/core";
  *
  * const spec: M3LSensitiveTargetSpec = {
  *   profiles: ["prod", "prod-secondary"],
@@ -132,7 +132,7 @@ export interface M3LSensitiveTargetSpec {
  *   confirmDestructive,
  *   M3LPrompt,
  *   M3LLogger,
- * } from "@m3l-automation/m3l-common/core";
+ * } from "@monte3l/m3l-common/core";
  *
  * const isSensitiveTarget = sensitiveTargets({
  *   profiles: ["prod", "prod-secondary"],
@@ -396,7 +396,7 @@ async function runEscalatedEcho(
  *   sensitiveTargets,
  *   M3LLogger,
  *   M3LPrompt,
- * } from "@m3l-automation/m3l-common/core";
+ * } from "@monte3l/m3l-common/core";
  *
  * const prompt = new M3LPrompt();
  * const logger = new M3LLogger([]);

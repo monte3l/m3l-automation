@@ -90,7 +90,7 @@ const COMMAND_OUTCOME_STATUS_NAMES: ReadonlySet<string> = new Set(
  *
  * @example
  * ```ts
- * import { isM3LCommandModule } from "@m3l-automation/m3l-common/core";
+ * import { isM3LCommandModule } from "@monte3l/m3l-common/core";
  *
  * const loaded: unknown = (await import(entryPath)).commandModule;
  * if (!isM3LCommandModule(loaded)) {
@@ -156,7 +156,7 @@ export function isM3LCommandModule(
  *
  * @example
  * ```ts
- * import { isM3LCommandOutcome } from "@m3l-automation/m3l-common/core";
+ * import { isM3LCommandOutcome } from "@monte3l/m3l-common/core";
  *
  * const resolved: unknown = await commandModule.execute(parameters, context);
  * const outcome = isM3LCommandOutcome(resolved)

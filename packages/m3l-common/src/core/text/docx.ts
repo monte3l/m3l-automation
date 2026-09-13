@@ -20,7 +20,7 @@ import type { M3LTextExtractionResult, M3LTextExtractor } from "./contract.js";
  *
  * @example
  * ```ts
- * import { M3LDocxTextExtractor } from "@m3l-automation/m3l-common/core";
+ * import { M3LDocxTextExtractor } from "@monte3l/m3l-common/core";
  *
  * const extractor = new M3LDocxTextExtractor();
  * const { text } = await extractor.extract("./contract.docx");
