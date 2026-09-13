@@ -24,7 +24,7 @@ const PRESET_CYCLE_CODE = "ERR_PRESET_CYCLE";
  *
  * @example
  * ```ts
- * import { M3LPresetCycleError } from "@m3l-automation/m3l-common/core";
+ * import { M3LPresetCycleError } from "@monte3l/m3l-common/core";
  *
  * try {
  *   // loader.load(...)

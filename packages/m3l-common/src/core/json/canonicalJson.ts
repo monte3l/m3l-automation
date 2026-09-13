@@ -178,7 +178,7 @@ function canonicalizeValue(
  *
  * @example
  * ```ts
- * import { canonicalJsonStringify } from "@m3l-automation/m3l-common/core";
+ * import { canonicalJsonStringify } from "@monte3l/m3l-common/core";
  *
  * canonicalJsonStringify({ zebra: 1, apple: 2 });
  * // '{"apple":2,"zebra":1}' — keys sorted, insertion order ignored
@@ -213,7 +213,7 @@ export function canonicalJsonStringify(value: unknown): string {
  *
  * @example
  * ```ts
- * import { canonicalJsonHash } from "@m3l-automation/m3l-common/core";
+ * import { canonicalJsonHash } from "@monte3l/m3l-common/core";
  *
  * canonicalJsonHash({ a: 1, b: 2 }) === canonicalJsonHash({ b: 2, a: 1 });
  * // true — key order does not affect the hash

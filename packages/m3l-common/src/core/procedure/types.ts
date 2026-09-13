@@ -54,7 +54,7 @@ export type M3LProcedureValueMap = Readonly<Record<string, M3LProcedureValue>>;
  *
  * @example
  * ```ts
- * import type { Core } from "@m3l-automation/m3l-common";
+ * import type { Core } from "@monte3l/m3l-common";
  *
  * interface LogAnalysis extends Core.M3LProcedureShape {
  *   deps: { readonly logs: { query(q: string): Promise<number> } };
@@ -285,7 +285,7 @@ export interface M3LProcedureConditionScope<TShape extends M3LProcedureShape> {
  *
  * @example
  * ```ts
- * import { M3L_PROCEDURE_MAX_ITERATIONS } from "@m3l-automation/m3l-common/core";
+ * import { M3L_PROCEDURE_MAX_ITERATIONS } from "@monte3l/m3l-common/core";
  *
  * console.log(M3L_PROCEDURE_MAX_ITERATIONS); // 100
  * ```
@@ -299,7 +299,7 @@ export const M3L_PROCEDURE_MAX_ITERATIONS = 100;
  *
  * @example
  * ```ts
- * import { M3L_PROCEDURE_CONDITION_MAX_DEPTH } from "@m3l-automation/m3l-common/core";
+ * import { M3L_PROCEDURE_CONDITION_MAX_DEPTH } from "@monte3l/m3l-common/core";
  *
  * console.log(M3L_PROCEDURE_CONDITION_MAX_DEPTH); // 16
  * ```
@@ -313,7 +313,7 @@ export const M3L_PROCEDURE_CONDITION_MAX_DEPTH = 16;
  *
  * @example
  * ```ts
- * import { M3L_PROCEDURE_MAX_PATTERN_LENGTH } from "@m3l-automation/m3l-common/core";
+ * import { M3L_PROCEDURE_MAX_PATTERN_LENGTH } from "@monte3l/m3l-common/core";
  *
  * console.log(M3L_PROCEDURE_MAX_PATTERN_LENGTH); // 512
  * ```
@@ -328,7 +328,7 @@ export const M3L_PROCEDURE_MAX_PATTERN_LENGTH = 512;
  *
  * @example
  * ```ts
- * import { M3L_PROCEDURE_MAX_MATCH_INPUT_LENGTH } from "@m3l-automation/m3l-common/core";
+ * import { M3L_PROCEDURE_MAX_MATCH_INPUT_LENGTH } from "@monte3l/m3l-common/core";
  *
  * console.log(M3L_PROCEDURE_MAX_MATCH_INPUT_LENGTH); // 8192
  * ```

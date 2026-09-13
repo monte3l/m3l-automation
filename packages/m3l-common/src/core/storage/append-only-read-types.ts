@@ -27,7 +27,7 @@
  *
  * @example
  * ```ts
- * import { M3L_APPEND_ONLY_MAX_SEGMENT_BYTES } from "@m3l-automation/m3l-common/core";
+ * import { M3L_APPEND_ONLY_MAX_SEGMENT_BYTES } from "@monte3l/m3l-common/core";
  *
  * console.log(M3L_APPEND_ONLY_MAX_SEGMENT_BYTES); // 8388608
  * ```
@@ -45,7 +45,7 @@ export const M3L_APPEND_ONLY_MAX_SEGMENT_BYTES = 8_388_608;
  *
  * @example
  * ```ts
- * import { M3L_APPEND_ONLY_MAX_SEGMENT_AGE_MS } from "@m3l-automation/m3l-common/core";
+ * import { M3L_APPEND_ONLY_MAX_SEGMENT_AGE_MS } from "@monte3l/m3l-common/core";
  *
  * console.log(M3L_APPEND_ONLY_MAX_SEGMENT_AGE_MS); // 86400000
  * ```
@@ -64,7 +64,7 @@ export const M3L_APPEND_ONLY_MAX_SEGMENT_AGE_MS = 86_400_000;
  *
  * @example
  * ```ts
- * import { M3L_APPEND_ONLY_MAX_LINE_BYTES } from "@m3l-automation/m3l-common/core";
+ * import { M3L_APPEND_ONLY_MAX_LINE_BYTES } from "@monte3l/m3l-common/core";
  *
  * console.log(M3L_APPEND_ONLY_MAX_LINE_BYTES); // 65536
  * ```
@@ -81,7 +81,7 @@ export const M3L_APPEND_ONLY_MAX_LINE_BYTES = 65_536;
  *
  * @example
  * ```ts
- * import type { M3LAppendOnlyTruncatedSegment } from "@m3l-automation/m3l-common/core";
+ * import type { M3LAppendOnlyTruncatedSegment } from "@monte3l/m3l-common/core";
  *
  * function report(segment: M3LAppendOnlyTruncatedSegment): void {
  *   console.log(`dropped ${String(segment.byteLength)} trailing bytes`);
@@ -106,7 +106,7 @@ export interface M3LAppendOnlyTruncatedSegment {
  *
  * @example
  * ```ts
- * import type { M3LAppendOnlySegment } from "@m3l-automation/m3l-common/core";
+ * import type { M3LAppendOnlySegment } from "@monte3l/m3l-common/core";
  *
  * function report(segment: M3LAppendOnlySegment): void {
  *   console.log(`${segment.name}: ${String(segment.byteLength)} bytes`);
@@ -133,7 +133,7 @@ export interface M3LAppendOnlySegment {
  *
  * @example
  * ```ts
- * import type { M3LAppendOnlySegmentListing } from "@m3l-automation/m3l-common/core";
+ * import type { M3LAppendOnlySegmentListing } from "@monte3l/m3l-common/core";
  *
  * function report(listing: M3LAppendOnlySegmentListing): void {
  *   if (listing.skipped > 0) {
@@ -164,7 +164,7 @@ export interface M3LAppendOnlySegmentListing {
  *
  * @example
  * ```ts
- * import type { M3LAppendOnlyReadOptions } from "@m3l-automation/m3l-common/core";
+ * import type { M3LAppendOnlyReadOptions } from "@monte3l/m3l-common/core";
  *
  * const options: M3LAppendOnlyReadOptions = {
  *   onTruncatedTail: (segment) => {

@@ -64,7 +64,7 @@ export type M3LProcedureCaseMatch<TShape extends M3LProcedureShape> = Omit<
  *
  * @example
  * ```ts
- * import type { Core } from "@m3l-automation/m3l-common";
+ * import type { Core } from "@monte3l/m3l-common";
  *
  * interface Triage extends Core.M3LProcedureShape {
  *   deps: Record<string, never>;
@@ -117,7 +117,7 @@ export interface M3LProcedureCase<
  *
  * @example
  * ```ts
- * import type { Core } from "@m3l-automation/m3l-common";
+ * import type { Core } from "@monte3l/m3l-common";
  *
  * const fallback: Core.M3LProcedureFallback<Core.M3LProcedureShape> = {
  *   description: "no case matched",
@@ -145,7 +145,7 @@ export interface M3LProcedureFallback<TShape extends M3LProcedureShape> {
  *
  * @example
  * ```ts
- * import type { Core } from "@m3l-automation/m3l-common";
+ * import type { Core } from "@monte3l/m3l-common";
  *
  * const options: Core.M3LProcedureBuildOptions = { revision: "r1" };
  * ```
@@ -188,7 +188,7 @@ export type M3LProcedureProblemCode =
  *
  * @example
  * ```ts
- * import type { Core } from "@m3l-automation/m3l-common";
+ * import type { Core } from "@monte3l/m3l-common";
  *
  * const problem: Core.M3LProcedureValidationProblem = {
  *   code: "ERR_PROCEDURE_EMPTY_STEPS",
@@ -230,7 +230,7 @@ export interface M3LProcedureValidationProblem {
  *
  * @example
  * ```ts
- * import type { Core } from "@m3l-automation/m3l-common";
+ * import type { Core } from "@monte3l/m3l-common";
  *
  * function isNamed(summary: Core.M3LProcedureSummary, name: string): boolean {
  *   return summary.name === name;

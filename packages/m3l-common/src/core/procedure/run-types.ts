@@ -47,7 +47,7 @@ import type {
  *
  * @example
  * ```ts
- * import type { Core } from "@m3l-automation/m3l-common";
+ * import type { Core } from "@monte3l/m3l-common";
  *
  * const witness: Core.M3LProcedureProgressWitness<Core.M3LProcedureShape> = (
  *   context,
@@ -68,7 +68,7 @@ export type M3LProcedureProgressWitness<TShape extends M3LProcedureShape> = (
  *
  * @example
  * ```ts
- * import type { Core } from "@m3l-automation/m3l-common";
+ * import type { Core } from "@monte3l/m3l-common";
  *
  * const progress: Core.M3LProcedureProgressOptions<Core.M3LProcedureShape> = {
  *   witness: (context) => context.values["pageToken"] as string,
@@ -135,7 +135,7 @@ interface M3LProcedureRunOptionsBase<TShape extends M3LProcedureShape> {
  *
  * @example
  * ```ts
- * import type { Core } from "@m3l-automation/m3l-common";
+ * import type { Core } from "@monte3l/m3l-common";
  *
  * interface Triage extends Core.M3LProcedureShape {
  *   deps: Record<string, never>;
@@ -171,7 +171,7 @@ export type M3LProcedureRunOptions<TShape extends M3LProcedureShape> =
  *
  * @example
  * ```ts
- * import type { Core } from "@m3l-automation/m3l-common";
+ * import type { Core } from "@monte3l/m3l-common";
  *
  * function ran(telemetry: Core.M3LProcedureTelemetry<Core.M3LProcedureShape>): number {
  *   return telemetry.iterations;
@@ -207,7 +207,7 @@ export interface M3LProcedureTelemetry<TShape extends M3LProcedureShape> {
  *
  * @example
  * ```ts
- * import type { Core } from "@m3l-automation/m3l-common";
+ * import type { Core } from "@monte3l/m3l-common";
  *
  * const sink: Core.M3LProcedureTraceSink = {
  *   record: (source, event, payload) => console.log(source, event, payload),
@@ -225,7 +225,7 @@ export interface M3LProcedureTraceSink {
  *
  * @example
  * ```ts
- * import type { Core } from "@m3l-automation/m3l-common";
+ * import type { Core } from "@monte3l/m3l-common";
  *
  * declare const sink: Core.M3LProcedureTraceSink;
  * const trace: Core.M3LProcedureTraceOptions = { sink, source: "my-script" };
@@ -245,7 +245,7 @@ export interface M3LProcedureTraceOptions {
  *
  * @example
  * ```ts
- * import type { Core } from "@m3l-automation/m3l-common";
+ * import type { Core } from "@monte3l/m3l-common";
  *
  * const entry: Core.M3LProcedureTraceEntry = {
  *   stepId: "gather",
@@ -310,7 +310,7 @@ export interface M3LProcedureOutcomeBase<TShape extends M3LProcedureShape> {
  *
  * @example
  * ```ts
- * import type { Core } from "@m3l-automation/m3l-common";
+ * import type { Core } from "@monte3l/m3l-common";
  *
  * function verdict(outcome: Core.M3LProcedureOutcome<Core.M3LProcedureShape>): string {
  *   return outcome.status;

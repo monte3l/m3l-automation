@@ -26,7 +26,7 @@ import type {
  *
  * @example
  * ```ts
- * import type { M3LPromptOptions } from "@m3l-automation/m3l-common/core";
+ * import type { M3LPromptOptions } from "@monte3l/m3l-common/core";
  *
  * const options: M3LPromptOptions = { spinner: { interactive: false } };
  * ```
@@ -220,7 +220,7 @@ function escapeChoices<Value>(
  *
  * @example
  * ```ts
- * import { M3LPrompt } from "@m3l-automation/m3l-common/core";
+ * import { M3LPrompt } from "@monte3l/m3l-common/core";
  *
  * const prompt = new M3LPrompt();
  *

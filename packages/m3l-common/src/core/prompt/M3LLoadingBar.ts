@@ -25,7 +25,7 @@ const MIN_PERCENTAGE = 0;
  *
  * @example
  * ```ts
- * import type { M3LLoadingBarOptions } from "@m3l-automation/m3l-common/core";
+ * import type { M3LLoadingBarOptions } from "@monte3l/m3l-common/core";
  *
  * const options: M3LLoadingBarOptions = { width: 20, stream: process.stderr };
  * ```
@@ -58,7 +58,7 @@ export interface M3LLoadingBarOptions {
  *
  * @example
  * ```ts
- * import { M3LLoadingBar } from "@m3l-automation/m3l-common/core";
+ * import { M3LLoadingBar } from "@monte3l/m3l-common/core";
  *
  * const bar = new M3LLoadingBar();
  * bar.update(0, "Starting");

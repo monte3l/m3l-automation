@@ -62,7 +62,7 @@ const PRESET_TOO_DEEP_CODE = "ERR_PRESET_TOO_DEEP";
  *
  * @example
  * ```ts
- * import { M3LError } from "@m3l-automation/m3l-common/core";
+ * import { M3LError } from "@monte3l/m3l-common/core";
  *
  * try {
  *   // loader.load(...)
@@ -98,7 +98,7 @@ class M3LPresetLoadError extends M3LError {
  *
  * @example
  * ```ts
- * import { M3LError } from "@m3l-automation/m3l-common/core";
+ * import { M3LError } from "@monte3l/m3l-common/core";
  *
  * try {
  *   // loader.load(...)
@@ -211,7 +211,7 @@ function buildUnknownKeysMessage(
  *
  * @example
  * ```ts
- * import { M3LScriptPresetLoader } from "@m3l-automation/m3l-common/core";
+ * import { M3LScriptPresetLoader } from "@monte3l/m3l-common/core";
  *
  * const loader = new M3LScriptPresetLoader();
  * const preset = loader.load("./data/config/presets/prod.yaml");

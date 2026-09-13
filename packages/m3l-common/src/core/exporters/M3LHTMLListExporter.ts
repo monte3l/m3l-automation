@@ -198,7 +198,7 @@ class M3LHTMLStreamWriter<
  * @typeParam TItem - The shape of each exported item.
  * @example
  * ```typescript
- * import { Core } from "@m3l-automation/m3l-common";
+ * import { Core } from "@monte3l/m3l-common";
  *
  * const exporter = new Core.M3LHTMLListExporter<{ id: string; name: string }>({
  *   filePath: "./data/outputs/report.html",

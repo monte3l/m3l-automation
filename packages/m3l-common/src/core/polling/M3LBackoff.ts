@@ -24,7 +24,7 @@ const JITTER_GROWTH_FACTOR = 3;
  *
  * @example
  * ```ts
- * import { Core } from "@m3l-automation/m3l-common/core";
+ * import { Core } from "@monte3l/m3l-common/core";
  *
  * const poller = new Core.M3LPoller({
  *   backoff: Core.M3LBackoff.exponentialJittered(500, 10_000),
@@ -47,7 +47,7 @@ export class M3LBackoff {
    *
    * @example
    * ```ts
-   * import { Core } from "@m3l-automation/m3l-common/core";
+   * import { Core } from "@monte3l/m3l-common/core";
    *
    * const backoff = Core.M3LBackoff.exponential(100, 5_000);
    * ```
@@ -74,7 +74,7 @@ export class M3LBackoff {
    *
    * @example
    * ```ts
-   * import { Core } from "@m3l-automation/m3l-common/core";
+   * import { Core } from "@monte3l/m3l-common/core";
    *
    * const backoff = Core.M3LBackoff.exponentialJittered(200, 5_000);
    * ```
@@ -105,7 +105,7 @@ export class M3LBackoff {
    *
    * @example
    * ```ts
-   * import { Core } from "@m3l-automation/m3l-common/core";
+   * import { Core } from "@monte3l/m3l-common/core";
    *
    * const backoff = Core.M3LBackoff.constant(1_000);
    * ```

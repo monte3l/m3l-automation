@@ -21,7 +21,7 @@
  *
  * @example
  * ```typescript
- * import type { M3LPollAttemptPayload } from "@m3l-automation/m3l-common/core";
+ * import type { M3LPollAttemptPayload } from "@monte3l/m3l-common/core";
  * const payload: M3LPollAttemptPayload = { attempt: 1, maxAttempts: 30 };
  * ```
  */
@@ -42,7 +42,7 @@ export interface M3LPollAttemptPayload {
  *
  * @example
  * ```typescript
- * import type { M3LPollWaitPayload } from "@m3l-automation/m3l-common/core";
+ * import type { M3LPollWaitPayload } from "@monte3l/m3l-common/core";
  * const payload: M3LPollWaitPayload = { attempt: 1, delayMs: 500 };
  * ```
  */
@@ -61,7 +61,7 @@ export interface M3LPollWaitPayload {
  *
  * @example
  * ```typescript
- * import type { M3LPollSuccessPayload } from "@m3l-automation/m3l-common/core";
+ * import type { M3LPollSuccessPayload } from "@monte3l/m3l-common/core";
  * const payload: M3LPollSuccessPayload = { attempt: 3 };
  * ```
  */
@@ -81,7 +81,7 @@ export interface M3LPollSuccessPayload {
  *
  * @example
  * ```typescript
- * import type { M3LPollExhaustedPayload } from "@m3l-automation/m3l-common/core";
+ * import type { M3LPollExhaustedPayload } from "@monte3l/m3l-common/core";
  * const payload: M3LPollExhaustedPayload = { attempts: 30 };
  * ```
  */
@@ -97,7 +97,7 @@ export interface M3LPollExhaustedPayload {
  *
  * @example
  * ```typescript
- * import type { M3LPollNoProgressPayload } from "@m3l-automation/m3l-common/core";
+ * import type { M3LPollNoProgressPayload } from "@monte3l/m3l-common/core";
  * const payload: M3LPollNoProgressPayload = { attempt: 4, stalledAttempts: 3 };
  * ```
  */
@@ -113,7 +113,7 @@ export interface M3LPollNoProgressPayload {
  *
  * @example
  * ```typescript
- * import { Core } from "@m3l-automation/m3l-common/core";
+ * import { Core } from "@monte3l/m3l-common/core";
  *
  * const poller = new Core.M3LPoller({ backoff: Core.M3LBackoff.constant(500) });
  * poller.on("poll:wait", (payload) => {
@@ -147,7 +147,7 @@ export interface M3LPollerEventMap {
  *
  * @example
  * ```typescript
- * import type { M3LRetryAttemptPayload } from "@m3l-automation/m3l-common/core";
+ * import type { M3LRetryAttemptPayload } from "@monte3l/m3l-common/core";
  * const payload: M3LRetryAttemptPayload = { attempt: 1, maxAttempts: 10 };
  * ```
  */
@@ -171,7 +171,7 @@ export interface M3LRetryAttemptPayload {
  *
  * @example
  * ```typescript
- * import type { M3LRetryScheduledPayload } from "@m3l-automation/m3l-common/core";
+ * import type { M3LRetryScheduledPayload } from "@monte3l/m3l-common/core";
  * const payload: M3LRetryScheduledPayload = {
  *   attempt: 1,
  *   delayMs: 200,
@@ -201,7 +201,7 @@ export interface M3LRetryScheduledPayload {
  *
  * @example
  * ```typescript
- * import type { M3LRetrySuccessPayload } from "@m3l-automation/m3l-common/core";
+ * import type { M3LRetrySuccessPayload } from "@monte3l/m3l-common/core";
  * const payload: M3LRetrySuccessPayload = { attempt: 3 };
  * ```
  */
@@ -222,7 +222,7 @@ export interface M3LRetrySuccessPayload {
  *
  * @example
  * ```typescript
- * import type { M3LRetryFatalPayload } from "@m3l-automation/m3l-common/core";
+ * import type { M3LRetryFatalPayload } from "@monte3l/m3l-common/core";
  * const payload: M3LRetryFatalPayload = { attempt: 2, classification: "fatal" };
  * ```
  */
@@ -245,7 +245,7 @@ export interface M3LRetryFatalPayload {
  *
  * @example
  * ```typescript
- * import type { M3LRetryExhaustedPayload } from "@m3l-automation/m3l-common/core";
+ * import type { M3LRetryExhaustedPayload } from "@monte3l/m3l-common/core";
  * const payload: M3LRetryExhaustedPayload = { attempts: 10 };
  * ```
  */
@@ -261,7 +261,7 @@ export interface M3LRetryExhaustedPayload {
  *
  * @example
  * ```typescript
- * import type { M3LRetryNoProgressPayload } from "@m3l-automation/m3l-common/core";
+ * import type { M3LRetryNoProgressPayload } from "@monte3l/m3l-common/core";
  * const payload: M3LRetryNoProgressPayload = { attempt: 4, stalledAttempts: 3 };
  * ```
  */
@@ -278,7 +278,7 @@ export interface M3LRetryNoProgressPayload {
  *
  * @example
  * ```typescript
- * import { Core } from "@m3l-automation/m3l-common/core";
+ * import { Core } from "@monte3l/m3l-common/core";
  *
  * const runner = new Core.M3LRetryRunner({ classifier: Core.awsThrottlingClassifier });
  * runner.on("retry:scheduled", (payload) => {

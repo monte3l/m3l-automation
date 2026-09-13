@@ -18,7 +18,7 @@
  *
  * @example
  * ```ts
- * import { M3LSecretsSpecifier } from "@m3l-automation/m3l-common/core";
+ * import { M3LSecretsSpecifier } from "@monte3l/m3l-common/core";
  *
  * const secrets = new M3LSecretsSpecifier(["apiKey"]);
  * secrets.markSecret("dbPassword");

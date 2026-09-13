@@ -9,16 +9,16 @@
           "file": "packages/m3l-common/src/core/security/DangerousKeys.ts",
           "symbol": "isDangerousKey",
           "lines": "46-48",
-          "blob": "9dd01aaf0eb6673c990a7a6060216a81275526e2"
+          "blob": "f37f88a906ddc2d8345ce4e703b3067c1d09ef21"
         },
         {
           "file": "packages/m3l-common/src/core/security/DangerousKeys.ts",
           "symbol": "formatUnsafeKeyLocation",
           "lines": "73-75",
-          "blob": "9dd01aaf0eb6673c990a7a6060216a81275526e2"
+          "blob": "f37f88a906ddc2d8345ce4e703b3067c1d09ef21"
         }
       ],
-      "retrieved": "2026-07-11"
+      "retrieved": "2026-09-13"
     },
     {
       "heading": "The prototype-pollution guard",
@@ -27,16 +27,16 @@
           "file": "packages/m3l-common/src/core/security/DangerousKeys.ts",
           "symbol": "isDangerousKey",
           "lines": "46-48",
-          "blob": "9dd01aaf0eb6673c990a7a6060216a81275526e2"
+          "blob": "f37f88a906ddc2d8345ce4e703b3067c1d09ef21"
         },
         {
           "file": "packages/m3l-common/src/core/security/DangerousKeys.ts",
           "symbol": "formatUnsafeKeyLocation",
           "lines": "73-75",
-          "blob": "9dd01aaf0eb6673c990a7a6060216a81275526e2"
+          "blob": "f37f88a906ddc2d8345ce4e703b3067c1d09ef21"
         }
       ],
-      "retrieved": "2026-07-11"
+      "retrieved": "2026-09-13"
     }
   ]
 }

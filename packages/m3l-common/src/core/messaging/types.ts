@@ -15,7 +15,7 @@
  *
  * @example
  * ```typescript
- * import type { M3LMessageTarget } from "@m3l-automation/m3l-common/core";
+ * import type { M3LMessageTarget } from "@monte3l/m3l-common/core";
  *
  * const target: M3LMessageTarget = { id: "ops-channel", label: "Ops" };
  * ```
@@ -32,7 +32,7 @@ export interface M3LMessageTarget {
  *
  * @example
  * ```typescript
- * import type { M3LMessageAuthor } from "@m3l-automation/m3l-common/core";
+ * import type { M3LMessageAuthor } from "@monte3l/m3l-common/core";
  *
  * const author: M3LMessageAuthor = { id: "user-1", displayName: "Alex" };
  * ```
@@ -52,7 +52,7 @@ export interface M3LMessageAuthor {
  *
  * @example
  * ```typescript
- * import type { M3LMessageReceipt } from "@m3l-automation/m3l-common/core";
+ * import type { M3LMessageReceipt } from "@monte3l/m3l-common/core";
  *
  * const receipt: M3LMessageReceipt = { id: "msg-123", timestamp: new Date() };
  * ```
@@ -71,7 +71,7 @@ export interface M3LMessageReceipt {
  *
  * @example
  * ```typescript
- * import type { M3LOutboundAttachment } from "@m3l-automation/m3l-common/core";
+ * import type { M3LOutboundAttachment } from "@monte3l/m3l-common/core";
  *
  * const attachment: M3LOutboundAttachment = {
  *   filename: "report.csv",
@@ -96,7 +96,7 @@ export interface M3LOutboundAttachment {
  *
  * @example
  * ```typescript
- * import type { M3LInboundAttachment } from "@m3l-automation/m3l-common/core";
+ * import type { M3LInboundAttachment } from "@monte3l/m3l-common/core";
  *
  * const attachment: M3LInboundAttachment = {
  *   filename: "screenshot.png",
@@ -121,7 +121,7 @@ export interface M3LInboundAttachment {
  *
  * @example
  * ```typescript
- * import type { M3LOutboundMessage } from "@m3l-automation/m3l-common/core";
+ * import type { M3LOutboundMessage } from "@monte3l/m3l-common/core";
  *
  * const message: M3LOutboundMessage = {
  *   text: "Job finished",
@@ -149,7 +149,7 @@ export interface M3LOutboundMessage {
  *
  * @example
  * ```typescript
- * import type { M3LReceivedMessage } from "@m3l-automation/m3l-common/core";
+ * import type { M3LReceivedMessage } from "@monte3l/m3l-common/core";
  *
  * const message: M3LReceivedMessage = {
  *   text: "status?",
@@ -176,7 +176,7 @@ export interface M3LReceivedMessage {
  *   M3LMessageWriter,
  *   M3LOutboundMessage,
  *   M3LMessageReceipt,
- * } from "@m3l-automation/m3l-common/core";
+ * } from "@monte3l/m3l-common/core";
  *
  * class ConsoleWriter implements M3LMessageWriter {
  *   write(message: M3LOutboundMessage): M3LMessageReceipt {
@@ -209,7 +209,7 @@ export interface M3LMessageWriter {
  * import type {
  *   M3LMessageReader,
  *   M3LReceivedMessage,
- * } from "@m3l-automation/m3l-common/core";
+ * } from "@monte3l/m3l-common/core";
  *
  * class FixedReader implements M3LMessageReader {
  *   async *readAll(): AsyncGenerator<M3LReceivedMessage> {

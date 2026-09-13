@@ -58,7 +58,7 @@ const JSON_INDENT = 2;
  *
  * @example
  * ```ts
- * import type { M3LRunOutcome } from "@m3l-automation/m3l-common/core";
+ * import type { M3LRunOutcome } from "@monte3l/m3l-common/core";
  *
  * function isTerminalFailure(outcome: M3LRunOutcome): boolean {
  *   return outcome === "failure";
@@ -74,7 +74,7 @@ export type M3LRunOutcome =
  *
  * @example
  * ```ts
- * import type { M3LRunReportFailure } from "@m3l-automation/m3l-common/core";
+ * import type { M3LRunReportFailure } from "@monte3l/m3l-common/core";
  *
  * const failure: M3LRunReportFailure = { stage: "mainFn", chain: [] };
  * ```
@@ -97,7 +97,7 @@ export interface M3LRunReportFailure {
  *
  * @example
  * ```ts
- * import type { M3LRunRecoveryEntry } from "@m3l-automation/m3l-common/core";
+ * import type { M3LRunRecoveryEntry } from "@monte3l/m3l-common/core";
  *
  * const entry: M3LRunRecoveryEntry = {
  *   item: "record-42",
@@ -131,7 +131,7 @@ export interface M3LRunRecoveryEntry {
  *
  * @example
  * ```ts
- * import { M3L_RECOVERY_LIMIT } from "@m3l-automation/m3l-common/core";
+ * import { M3L_RECOVERY_LIMIT } from "@monte3l/m3l-common/core";
  *
  * console.log(M3L_RECOVERY_LIMIT); // 100
  * ```
@@ -144,7 +144,7 @@ export const M3L_RECOVERY_LIMIT = 100;
  *
  * @example
  * ```ts
- * import type { M3LRunReportInput } from "@m3l-automation/m3l-common/core";
+ * import type { M3LRunReportInput } from "@monte3l/m3l-common/core";
  *
  * const input: M3LRunReportInput = {
  *   script: { name: "import-users", version: "1.0.0" },
@@ -243,7 +243,7 @@ export interface M3LRunReportBase {
  *
  * @example
  * ```ts
- * import type { M3LRunReport } from "@m3l-automation/m3l-common/core";
+ * import type { M3LRunReport } from "@monte3l/m3l-common/core";
  *
  * function isFailure(report: M3LRunReport): boolean {
  *   return report.outcome === "failure";
@@ -306,7 +306,7 @@ export type M3LRunReport = M3LRunReportBase &
  *
  * @example
  * ```ts
- * import type { M3LRunReporterOptions } from "@m3l-automation/m3l-common/core";
+ * import type { M3LRunReporterOptions } from "@monte3l/m3l-common/core";
  *
  * const options: M3LRunReporterOptions = { fileName: "run-report.json" };
  * ```
@@ -979,7 +979,7 @@ function buildPersistFailureDiagnostic(
  *
  * @example
  * ```ts
- * import { M3LRunReporter } from "@m3l-automation/m3l-common/core";
+ * import { M3LRunReporter } from "@monte3l/m3l-common/core";
  *
  * const reporter = new M3LRunReporter();
  * const writtenPath = await reporter.persist({
@@ -1082,7 +1082,7 @@ export class M3LRunReporter {
    *
    * @example
    * ```ts
-   * import { M3LRunReporter } from "@m3l-automation/m3l-common/core";
+   * import { M3LRunReporter } from "@monte3l/m3l-common/core";
    *
    * const reporter = new M3LRunReporter();
    * console.log(reporter.resolveReportPath(new Date()));
@@ -1102,7 +1102,7 @@ export class M3LRunReporter {
    *
    * @example
    * ```ts
-   * import { M3LRunReporter } from "@m3l-automation/m3l-common/core";
+   * import { M3LRunReporter } from "@monte3l/m3l-common/core";
    *
    * const reporter = new M3LRunReporter();
    * const report = reporter.build({
@@ -1213,7 +1213,7 @@ export class M3LRunReporter {
    *
    * @example
    * ```ts
-   * import { M3LRunReporter } from "@m3l-automation/m3l-common/core";
+   * import { M3LRunReporter } from "@monte3l/m3l-common/core";
    *
    * const reporter = new M3LRunReporter();
    * const report = reporter.build({
@@ -1270,7 +1270,7 @@ export class M3LRunReporter {
    *
    * @example
    * ```ts
-   * import { M3LRunReporter } from "@m3l-automation/m3l-common/core";
+   * import { M3LRunReporter } from "@monte3l/m3l-common/core";
    *
    * const reporter = new M3LRunReporter();
    * const writtenPath = await reporter.persist({

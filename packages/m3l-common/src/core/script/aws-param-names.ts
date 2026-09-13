@@ -16,7 +16,7 @@
  *   AWS_PROFILE_PARAM_NAME,
  *   M3LConfigParameter,
  *   M3LConfigParameterType,
- * } from "@m3l-automation/m3l-common/core";
+ * } from "@monte3l/m3l-common/core";
  *
  * const awsProfile = new M3LConfigParameter({
  *   name: AWS_PROFILE_PARAM_NAME,
@@ -38,7 +38,7 @@ export const AWS_PROFILE_PARAM_NAME = "aws.profile" as const;
  *   AWS_REGION_PARAM_NAME,
  *   M3LConfigParameter,
  *   M3LConfigParameterType,
- * } from "@m3l-automation/m3l-common/core";
+ * } from "@monte3l/m3l-common/core";
  *
  * const awsRegion = new M3LConfigParameter({
  *   name: AWS_REGION_PARAM_NAME,

@@ -23,7 +23,7 @@ const UNKNOWN_PRESET_KEYS_CODE = "ERR_PRESET_UNKNOWN_KEYS";
  *
  * @example
  * ```ts
- * import { M3LPresetUnknownKeysError } from "@m3l-automation/m3l-common/core";
+ * import { M3LPresetUnknownKeysError } from "@monte3l/m3l-common/core";
  *
  * try {
  *   // loader.load(...)
@@ -53,7 +53,7 @@ export interface M3LPresetUnknownKeySuggestion {
  *
  * @example
  * ```ts
- * import { M3LPresetUnknownKeysError } from "@m3l-automation/m3l-common/core";
+ * import { M3LPresetUnknownKeysError } from "@monte3l/m3l-common/core";
  *
  * try {
  *   // loader.load(...)

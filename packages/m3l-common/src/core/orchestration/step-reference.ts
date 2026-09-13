@@ -54,7 +54,7 @@ interface M3LStepReferenceIndexSegment {
  *
  * @example
  * ```ts
- * import { parseStepReference } from "@m3l-automation/m3l-common/core";
+ * import { parseStepReference } from "@monte3l/m3l-common/core";
  *
  * const { segments } = parseStepReference("step-1.output.Queues[0]");
  * for (const segment of segments) {
@@ -71,7 +71,7 @@ export type M3LStepReferenceSegment =
  *
  * @example
  * ```ts
- * import type { M3LStepReference } from "@m3l-automation/m3l-common/core";
+ * import type { M3LStepReference } from "@monte3l/m3l-common/core";
  *
  * const reference: M3LStepReference = {
  *   ordinal: 1,
@@ -359,7 +359,7 @@ function parseSegment(
  *   when `text` does not match the grammar.
  * @example
  * ```ts
- * import { parseStepReference } from "@m3l-automation/m3l-common/core";
+ * import { parseStepReference } from "@monte3l/m3l-common/core";
  *
  * const reference = parseStepReference("step-1.output.Queues[0]");
  * // { ordinal: 1, segments: [{ kind: "property", name: "Queues" }, { kind: "index", index: 0 }] }
@@ -409,7 +409,7 @@ export function parseStepReference(text: string): M3LStepReference {
  *   {@link parseStepReference} would refuse to produce.
  * @example
  * ```ts
- * import { formatStepReference } from "@m3l-automation/m3l-common/core";
+ * import { formatStepReference } from "@monte3l/m3l-common/core";
  *
  * formatStepReference({
  *   ordinal: 2,
@@ -585,7 +585,7 @@ function resolveIndexSegment(
  * import {
  *   parseStepReference,
  *   resolveStepReference,
- * } from "@m3l-automation/m3l-common/core";
+ * } from "@monte3l/m3l-common/core";
  *
  * const reference = parseStepReference("step-1.output.Queues[0]");
  * resolveStepReference(reference, { Queues: ["queue-a"] }); // "queue-a"

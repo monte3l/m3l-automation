@@ -44,7 +44,7 @@ import type {
  *
  * @example
  * ```ts
- * import { Core } from "@m3l-automation/m3l-common";
+ * import { Core } from "@monte3l/m3l-common";
  *
  * interface Triage extends Core.M3LProcedureShape {
  *   deps: { readonly logs: { query(q: string): Promise<number> } };
@@ -152,7 +152,7 @@ export class M3LProcedureBuilder<
    *
    * @example
    * ```ts
-   * import { Core } from "@m3l-automation/m3l-common";
+   * import { Core } from "@monte3l/m3l-common";
    *
    * interface Triage extends Core.M3LProcedureShape {
    *   deps: { readonly logs: { query(q: string): Promise<number> } };

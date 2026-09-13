@@ -20,7 +20,7 @@ import { ERR_IMPORT_VALIDATION } from "../../internal/importers/resolveSource.js
  *
  * @example
  * ```typescript
- * import { M3LCSVFormatAdapter } from "@m3l-automation/m3l-common/core";
+ * import { M3LCSVFormatAdapter } from "@monte3l/m3l-common/core";
  *
  * const adapter = new M3LCSVFormatAdapter({
  *   columnMapping: { id: "id", name: "name" },

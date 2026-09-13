@@ -326,7 +326,7 @@ async function detectDeep(handle: FileHandle): Promise<M3LJSONDetectionResult> {
  *
  * @example
  * ```typescript
- * import { M3LJSONFormatDetector } from "@m3l-automation/m3l-common/core";
+ * import { M3LJSONFormatDetector } from "@monte3l/m3l-common/core";
  * const detector = new M3LJSONFormatDetector();
  * const result = await detector.detect("./data/inputs/records.jsonl");
  * // result.format === "jsonl"
@@ -359,7 +359,7 @@ export class M3LJSONFormatDetector {
    * import {
    *   M3LJSONFormatDetectionError,
    *   M3LJSONFormatDetector,
-   * } from "@m3l-automation/m3l-common/core";
+   * } from "@monte3l/m3l-common/core";
    *
    * const detector = new M3LJSONFormatDetector({ depth: "deep" });
    * try {

@@ -38,7 +38,7 @@ import type {
  *
  * @example
  * ```typescript
- * import type { M3LCSVListImporterOptions } from "@m3l-automation/m3l-common/core";
+ * import type { M3LCSVListImporterOptions } from "@monte3l/m3l-common/core";
  *
  * const csvPath = "./data/inputs/users.csv";
  * const options: M3LCSVListImporterOptions<{ id: string; name: string }> = {
@@ -125,7 +125,7 @@ export interface M3LCSVListImporterOptions<TItem> {
  *
  * @example
  * ```typescript
- * import { M3LCSVListImporter } from "@m3l-automation/m3l-common/core";
+ * import { M3LCSVListImporter } from "@monte3l/m3l-common/core";
  *
  * const csvPath = "./data/inputs/users.csv";
  * const importer = new M3LCSVListImporter<{ id: string; name: string }>({
@@ -188,7 +188,7 @@ export class M3LCSVListImporter<TItem>
    *
    * @example
    * ```typescript
-   * import { M3LCSVListImporter } from "@m3l-automation/m3l-common/core";
+   * import { M3LCSVListImporter } from "@monte3l/m3l-common/core";
    *
    * const csvPath = "./data/inputs/users.csv";
    * const importer = new M3LCSVListImporter<{ id: string }>({});
@@ -238,7 +238,7 @@ export class M3LCSVListImporter<TItem>
    *
    * @example
    * ```typescript
-   * import { M3LCSVListImporter } from "@m3l-automation/m3l-common/core";
+   * import { M3LCSVListImporter } from "@monte3l/m3l-common/core";
    *
    * const csvPath = "./data/inputs/users.csv";
    * const importer = new M3LCSVListImporter<{ id: string }>({});

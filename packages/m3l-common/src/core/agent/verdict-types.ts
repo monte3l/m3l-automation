@@ -21,7 +21,7 @@ import type { M3LAgentActionRecord } from "./action-types.js";
  *
  * @example
  * ```ts
- * import type { M3LAgentVerdict } from "@m3l-automation/m3l-common/core";
+ * import type { M3LAgentVerdict } from "@monte3l/m3l-common/core";
  *
  * const verdict: M3LAgentVerdict = "escalate";
  * ```
@@ -48,7 +48,7 @@ export type M3LAgentVerdict = M3LAgentDecision["verdict"];
  *
  * @example
  * ```ts
- * import type { M3LAgentPolicyRuleId } from "@m3l-automation/m3l-common/core";
+ * import type { M3LAgentPolicyRuleId } from "@monte3l/m3l-common/core";
  *
  * const rule: M3LAgentPolicyRuleId = "script-not-allowlisted";
  * ```
@@ -108,7 +108,7 @@ export type M3LAgentPolicyRuleId =
  *
  * @example
  * ```ts
- * import type { M3LAgentDecision } from "@m3l-automation/m3l-common/core";
+ * import type { M3LAgentDecision } from "@monte3l/m3l-common/core";
  *
  * function label(decision: M3LAgentDecision): string {
  *   return `${decision.verdict} (${decision.rule})`;

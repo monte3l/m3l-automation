@@ -2,7 +2,7 @@
  * Tests for core/storage submodule (RED phase — TDD).
  *
  * Contract source: docs/reference/core/storage.md + hub binding contract.
- * Public surface (11 symbols, all from @m3l-automation/m3l-common/core):
+ * Public surface (11 symbols, all from @monte3l/m3l-common/core):
  *   M3LFtsIndex (class), M3LFtsIndexError (class),
  *   M3LFtsIndexConfig, M3LFtsIndexDocument, M3LFtsIndexSearchMode,
  *   M3LFtsIndexSearchOptions, M3LFtsIndexSearchResult, M3LFtsIndexStats,

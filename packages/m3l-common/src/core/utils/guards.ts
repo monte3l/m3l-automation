@@ -12,7 +12,7 @@
  *
  * @example
  * ```typescript
- * import { isNullish } from "@m3l-automation/m3l-common/core";
+ * import { isNullish } from "@monte3l/m3l-common/core";
  * const v: unknown = null;
  * if (isNullish(v)) {
  *   // v is null | undefined
@@ -29,7 +29,7 @@ export function isNullish(v: unknown): v is null | undefined {
  *
  * @example
  * ```typescript
- * import { isPrimitive } from "@m3l-automation/m3l-common/core";
+ * import { isPrimitive } from "@monte3l/m3l-common/core";
  * if (isPrimitive(value)) {
  *   // value is string | number | boolean | bigint | symbol | null | undefined
  * }
@@ -54,7 +54,7 @@ export function isPrimitive(
  *
  * @example
  * ```typescript
- * import { isError } from "@m3l-automation/m3l-common/core";
+ * import { isError } from "@monte3l/m3l-common/core";
  * if (isError(caught)) {
  *   console.error(caught.message);
  * }
@@ -70,7 +70,7 @@ export function isError(v: unknown): v is Error {
  *
  * @example
  * ```typescript
- * import { isNodeError } from "@m3l-automation/m3l-common/core";
+ * import { isNodeError } from "@monte3l/m3l-common/core";
  * if (isNodeError(err)) {
  *   console.error(err.code);
  * }
@@ -89,7 +89,7 @@ export function isNodeError(v: unknown): v is NodeJS.ErrnoException {
  *
  * @example
  * ```typescript
- * import { isEnoentError } from "@m3l-automation/m3l-common/core";
+ * import { isEnoentError } from "@monte3l/m3l-common/core";
  * if (isEnoentError(err)) {
  *   // file not found
  * }
@@ -108,7 +108,7 @@ export function isEnoentError(
  *
  * @example
  * ```typescript
- * import { isPlainObject } from "@m3l-automation/m3l-common/core";
+ * import { isPlainObject } from "@monte3l/m3l-common/core";
  * if (isPlainObject(data)) {
  *   // data is Record<string, unknown>
  * }
@@ -127,7 +127,7 @@ export function isPlainObject(v: unknown): v is Record<string, unknown> {
  *
  * @example
  * ```typescript
- * import { isObject } from "@m3l-automation/m3l-common/core";
+ * import { isObject } from "@monte3l/m3l-common/core";
  * if (isObject(value)) {
  *   // value is object
  * }
@@ -142,7 +142,7 @@ export function isObject(v: unknown): v is object {
  *
  * @example
  * ```typescript
- * import { isArray } from "@m3l-automation/m3l-common/core";
+ * import { isArray } from "@monte3l/m3l-common/core";
  * if (isArray(value)) {
  *   // value is unknown[]
  * }
@@ -158,7 +158,7 @@ export function isArray(v: unknown): v is unknown[] {
  *
  * @example
  * ```typescript
- * import { isString } from "@m3l-automation/m3l-common/core";
+ * import { isString } from "@monte3l/m3l-common/core";
  * if (isString(value)) {
  *   // value is string
  * }
@@ -175,7 +175,7 @@ export function isString(v: unknown): v is string {
  *
  * @example
  * ```typescript
- * import { isNumber } from "@m3l-automation/m3l-common/core";
+ * import { isNumber } from "@monte3l/m3l-common/core";
  * if (isNumber(value)) {
  *   // value is number (may be NaN or Infinity)
  * }
@@ -190,7 +190,7 @@ export function isNumber(v: unknown): v is number {
  *
  * @example
  * ```typescript
- * import { isBoolean } from "@m3l-automation/m3l-common/core";
+ * import { isBoolean } from "@monte3l/m3l-common/core";
  * if (isBoolean(flag)) {
  *   // flag is boolean
  * }
@@ -207,7 +207,7 @@ export function isBoolean(v: unknown): v is boolean {
  *
  * @example
  * ```typescript
- * import { isFunction } from "@m3l-automation/m3l-common/core";
+ * import { isFunction } from "@monte3l/m3l-common/core";
  * if (isFunction(value)) {
  *   // value is (...args: unknown[]) => unknown
  * }
@@ -223,7 +223,7 @@ export function isFunction(v: unknown): v is (...args: unknown[]) => unknown {
  *
  * @example
  * ```typescript
- * import { isDate } from "@m3l-automation/m3l-common/core";
+ * import { isDate } from "@monte3l/m3l-common/core";
  * if (isDate(value)) {
  *   // value is Date (may be invalid)
  * }
@@ -239,7 +239,7 @@ export function isDate(v: unknown): v is Date {
  *
  * @example
  * ```typescript
- * import { isValidDate } from "@m3l-automation/m3l-common/core";
+ * import { isValidDate } from "@monte3l/m3l-common/core";
  * if (isValidDate(value)) {
  *   // value is Date with a valid time
  * }
@@ -255,7 +255,7 @@ export function isValidDate(v: unknown): v is Date {
  *
  * @example
  * ```typescript
- * import { isBuffer } from "@m3l-automation/m3l-common/core";
+ * import { isBuffer } from "@monte3l/m3l-common/core";
  * if (isBuffer(value)) {
  *   // value is Buffer
  * }
@@ -270,7 +270,7 @@ export function isBuffer(v: unknown): v is Buffer {
  *
  * @example
  * ```typescript
- * import { isMap } from "@m3l-automation/m3l-common/core";
+ * import { isMap } from "@monte3l/m3l-common/core";
  * if (isMap(value)) {
  *   // value is Map<unknown, unknown>
  * }
@@ -285,7 +285,7 @@ export function isMap(v: unknown): v is Map<unknown, unknown> {
  *
  * @example
  * ```typescript
- * import { isSet } from "@m3l-automation/m3l-common/core";
+ * import { isSet } from "@monte3l/m3l-common/core";
  * if (isSet(value)) {
  *   // value is Set<unknown>
  * }
@@ -300,7 +300,7 @@ export function isSet(v: unknown): v is Set<unknown> {
  *
  * @example
  * ```typescript
- * import { isRegExp } from "@m3l-automation/m3l-common/core";
+ * import { isRegExp } from "@monte3l/m3l-common/core";
  * if (isRegExp(value)) {
  *   // value is RegExp
  * }
@@ -315,7 +315,7 @@ export function isRegExp(v: unknown): v is RegExp {
  *
  * @example
  * ```typescript
- * import { isSymbol } from "@m3l-automation/m3l-common/core";
+ * import { isSymbol } from "@monte3l/m3l-common/core";
  * if (isSymbol(value)) {
  *   // value is symbol
  * }
@@ -330,7 +330,7 @@ export function isSymbol(v: unknown): v is symbol {
  *
  * @example
  * ```typescript
- * import { isBigInt } from "@m3l-automation/m3l-common/core";
+ * import { isBigInt } from "@monte3l/m3l-common/core";
  * if (isBigInt(value)) {
  *   // value is bigint
  * }
@@ -347,7 +347,7 @@ export function isBigInt(v: unknown): v is bigint {
  *
  * @example
  * ```typescript
- * import { isPromise } from "@m3l-automation/m3l-common/core";
+ * import { isPromise } from "@monte3l/m3l-common/core";
  * if (isPromise(value)) {
  *   // value is Promise<unknown>
  * }
@@ -367,7 +367,7 @@ export function isPromise(v: unknown): v is Promise<unknown> {
  *
  * @example
  * ```typescript
- * import { isNonEmptyString } from "@m3l-automation/m3l-common/core";
+ * import { isNonEmptyString } from "@monte3l/m3l-common/core";
  * if (isNonEmptyString(value)) {
  *   // value is a non-empty string
  * }
@@ -382,7 +382,7 @@ export function isNonEmptyString(v: unknown): v is string {
  *
  * @example
  * ```typescript
- * import { isNonEmptyArray } from "@m3l-automation/m3l-common/core";
+ * import { isNonEmptyArray } from "@monte3l/m3l-common/core";
  * if (isNonEmptyArray(value)) {
  *   // value is [unknown, ...unknown[]]
  * }
@@ -398,7 +398,7 @@ export function isNonEmptyArray(v: unknown): v is [unknown, ...unknown[]] {
  *
  * @example
  * ```typescript
- * import { hasProperty } from "@m3l-automation/m3l-common/core";
+ * import { hasProperty } from "@monte3l/m3l-common/core";
  * if (hasProperty(err, "code")) {
  *   // err is object & Record<"code", unknown>
  * }
@@ -418,7 +418,7 @@ export function hasProperty<K extends string>(
  *
  * @example
  * ```typescript
- * import { hasMessage } from "@m3l-automation/m3l-common/core";
+ * import { hasMessage } from "@monte3l/m3l-common/core";
  * if (hasMessage(caught)) {
  *   console.error(String(caught.message));
  * }

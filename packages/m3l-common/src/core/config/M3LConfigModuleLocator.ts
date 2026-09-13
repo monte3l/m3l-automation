@@ -41,7 +41,7 @@ export interface M3LConfigModuleLocation {
  *
  * @example
  * ```ts
- * import { resolveConfigModulePath } from "@m3l-automation/m3l-common/core";
+ * import { resolveConfigModulePath } from "@monte3l/m3l-common/core";
  *
  * const { path, source } = resolveConfigModulePath("/repo/scripts/foo");
  * // { path: "/repo/scripts/foo/dist/config.js", source: "dist" }

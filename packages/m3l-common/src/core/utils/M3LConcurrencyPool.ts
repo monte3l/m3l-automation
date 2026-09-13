@@ -21,7 +21,7 @@ import { M3LError } from "../errors/index.js";
  *
  * @example
  * ```typescript
- * import { M3LConcurrencyPool } from "@m3l-automation/m3l-common/core";
+ * import { M3LConcurrencyPool } from "@monte3l/m3l-common/core";
  * const pool = new M3LConcurrencyPool(4);
  * const results = await pool.runEach(
  *   ["a", "b", "c"],
@@ -61,7 +61,7 @@ export class M3LConcurrencyPool {
    *
    * @example
    * ```typescript
-   * import { M3LConcurrencyPool } from "@m3l-automation/m3l-common/core";
+   * import { M3LConcurrencyPool } from "@monte3l/m3l-common/core";
    * const pool = new M3LConcurrencyPool(4);
    * const doubled = await pool.runEach([1, 2, 3], async (n) => n * 2);
    * // doubled === [2, 4, 6]

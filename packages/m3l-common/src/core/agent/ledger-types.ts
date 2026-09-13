@@ -33,7 +33,7 @@
  *
  * @example
  * ```ts
- * import type { M3LAgentRunLedger } from "@m3l-automation/m3l-common/core";
+ * import type { M3LAgentRunLedger } from "@monte3l/m3l-common/core";
  *
  * const run: M3LAgentRunLedger = {
  *   invocationsThisRun: 3,
@@ -82,7 +82,7 @@ export interface M3LAgentRunLedger {
  *
  * @example
  * ```ts
- * import { M3L_AGENT_MAX_DRY_RUN_SHAPES } from "@m3l-automation/m3l-common/core";
+ * import { M3L_AGENT_MAX_DRY_RUN_SHAPES } from "@monte3l/m3l-common/core";
  *
  * const withinBound = (shapes: readonly string[]): boolean =>
  *   shapes.length <= M3L_AGENT_MAX_DRY_RUN_SHAPES;

@@ -41,7 +41,7 @@ import type { M3LAgentAction } from "./action-types.js";
  *
  * @example
  * ```ts
- * import { agentActionShapeKey } from "@m3l-automation/m3l-common/core";
+ * import { agentActionShapeKey } from "@monte3l/m3l-common/core";
  *
  * const key = agentActionShapeKey({
  *   script: "dynamodb-crud",

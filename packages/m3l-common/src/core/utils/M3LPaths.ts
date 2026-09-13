@@ -35,7 +35,7 @@ import { isSafeRelativeSegment } from "../../internal/files/guards.js";
  *
  * @example
  * ```ts
- * import type { M3LPathType } from "@m3l-automation/m3l-common/core";
+ * import type { M3LPathType } from "@monte3l/m3l-common/core";
  *
  * function label(kind: M3LPathType): string {
  *   return `directory kind: ${kind}`;
@@ -58,7 +58,7 @@ export type M3LPathType = "data" | "config" | "input" | "output" | "cache";
  *
  * @example
  * ```ts
- * import { M3LPathEnvironmentVariables } from "@m3l-automation/m3l-common/core";
+ * import { M3LPathEnvironmentVariables } from "@monte3l/m3l-common/core";
  *
  * console.log(M3LPathEnvironmentVariables.DATA_DIR); // "M3L_DATA_DIR"
  * ```
@@ -85,7 +85,7 @@ export const M3LPathEnvironmentVariables = {
  *
  * @example
  * ```ts
- * import type { M3LPathEnvironmentVariables } from "@m3l-automation/m3l-common/core";
+ * import type { M3LPathEnvironmentVariables } from "@monte3l/m3l-common/core";
  *
  * function isPathVar(v: string): v is M3LPathEnvironmentVariables {
  *   return (Object.values(M3LPathEnvironmentVariables) as string[]).includes(v);
@@ -121,7 +121,7 @@ interface M3LPathResolutionErrorOptions {
  * import {
  *   M3LPaths,
  *   M3LPathResolutionError,
- * } from "@m3l-automation/m3l-common/core";
+ * } from "@monte3l/m3l-common/core";
  *
  * try {
  *   const paths = new M3LPaths();
@@ -220,7 +220,7 @@ function resolveStandaloneBase(): string {
  *
  * @example
  * ```ts
- * import { M3LPaths } from "@m3l-automation/m3l-common/core";
+ * import { M3LPaths } from "@monte3l/m3l-common/core";
  *
  * const paths = new M3LPaths();
  * console.log(paths.getDataDir());   // e.g. "/workspace/data"
@@ -260,7 +260,7 @@ export class M3LPaths {
    *
    * @example
    * ```ts
-   * import { M3LPaths } from "@m3l-automation/m3l-common/core";
+   * import { M3LPaths } from "@monte3l/m3l-common/core";
    *
    * const paths = new M3LPaths();
    * ```
@@ -305,7 +305,7 @@ export class M3LPaths {
    *
    * @example
    * ```ts
-   * import { M3LPaths } from "@m3l-automation/m3l-common/core";
+   * import { M3LPaths } from "@monte3l/m3l-common/core";
    *
    * const paths = new M3LPaths();
    * console.log(paths.getDataDir()); // e.g. "/workspace/data"
@@ -325,7 +325,7 @@ export class M3LPaths {
    *
    * @example
    * ```ts
-   * import { M3LPaths } from "@m3l-automation/m3l-common/core";
+   * import { M3LPaths } from "@monte3l/m3l-common/core";
    *
    * const paths = new M3LPaths();
    * console.log(paths.getConfigDir()); // e.g. "/workspace/data/config"
@@ -345,7 +345,7 @@ export class M3LPaths {
    *
    * @example
    * ```ts
-   * import { M3LPaths } from "@m3l-automation/m3l-common/core";
+   * import { M3LPaths } from "@monte3l/m3l-common/core";
    *
    * const paths = new M3LPaths();
    * console.log(paths.getInputDir()); // e.g. "/workspace/data/input"
@@ -365,7 +365,7 @@ export class M3LPaths {
    *
    * @example
    * ```ts
-   * import { M3LPaths } from "@m3l-automation/m3l-common/core";
+   * import { M3LPaths } from "@monte3l/m3l-common/core";
    *
    * const paths = new M3LPaths();
    * console.log(paths.getOutputDir()); // e.g. "/workspace/data/output"
@@ -385,7 +385,7 @@ export class M3LPaths {
    *
    * @example
    * ```ts
-   * import { M3LPaths } from "@m3l-automation/m3l-common/core";
+   * import { M3LPaths } from "@monte3l/m3l-common/core";
    *
    * const paths = new M3LPaths();
    * console.log(paths.getCacheDir()); // e.g. "/workspace/data/cache"
@@ -433,7 +433,7 @@ export class M3LPaths {
    *
    * @example
    * ```ts
-   * import { M3LPaths } from "@m3l-automation/m3l-common/core";
+   * import { M3LPaths } from "@monte3l/m3l-common/core";
    *
    * const paths = new M3LPaths();
    * console.log(paths.resolveInput("records.jsonl"));
@@ -464,7 +464,7 @@ export class M3LPaths {
    *
    * @example
    * ```ts
-   * import { M3LPaths } from "@m3l-automation/m3l-common/core";
+   * import { M3LPaths } from "@monte3l/m3l-common/core";
    *
    * const paths = new M3LPaths();
    * console.log(paths.resolveOutput("run/report.json"));
@@ -492,7 +492,7 @@ export class M3LPaths {
    * import {
    *   M3LPaths,
    *   M3LPathResolutionError,
-   * } from "@m3l-automation/m3l-common/core";
+   * } from "@monte3l/m3l-common/core";
    *
    * const paths = new M3LPaths();
    * try {

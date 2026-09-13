@@ -31,7 +31,7 @@ const BYTE_UNITS = ["B", "KB", "MB", "GB", "TB", "PB"] as const;
  *
  * @example
  * ```typescript
- * import { formatBytes } from "@m3l-automation/m3l-common/core";
+ * import { formatBytes } from "@monte3l/m3l-common/core";
  * formatBytes(0);       // "0 B"
  * formatBytes(1024);    // "1 KB"
  * formatBytes(1048576); // "1 MB"
@@ -75,7 +75,7 @@ export function formatBytes(bytes: number): string {
  *
  * @example
  * ```typescript
- * import { smartTruncate } from "@m3l-automation/m3l-common/core";
+ * import { smartTruncate } from "@monte3l/m3l-common/core";
  * smartTruncate("hello world", 5); // "hell…"
  * smartTruncate("hi", 10);         // "hi"
  * ```
@@ -103,7 +103,7 @@ export function smartTruncate(value: string, maxLength: number): string {
  *
  * @example
  * ```typescript
- * import { truncatePath } from "@m3l-automation/m3l-common/core";
+ * import { truncatePath } from "@monte3l/m3l-common/core";
  * truncatePath("/very/long/path/to/file.txt", 20); // e.g. "/very/.../file.txt"
  * ```
  */
@@ -158,7 +158,7 @@ export function truncatePath(path: string, maxLength: number): string {
  *
  * @example
  * ```typescript
- * import { truncateText } from "@m3l-automation/m3l-common/core";
+ * import { truncateText } from "@monte3l/m3l-common/core";
  * truncateText("hello world", 8); // "hello w…"
  * ```
  */
@@ -185,7 +185,7 @@ export function truncateText(text: string, maxLength: number): string {
  *
  * @example
  * ```typescript
- * import { isPath } from "@m3l-automation/m3l-common/core";
+ * import { isPath } from "@monte3l/m3l-common/core";
  * isPath("/home/user/file.txt"); // true
  * isPath("hello");               // false
  * ```
@@ -231,7 +231,7 @@ function jsonOrFallback(value: object): string {
  *
  * @example
  * ```typescript
- * import { formatConfigValueDisplay } from "@m3l-automation/m3l-common/core";
+ * import { formatConfigValueDisplay } from "@monte3l/m3l-common/core";
  * formatConfigValueDisplay("hello");       // '"hello"'
  * formatConfigValueDisplay(null);          // "(none)"
  * formatConfigValueDisplay(true);          // "true"
@@ -259,7 +259,7 @@ export function formatConfigValueDisplay(value: unknown): string {
  *
  * @example
  * ```typescript
- * import { formatConfigSourceDisplay } from "@m3l-automation/m3l-common/core";
+ * import { formatConfigSourceDisplay } from "@monte3l/m3l-common/core";
  * formatConfigSourceDisplay("cli");       // "cli"
  * formatConfigSourceDisplay(undefined);   // "(unknown)"
  * ```

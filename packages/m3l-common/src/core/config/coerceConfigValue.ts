@@ -183,7 +183,7 @@ function splitCsv(raw: unknown): readonly string[] {
  * import {
  *   coerceConfigValue,
  *   M3LConfigParameterType,
- * } from "@m3l-automation/m3l-common/core";
+ * } from "@monte3l/m3l-common/core";
  *
  * const port = coerceConfigValue("8080", M3LConfigParameterType.INT); // 8080
  * ```

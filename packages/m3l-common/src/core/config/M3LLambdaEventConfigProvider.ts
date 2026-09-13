@@ -23,7 +23,7 @@ import { M3LConfigProvider } from "./M3LConfigProvider.js";
  *
  * @example
  * ```ts
- * import { M3LLambdaEventConfigProvider } from "@m3l-automation/m3l-common/core";
+ * import { M3LLambdaEventConfigProvider } from "@monte3l/m3l-common/core";
  *
  * const provider = new M3LLambdaEventConfigProvider({ region: "eu-west-1" });
  * provider.getRawValue("region"); // "eu-west-1"

@@ -53,8 +53,8 @@ interface M3LAgentDecisionLogWriteErrorOptions {
  *   M3LAgentDecisionLog,
  *   M3LAgentDecisionLogWriteError,
  *   M3LError,
- * } from "@m3l-automation/m3l-common/core";
- * import type { M3LAgentDecisionLogEntry } from "@m3l-automation/m3l-common/core";
+ * } from "@monte3l/m3l-common/core";
+ * import type { M3LAgentDecisionLogEntry } from "@monte3l/m3l-common/core";
  *
  * async function append(
  *   log: M3LAgentDecisionLog,

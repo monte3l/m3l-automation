@@ -48,7 +48,7 @@ import type {
  *   agentDecisionLogEntry,
  *   evaluateAgentAction,
  *   validateAgentPolicy,
- * } from "@m3l-automation/m3l-common/core";
+ * } from "@monte3l/m3l-common/core";
  *
  * const policy = validateAgentPolicy({
  *   version: 1,
@@ -93,8 +93,8 @@ export function agentDecisionLogEntry(
  *
  * @example
  * ```ts
- * import { serializeAgentDecisionLogEntry } from "@m3l-automation/m3l-common/core";
- * import type { M3LAgentDecisionLogEntry } from "@m3l-automation/m3l-common/core";
+ * import { serializeAgentDecisionLogEntry } from "@monte3l/m3l-common/core";
+ * import type { M3LAgentDecisionLogEntry } from "@monte3l/m3l-common/core";
  *
  * function toLogLine(entry: M3LAgentDecisionLogEntry): string {
  *   return `${serializeAgentDecisionLogEntry(entry)}\n`;

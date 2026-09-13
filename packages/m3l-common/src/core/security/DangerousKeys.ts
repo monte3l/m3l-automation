@@ -37,7 +37,7 @@ const DANGEROUS_KEYS: ReadonlySet<string> = new Set([
  *
  * @example
  * ```ts
- * import { M3LError } from "@m3l-automation/m3l-common/core";
+ * import { M3LError } from "@monte3l/m3l-common/core";
  * if (isDangerousKey(key)) {
  *   throw new M3LError(formatUnsafeKeyLocation(key), { code: "ERR_UNSAFE_KEY" });
  * }
@@ -64,7 +64,7 @@ export function isDangerousKey(key: string): boolean {
  *
  * @example
  * ```ts
- * import { M3LError } from "@m3l-automation/m3l-common/core";
+ * import { M3LError } from "@monte3l/m3l-common/core";
  * if (isDangerousKey(key)) {
  *   throw new M3LError(formatUnsafeKeyLocation(key), { code: "ERR_UNSAFE_KEY" });
  * }

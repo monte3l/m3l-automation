@@ -19,8 +19,8 @@ import type { M3LHttpClient } from "./M3LHttpClient.js";
  *
  * @example
  * ```ts
- * import { M3LHttpClient } from "@m3l-automation/m3l-common/core";
- * import type { M3LFileDownloaderOptions } from "@m3l-automation/m3l-common/core";
+ * import { M3LHttpClient } from "@monte3l/m3l-common/core";
+ * import type { M3LFileDownloaderOptions } from "@monte3l/m3l-common/core";
  *
  * const options: M3LFileDownloaderOptions = {
  *   httpClient: new M3LHttpClient(),
@@ -46,7 +46,7 @@ export interface M3LFileDownloaderOptions {
  *
  * @example
  * ```ts
- * import { M3LFileDownloader, M3LHttpClient } from "@m3l-automation/m3l-common/core";
+ * import { M3LFileDownloader, M3LHttpClient } from "@monte3l/m3l-common/core";
  *
  * const downloader = new M3LFileDownloader({ httpClient: new M3LHttpClient() });
  * await downloader.download(
@@ -83,7 +83,7 @@ export class M3LFileDownloader {
    *
    * @example
    * ```ts
-   * import { M3LFileDownloader, M3LHttpClient } from "@m3l-automation/m3l-common/core";
+   * import { M3LFileDownloader, M3LHttpClient } from "@monte3l/m3l-common/core";
    *
    * const downloader = new M3LFileDownloader({ httpClient: new M3LHttpClient() });
    * await downloader.download("https://example.com/file.bin", "./file.bin");

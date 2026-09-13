@@ -68,7 +68,7 @@ interface M3LHttpClientErrorOptions {
  *
  * @example
  * ```ts
- * import { M3LHttpClient, M3LHttpClientError } from "@m3l-automation/m3l-common/core";
+ * import { M3LHttpClient, M3LHttpClientError } from "@monte3l/m3l-common/core";
  *
  * const client = new M3LHttpClient({ baseUrl: "https://api.example.com" });
  *

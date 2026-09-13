@@ -35,8 +35,8 @@ interface M3LThresholdRuleValidationErrorOptions {
  *   M3LThresholdEvaluator,
  *   M3LThresholdRuleValidationError,
  *   type M3LThresholdRule,
- * } from "@m3l-automation/m3l-common/core";
- * import { M3LError } from "@m3l-automation/m3l-common/core";
+ * } from "@monte3l/m3l-common/core";
+ * import { M3LError } from "@monte3l/m3l-common/core";
  *
  * const rules: M3LThresholdRule[] = [
  *   { name: "bad", operator: ">", value: 1, aggregation: "avg", severity: "warning" },

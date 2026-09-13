@@ -32,8 +32,8 @@ function isBoolean(value: unknown): value is boolean {
  *
  * @example
  * ```ts
- * import type { M3LConfigAccessorOptions } from "@m3l-automation/m3l-common/core";
- * import { M3LConfig } from "@m3l-automation/m3l-common/core";
+ * import type { M3LConfigAccessorOptions } from "@monte3l/m3l-common/core";
+ * import { M3LConfig } from "@monte3l/m3l-common/core";
  *
  * const options: M3LConfigAccessorOptions = {
  *   config: new M3LConfig(),
@@ -64,7 +64,7 @@ export interface M3LConfigAccessorOptions {
  *
  * @example
  * ```ts
- * import { M3LConfig, M3LConfigAccessor } from "@m3l-automation/m3l-common/core";
+ * import { M3LConfig, M3LConfigAccessor } from "@monte3l/m3l-common/core";
  *
  * const config = new M3LConfig();
  * config.set("retries", 3);

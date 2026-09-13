@@ -22,7 +22,7 @@ import type { M3LTextExtractionResult, M3LTextExtractor } from "./contract.js";
  *
  * @example
  * ```ts
- * import { M3LPdfTextExtractor } from "@m3l-automation/m3l-common/core";
+ * import { M3LPdfTextExtractor } from "@monte3l/m3l-common/core";
  *
  * const extractor = new M3LPdfTextExtractor();
  * const { text, pages } = await extractor.extract("./report.pdf");

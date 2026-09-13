@@ -12,7 +12,7 @@
  *
  * @example
  * ```typescript
- * import type { M3LJSONFormat } from "@m3l-automation/m3l-common/core";
+ * import type { M3LJSONFormat } from "@monte3l/m3l-common/core";
  * const format: M3LJSONFormat = "jsonl";
  * ```
  */
@@ -29,7 +29,7 @@ export type M3LJSONFormat = "json" | "jsonl" | "unknown";
  *
  * @example
  * ```typescript
- * import type { M3LJSONDetectionDepth } from "@m3l-automation/m3l-common/core";
+ * import type { M3LJSONDetectionDepth } from "@monte3l/m3l-common/core";
  * const depth: M3LJSONDetectionDepth = "standard";
  * ```
  */
@@ -47,7 +47,7 @@ export type M3LJSONDetectionDepth =
  *
  * @example
  * ```typescript
- * import type { M3LConfidence } from "@m3l-automation/m3l-common/core";
+ * import type { M3LConfidence } from "@monte3l/m3l-common/core";
  * function logConfidence(confidence: M3LConfidence): void {
  *   console.log(confidence satisfies number);
  * }
@@ -60,7 +60,7 @@ export type M3LConfidence = number & { readonly __brand: unique symbol };
  *
  * @example
  * ```typescript
- * import type { M3LJSONDetectorOptions } from "@m3l-automation/m3l-common/core";
+ * import type { M3LJSONDetectorOptions } from "@monte3l/m3l-common/core";
  * const options: M3LJSONDetectorOptions = { depth: "deep" };
  * ```
  */
@@ -76,7 +76,7 @@ export interface M3LJSONDetectorOptions {
  *
  * @example
  * ```typescript
- * import type { M3LJSONDetectionResult } from "@m3l-automation/m3l-common/core";
+ * import type { M3LJSONDetectionResult } from "@monte3l/m3l-common/core";
  * const result: M3LJSONDetectionResult = {
  *   format: "jsonl",
  *   confidence: 0.9,

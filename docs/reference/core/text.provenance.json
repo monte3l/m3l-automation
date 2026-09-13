@@ -8,65 +8,65 @@
         {
           "file": "packages/m3l-common/src/core/text/registry.ts",
           "symbol": "M3LTextExtractorRegistry",
-          "blob": "40df4bbf8453c14fc4ffd87ed9e484458753f9f5"
+          "blob": "e358f99092c378d7c356ce728b353d60e290648c"
         },
         {
           "file": "packages/m3l-common/src/core/text/plain-text.ts",
           "symbol": "M3LPlainTextExtractor",
-          "blob": "34c53d5bb5c7798f11a598044da347ceb708e025"
+          "blob": "d4b89e951c6da9305ab3f822aaa46a68b0d6666d"
         },
         {
           "file": "packages/m3l-common/src/core/text/pdf.ts",
           "symbol": "M3LPdfTextExtractor",
-          "blob": "9f7f650645d5b56b8400b4e0e85fabbe724986bc"
+          "blob": "918e706f0ada78bcc142c101b859bcf4fb8a0f8e"
         },
         {
           "file": "packages/m3l-common/src/core/text/docx.ts",
           "symbol": "M3LDocxTextExtractor",
-          "blob": "f6e841a51c74e9b6a6746ea618790f3edca96f5a"
+          "blob": "ea3b41e4223b1f394db16c9980b21399a75b9158"
         },
         {
           "file": "packages/m3l-common/src/core/text/xlsx.ts",
           "symbol": "M3LXlsxTextExtractor",
-          "blob": "3e5304b8438b848c08d92d38b97d021d3596a047"
+          "blob": "44df00dc5ed22de372e5b4ac7f5a931c9c3e46a1"
         },
         {
           "file": "packages/m3l-common/src/core/text/email.ts",
           "symbol": "M3LEmailTextExtractor",
-          "blob": "28ea8509e491e43539c839fe408a1a5a3f393266"
+          "blob": "eb188edd4332234e6f36caefbad10a4945ff1de6"
         },
         {
           "file": "packages/m3l-common/src/core/text/zip.ts",
           "symbol": "M3LZipTextExtractor",
-          "blob": "61a77bcb667bc6ecdbbf650833495a7ed10b730b"
+          "blob": "38206490e8ecd8fa41ae0e0f8681d86c92ac2ed7"
         },
         {
           "file": "packages/m3l-common/src/core/text/contract.ts",
           "symbol": "ZIP_DEPTH_SYMBOL",
-          "blob": "1675a84fa6add8780d7d43e4fe7d5c0c6a566645"
+          "blob": "f071588a4beed4387b6b874bd37a9f54a7a760bc"
         },
         {
           "file": "packages/m3l-common/src/core/text/contract.ts",
           "symbol": "M3LTextExtractor",
-          "blob": "1675a84fa6add8780d7d43e4fe7d5c0c6a566645"
+          "blob": "f071588a4beed4387b6b874bd37a9f54a7a760bc"
         },
         {
           "file": "packages/m3l-common/src/core/text/contract.ts",
           "symbol": "M3LTextExtractionOptions",
-          "blob": "1675a84fa6add8780d7d43e4fe7d5c0c6a566645"
+          "blob": "f071588a4beed4387b6b874bd37a9f54a7a760bc"
         },
         {
           "file": "packages/m3l-common/src/core/text/contract.ts",
           "symbol": "M3LTextExtractionResult",
-          "blob": "1675a84fa6add8780d7d43e4fe7d5c0c6a566645"
+          "blob": "f071588a4beed4387b6b874bd37a9f54a7a760bc"
         },
         {
           "file": "packages/m3l-common/src/core/text/errors.ts",
           "symbol": "M3LTextExtractionError",
-          "blob": "7086faf0a69ccf564e2bfb5f0c5a6328e8deb6e6"
+          "blob": "2966c696771e20da83863e4b81868ef9b31f0851"
         }
       ],
-      "retrieved": "2026-07-11"
+      "retrieved": "2026-09-13"
     },
     {
       "heading": "Notes & behavior",
@@ -74,25 +74,25 @@
         {
           "file": "packages/m3l-common/src/core/text/zip.ts",
           "symbol": "M3LZipTextExtractor",
-          "blob": "61a77bcb667bc6ecdbbf650833495a7ed10b730b"
+          "blob": "38206490e8ecd8fa41ae0e0f8681d86c92ac2ed7"
         },
         {
           "file": "packages/m3l-common/src/core/text/contract.ts",
           "symbol": "ZIP_DEPTH_SYMBOL",
-          "blob": "1675a84fa6add8780d7d43e4fe7d5c0c6a566645"
+          "blob": "f071588a4beed4387b6b874bd37a9f54a7a760bc"
         },
         {
           "file": "packages/m3l-common/src/core/text/contract.ts",
           "symbol": "M3LTextExtractionResult",
-          "blob": "1675a84fa6add8780d7d43e4fe7d5c0c6a566645"
+          "blob": "f071588a4beed4387b6b874bd37a9f54a7a760bc"
         },
         {
           "file": "packages/m3l-common/src/core/text/errors.ts",
           "symbol": "M3LTextExtractionError",
-          "blob": "7086faf0a69ccf564e2bfb5f0c5a6328e8deb6e6"
+          "blob": "2966c696771e20da83863e4b81868ef9b31f0851"
         }
       ],
-      "retrieved": "2026-07-11"
+      "retrieved": "2026-09-13"
     }
   ]
 }

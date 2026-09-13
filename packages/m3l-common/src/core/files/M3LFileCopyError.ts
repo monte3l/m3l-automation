@@ -36,7 +36,7 @@ interface M3LFileCopyErrorOptions {
  *
  * @example
  * ```ts
- * import { M3LFileCopyError } from "@m3l-automation/m3l-common/core";
+ * import { M3LFileCopyError } from "@monte3l/m3l-common/core";
  * import { mkdir } from "node:fs/promises";
  *
  * async function ensureOutputDir(outputDir: string): Promise<void> {

@@ -36,7 +36,7 @@
  *
  * @example
  * ```ts
- * import type { M3LCommandOutput } from "@m3l-automation/m3l-common/core";
+ * import type { M3LCommandOutput } from "@monte3l/m3l-common/core";
  *
  * function report(output: M3LCommandOutput, rows: number): void {
  *   output.heading("Export");
@@ -81,7 +81,7 @@ export interface M3LCommandOutput {
  *
  * @example
  * ```ts
- * import type { M3LCommandOutputStream } from "@m3l-automation/m3l-common/core";
+ * import type { M3LCommandOutputStream } from "@monte3l/m3l-common/core";
  *
  * const collected: string[] = [];
  * const stream: M3LCommandOutputStream = {
@@ -111,7 +111,7 @@ export interface M3LCommandOutputStream {
  *
  * @example
  * ```ts
- * import type { M3LCommandOutputOptions } from "@m3l-automation/m3l-common/core";
+ * import type { M3LCommandOutputOptions } from "@monte3l/m3l-common/core";
  *
  * const options: M3LCommandOutputOptions = { colorEnabled: true };
  * ```
@@ -165,7 +165,7 @@ function writeLine(
  *
  * @example
  * ```ts
- * import { createCommandOutput } from "@m3l-automation/m3l-common/core";
+ * import { createCommandOutput } from "@monte3l/m3l-common/core";
  *
  * const output = createCommandOutput();
  * output.heading("Export");

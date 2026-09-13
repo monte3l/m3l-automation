@@ -31,7 +31,7 @@ const KEY_NORMALIZATION_PATTERN = /[.-]/g;
  *
  * @example
  * ```ts
- * import { deriveEnvVarName } from "@m3l-automation/m3l-common/core";
+ * import { deriveEnvVarName } from "@monte3l/m3l-common/core";
  *
  * deriveEnvVarName("canonical.name"); // "CANONICAL_NAME"
  * deriveEnvVarName("license-code"); // "LICENSE_CODE"

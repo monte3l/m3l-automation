@@ -13,7 +13,7 @@
  *
  * @example
  * ```ts
- * import { M3LConfigParameterType } from "@m3l-automation/m3l-common/core";
+ * import { M3LConfigParameterType } from "@monte3l/m3l-common/core";
  * const type = M3LConfigParameterType.INT; // "INT"
  * ```
  */
@@ -33,7 +33,7 @@ export const M3LConfigParameterType = {
  *
  * @example
  * ```ts
- * import type { M3LConfigParameterType } from "@m3l-automation/m3l-common/core";
+ * import type { M3LConfigParameterType } from "@monte3l/m3l-common/core";
  * function describe(type: M3LConfigParameterType): string {
  *   return `coercion target: ${type}`;
  * }
@@ -53,7 +53,7 @@ export type M3LConfigParameterType =
  *
  * @example
  * ```ts
- * import type { M3LCoercedValue } from "@m3l-automation/m3l-common/core";
+ * import type { M3LCoercedValue } from "@monte3l/m3l-common/core";
  *
  * type Port = M3LCoercedValue<"INT">; // number
  * type Tags = M3LCoercedValue<"STRING_ARRAY">; // readonly string[]

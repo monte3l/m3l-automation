@@ -58,7 +58,7 @@ const AGENT_POLICY_RULE_IDS: Record<M3LAgentPolicyRuleId, true> = {
  *
  * @example
  * ```ts
- * import { isAgentPolicyRuleId } from "@m3l-automation/m3l-common/core";
+ * import { isAgentPolicyRuleId } from "@monte3l/m3l-common/core";
  *
  * const parsed: unknown = JSON.parse('{"rule":"script-not-allowlisted"}');
  * const rule = (parsed as { rule: unknown }).rule;
@@ -90,8 +90,8 @@ export function isAgentPolicyRuleId(
  *
  * @example
  * ```ts
- * import { isAgentActionAutoApproved } from "@m3l-automation/m3l-common/core";
- * import type { M3LAgentDecision } from "@m3l-automation/m3l-common/core";
+ * import { isAgentActionAutoApproved } from "@monte3l/m3l-common/core";
+ * import type { M3LAgentDecision } from "@monte3l/m3l-common/core";
  *
  * function mayProceed(decision: M3LAgentDecision): boolean {
  *   return isAgentActionAutoApproved(decision);

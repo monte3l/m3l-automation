@@ -25,7 +25,7 @@ import type { M3LAgentDecisionLogEntry } from "./decision-log-types.js";
  *
  * @example
  * ```ts
- * import { M3L_AGENT_LOG_MAX_SEGMENT_BYTES } from "@m3l-automation/m3l-common/core";
+ * import { M3L_AGENT_LOG_MAX_SEGMENT_BYTES } from "@monte3l/m3l-common/core";
  *
  * console.log(M3L_AGENT_LOG_MAX_SEGMENT_BYTES); // 8388608
  * ```
@@ -44,7 +44,7 @@ export const M3L_AGENT_LOG_MAX_SEGMENT_BYTES = 8_388_608;
  *
  * @example
  * ```ts
- * import { M3L_AGENT_LOG_MAX_SEGMENT_AGE_MS } from "@m3l-automation/m3l-common/core";
+ * import { M3L_AGENT_LOG_MAX_SEGMENT_AGE_MS } from "@monte3l/m3l-common/core";
  *
  * console.log(M3L_AGENT_LOG_MAX_SEGMENT_AGE_MS); // 86400000
  * ```
@@ -56,7 +56,7 @@ export const M3L_AGENT_LOG_MAX_SEGMENT_AGE_MS = 86_400_000;
  *
  * @example
  * ```ts
- * import type { M3LAgentDecisionLogOptions } from "@m3l-automation/m3l-common/core";
+ * import type { M3LAgentDecisionLogOptions } from "@monte3l/m3l-common/core";
  *
  * const options: M3LAgentDecisionLogOptions = {
  *   directory: "/var/lib/my-agent/agent-log",
@@ -140,7 +140,7 @@ export interface M3LAgentDecisionLogOptions {
  *   agentDecisionLogEntry,
  *   evaluateAgentAction,
  *   validateAgentPolicy,
- * } from "@m3l-automation/m3l-common/core";
+ * } from "@monte3l/m3l-common/core";
  *
  * const policy = validateAgentPolicy({
  *   version: 1,

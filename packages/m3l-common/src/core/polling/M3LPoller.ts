@@ -140,7 +140,7 @@ type ContinueOutcome =
  *
  * @example
  * ```ts
- * import { Core } from "@m3l-automation/m3l-common/core";
+ * import { Core } from "@monte3l/m3l-common/core";
  *
  * const poller = new Core.M3LPoller({
  *   backoff: Core.M3LBackoff.exponentialJittered(500, 10_000),

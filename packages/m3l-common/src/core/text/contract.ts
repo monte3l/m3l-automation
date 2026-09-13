@@ -83,7 +83,7 @@ export type M3LTextExtractionResult = {
  * import {
  *   M3LTextExtractionError,
  *   type M3LTextExtractor,
- * } from "@m3l-automation/m3l-common/core";
+ * } from "@monte3l/m3l-common/core";
  *
  * const jsonLinesExtractor: M3LTextExtractor = {
  *   mimeTypes: ["application/x-ndjson"],

@@ -22,13 +22,13 @@ import type { M3LErrorCode } from "./codes.js";
  * - `"external"` — an external system (AWS, HTTP, remote job state,
  *   unreadable input data).
  * - `"library"` — an internal invariant violation — a bug in
- *   `@m3l-automation/m3l-common` itself. No built-in code is classified this
+ *   `@monte3l/m3l-common` itself. No built-in code is classified this
  *   way today; it is reserved for internal invariant violations, which have
  *   no stable dedicated codes by definition.
  *
  * @example
  * ```ts
- * import type { M3LErrorOrigin } from "@m3l-automation/m3l-common/core";
+ * import type { M3LErrorOrigin } from "@monte3l/m3l-common/core";
  *
  * function describe(origin: M3LErrorOrigin): string {
  *   return origin === "caller" ? "fix your config" : "retry or escalate";
@@ -59,7 +59,7 @@ export type M3LErrorOrigin = "caller" | "library" | "external";
  *
  * @example
  * ```ts
- * import type { M3LErrorRetryable } from "@m3l-automation/m3l-common/core";
+ * import type { M3LErrorRetryable } from "@monte3l/m3l-common/core";
  *
  * function isDefinitelyRetryable(value: M3LErrorRetryable): boolean {
  *   return value === true;
@@ -73,7 +73,7 @@ export type M3LErrorRetryable = boolean | "situational";
  *
  * @example
  * ```ts
- * import type { M3LErrorClassification } from "@m3l-automation/m3l-common/core";
+ * import type { M3LErrorClassification } from "@monte3l/m3l-common/core";
  *
  * const classification: M3LErrorClassification = {
  *   origin: "caller",
@@ -102,7 +102,7 @@ export interface M3LErrorClassification {
  *
  * @example
  * ```ts
- * import { M3L_ERROR_CATALOG } from "@m3l-automation/m3l-common/core";
+ * import { M3L_ERROR_CATALOG } from "@monte3l/m3l-common/core";
  *
  * const classification = M3L_ERROR_CATALOG.ERR_CONFIG_MISSING;
  * console.log(classification.origin); // "caller"
@@ -254,7 +254,7 @@ export const M3L_ERROR_CATALOG: Readonly<
  *
  * @example
  * ```ts
- * import { isM3LErrorCode } from "@m3l-automation/m3l-common/core";
+ * import { isM3LErrorCode } from "@monte3l/m3l-common/core";
  *
  * isM3LErrorCode("ERR_S3_OPERATION"); // true
  * isM3LErrorCode("not-a-real-code"); // false
@@ -274,7 +274,7 @@ export function isM3LErrorCode(code: string): code is M3LErrorCode {
  *
  * @example
  * ```ts
- * import { classifyErrorCode } from "@m3l-automation/m3l-common/core";
+ * import { classifyErrorCode } from "@monte3l/m3l-common/core";
  *
  * const classification = classifyErrorCode("ERR_S3_OPERATION");
  * if (classification?.retryable === true) {

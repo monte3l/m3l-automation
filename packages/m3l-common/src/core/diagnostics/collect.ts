@@ -41,7 +41,7 @@ import { logBestEffortDiagnostic } from "../../internal/script/diagnostics.js";
  *
  * @example
  * ```ts
- * import type { M3LConfigSchemaPort } from "@m3l-automation/m3l-common/core";
+ * import type { M3LConfigSchemaPort } from "@monte3l/m3l-common/core";
  *
  * const schema: M3LConfigSchemaPort = {
  *   declaredNames: () => ["apiKey", "region"],
@@ -62,7 +62,7 @@ export interface M3LConfigSchemaPort {
  *
  * @example
  * ```ts
- * import type { M3LConfigSourcePort } from "@m3l-automation/m3l-common/core";
+ * import type { M3LConfigSourcePort } from "@monte3l/m3l-common/core";
  *
  * const config: M3LConfigSourcePort = {
  *   sourceOf: (name) => (name === "apiKey" ? "environment-variable" : undefined),
@@ -81,7 +81,7 @@ export interface M3LConfigSourcePort {
  *
  * @example
  * ```ts
- * import type { M3LPathsPort } from "@m3l-automation/m3l-common/core";
+ * import type { M3LPathsPort } from "@monte3l/m3l-common/core";
  *
  * const paths: M3LPathsPort = {
  *   getDataDir: () => "/data",
@@ -134,7 +134,7 @@ export interface M3LPathsPort {
  *
  * @example
  * ```ts
- * import type { M3LConfigFingerprintEntry } from "@m3l-automation/m3l-common/core";
+ * import type { M3LConfigFingerprintEntry } from "@monte3l/m3l-common/core";
  *
  * const entry: M3LConfigFingerprintEntry = { name: "apiKey", source: "cli" };
  * ```
@@ -188,7 +188,7 @@ interface M3LDiagnosticsEnvironmentBase {
  *
  * @example
  * ```ts
- * import type { M3LDiagnosticsEnvironment } from "@m3l-automation/m3l-common/core";
+ * import type { M3LDiagnosticsEnvironment } from "@monte3l/m3l-common/core";
  *
  * function describe(env: M3LDiagnosticsEnvironment): string {
  *   return env.deploymentMode === "MONOREPO" ? env.monorepoRoot : "standalone";
@@ -248,7 +248,7 @@ function toDiagnosticsEnvironment(
  *
  * @example
  * ```ts
- * import type { M3LDiagnosticsPaths } from "@m3l-automation/m3l-common/core";
+ * import type { M3LDiagnosticsPaths } from "@monte3l/m3l-common/core";
  *
  * const paths: M3LDiagnosticsPaths = {
  *   dataDir: "/data",
@@ -279,7 +279,7 @@ export interface M3LDiagnosticsPaths {
  *
  * @example
  * ```ts
- * import { collectDiagnostics } from "@m3l-automation/m3l-common/core";
+ * import { collectDiagnostics } from "@monte3l/m3l-common/core";
  *
  * const snapshot = collectDiagnostics({ correlationId: "run-42" });
  * console.log(snapshot.packageVersion, snapshot.nodeVersion);
@@ -311,7 +311,7 @@ export interface M3LDiagnosticsSnapshot {
  *
  * @example
  * ```ts
- * import type { M3LCollectDiagnosticsOptions } from "@m3l-automation/m3l-common/core";
+ * import type { M3LCollectDiagnosticsOptions } from "@monte3l/m3l-common/core";
  *
  * const options: M3LCollectDiagnosticsOptions = { correlationId: "run-42" };
  * ```
@@ -525,7 +525,7 @@ function tryCollectConfig(
  *
  * @example
  * ```ts
- * import { collectDiagnostics } from "@m3l-automation/m3l-common/core";
+ * import { collectDiagnostics } from "@monte3l/m3l-common/core";
  *
  * const snapshot = collectDiagnostics({ correlationId: "run-42" });
  * console.log(snapshot.nodeVersion, snapshot.platform);

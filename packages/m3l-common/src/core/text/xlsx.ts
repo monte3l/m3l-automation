@@ -22,7 +22,7 @@ import type { M3LTextExtractionResult, M3LTextExtractor } from "./contract.js";
  *
  * @example
  * ```ts
- * import { M3LXlsxTextExtractor } from "@m3l-automation/m3l-common/core";
+ * import { M3LXlsxTextExtractor } from "@monte3l/m3l-common/core";
  *
  * const extractor = new M3LXlsxTextExtractor();
  * const { text } = await extractor.extract("./data.xlsx");

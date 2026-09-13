@@ -9,34 +9,34 @@
           "file": "packages/m3l-common/src/core/orchestration/step-reference.ts",
           "symbol": "M3LStepReference",
           "lines": "82-85",
-          "blob": "6e2fdee762edddc04c4cd94248148240148d4636"
+          "blob": "54966e00072054c7ee8ba634b4e613cc3f733f75"
         },
         {
           "file": "packages/m3l-common/src/core/orchestration/step-reference.ts",
           "symbol": "M3LStepReferenceSegment",
           "lines": "64-70",
-          "blob": "6e2fdee762edddc04c4cd94248148240148d4636"
+          "blob": "54966e00072054c7ee8ba634b4e613cc3f733f75"
         },
         {
           "file": "packages/m3l-common/src/core/orchestration/binding.ts",
           "symbol": "M3LBindingExpectedType",
           "lines": "29-29",
-          "blob": "40893166efdf5c8a211ad31fe5556a95c78cf6b8"
+          "blob": "b84535d6ecb3a5012fcdc98582d30cbf84a0e04e"
         },
         {
           "file": "packages/m3l-common/src/core/orchestration/binding.ts",
           "symbol": "M3LStepBinding",
           "lines": "51-58",
-          "blob": "40893166efdf5c8a211ad31fe5556a95c78cf6b8"
+          "blob": "b84535d6ecb3a5012fcdc98582d30cbf84a0e04e"
         },
         {
           "file": "packages/m3l-common/src/core/orchestration/M3LStepReferenceError.ts",
           "symbol": "M3LStepReferenceError",
           "lines": "54-80",
-          "blob": "987b1ae13f6eceb63f081f95ae9eb3bf14dc209c"
+          "blob": "706a0fa618eb4d9571c8f07afaa7593aacadbfaa"
         }
       ],
-      "retrieved": "2026-09-01"
+      "retrieved": "2026-09-13"
     },
     {
       "heading": "The reference grammar",
@@ -45,22 +45,22 @@
           "file": "packages/m3l-common/src/core/orchestration/step-reference.ts",
           "symbol": "parseStepReference",
           "lines": "356-386",
-          "blob": "6e2fdee762edddc04c4cd94248148240148d4636"
+          "blob": "54966e00072054c7ee8ba634b4e613cc3f733f75"
         },
         {
           "file": "packages/m3l-common/src/core/orchestration/step-reference.ts",
           "symbol": "formatStepReference",
           "lines": "389-420",
-          "blob": "6e2fdee762edddc04c4cd94248148240148d4636"
+          "blob": "54966e00072054c7ee8ba634b4e613cc3f733f75"
         },
         {
           "file": "packages/m3l-common/src/core/orchestration/step-reference.ts",
           "symbol": "resolveStepReference",
           "lines": "511-530",
-          "blob": "6e2fdee762edddc04c4cd94248148240148d4636"
+          "blob": "54966e00072054c7ee8ba634b4e613cc3f733f75"
         }
       ],
-      "retrieved": "2026-09-01"
+      "retrieved": "2026-09-13"
     },
     {
       "heading": "Typed bindings",
@@ -69,16 +69,16 @@
           "file": "packages/m3l-common/src/core/orchestration/binding.ts",
           "symbol": "validateBindingValue",
           "lines": "104-130",
-          "blob": "40893166efdf5c8a211ad31fe5556a95c78cf6b8"
+          "blob": "b84535d6ecb3a5012fcdc98582d30cbf84a0e04e"
         },
         {
           "file": "packages/m3l-common/src/core/orchestration/binding.ts",
           "symbol": "M3LStepBinding",
           "lines": "51-58",
-          "blob": "40893166efdf5c8a211ad31fe5556a95c78cf6b8"
+          "blob": "b84535d6ecb3a5012fcdc98582d30cbf84a0e04e"
         }
       ],
-      "retrieved": "2026-09-01"
+      "retrieved": "2026-09-13"
     },
     {
       "heading": "The prototype-pollution guard",
@@ -87,16 +87,16 @@
           "file": "packages/m3l-common/src/core/orchestration/step-reference.ts",
           "symbol": "resolveStepReference",
           "lines": "511-530",
-          "blob": "6e2fdee762edddc04c4cd94248148240148d4636"
+          "blob": "54966e00072054c7ee8ba634b4e613cc3f733f75"
         },
         {
           "file": "packages/m3l-common/src/core/security/DangerousKeys.ts",
           "symbol": "isDangerousKey",
           "lines": "46-48",
-          "blob": "9dd01aaf0eb6673c990a7a6060216a81275526e2"
+          "blob": "f37f88a906ddc2d8345ce4e703b3067c1d09ef21"
         }
       ],
-      "retrieved": "2026-09-01"
+      "retrieved": "2026-09-13"
     },
     {
       "heading": "Errors",
@@ -105,10 +105,10 @@
           "file": "packages/m3l-common/src/core/orchestration/M3LStepReferenceError.ts",
           "symbol": "M3LStepReferenceError",
           "lines": "54-80",
-          "blob": "987b1ae13f6eceb63f081f95ae9eb3bf14dc209c"
+          "blob": "706a0fa618eb4d9571c8f07afaa7593aacadbfaa"
         }
       ],
-      "retrieved": "2026-09-01"
+      "retrieved": "2026-09-13"
     }
   ]
 }

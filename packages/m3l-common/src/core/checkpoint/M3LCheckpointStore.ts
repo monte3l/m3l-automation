@@ -457,7 +457,7 @@ function projectDefinitionValue(
  *
  * @example
  * ```ts
- * import type { M3LCheckpointPathsPort } from "@m3l-automation/m3l-common/core";
+ * import type { M3LCheckpointPathsPort } from "@monte3l/m3l-common/core";
  * import path from "node:path";
  *
  * const port: M3LCheckpointPathsPort = {
@@ -492,7 +492,7 @@ export interface M3LCheckpointPathsPort {
  *
  * @example
  * ```ts
- * import type { M3LCheckpointMissingPolicy } from "@m3l-automation/m3l-common/core";
+ * import type { M3LCheckpointMissingPolicy } from "@monte3l/m3l-common/core";
  *
  * interface RunCheckpoint {
  *   readonly cursor?: string;
@@ -517,8 +517,8 @@ export type M3LCheckpointMissingPolicy<TCheckpoint extends object> =
  *
  * @example
  * ```ts
- * import type { M3LCheckpointStoreOptions } from "@m3l-automation/m3l-common/core";
- * import { M3LPaths } from "@m3l-automation/m3l-common/core";
+ * import type { M3LCheckpointStoreOptions } from "@monte3l/m3l-common/core";
+ * import { M3LPaths } from "@monte3l/m3l-common/core";
  *
  * interface RunCheckpoint {
  *   readonly cursor?: string;
@@ -646,7 +646,7 @@ export interface M3LCheckpointStoreOptions<TCheckpoint extends object> {
  *
  * @example
  * ```ts
- * import { Core } from "@m3l-automation/m3l-common";
+ * import { Core } from "@monte3l/m3l-common";
  *
  * interface AthenaCheckpoint {
  *   readonly queryExecutionId?: string;

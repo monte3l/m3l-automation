@@ -31,7 +31,7 @@ import { M3LConfigProvider } from "./M3LConfigProvider.js";
  *
  * @example
  * ```ts
- * import { M3LInMemoryConfigProvider } from "@m3l-automation/m3l-common/core";
+ * import { M3LInMemoryConfigProvider } from "@monte3l/m3l-common/core";
  *
  * const provider = new M3LInMemoryConfigProvider({ region: "eu-west-1" });
  * provider.getRawValue("region"); // "eu-west-1"

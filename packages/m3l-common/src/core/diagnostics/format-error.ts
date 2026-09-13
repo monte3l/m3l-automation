@@ -42,7 +42,7 @@ const CAUSED_BY_SEPARATOR = "\n\ncaused by: ";
  *
  * @example
  * ```ts
- * import type { M3LFormatErrorChainOptions } from "@m3l-automation/m3l-common/core";
+ * import type { M3LFormatErrorChainOptions } from "@monte3l/m3l-common/core";
  *
  * const verbatim: M3LFormatErrorChainOptions = { redact: false };
  * ```
@@ -72,7 +72,7 @@ export interface M3LFormatErrorChainOptions {
  *
  * @example
  * ```ts
- * import type { M3LSerializedError } from "@m3l-automation/m3l-common/core";
+ * import type { M3LSerializedError } from "@monte3l/m3l-common/core";
  *
  * const level: M3LSerializedError = { name: "Error", message: "boom" };
  * ```
@@ -282,7 +282,7 @@ const URL_PATTERN =
  *
  * @example
  * ```ts
- * import { scrubUrlsInText } from "@m3l-automation/m3l-common/core";
+ * import { scrubUrlsInText } from "@monte3l/m3l-common/core";
  *
  * scrubUrlsInText("request to https://u:p@api.example.com/v1/data?token=x failed");
  * // "request to https://api.example.com/v1/data failed"
@@ -526,7 +526,7 @@ function serializeLevel(
  *
  * @example
  * ```ts
- * import { formatErrorChain } from "@m3l-automation/m3l-common/core";
+ * import { formatErrorChain } from "@monte3l/m3l-common/core";
  *
  * try {
  *   await run();
@@ -576,7 +576,7 @@ export function formatErrorChain(
  *
  * @example
  * ```ts
- * import { serializeErrorChain } from "@m3l-automation/m3l-common/core";
+ * import { serializeErrorChain } from "@monte3l/m3l-common/core";
  *
  * try {
  *   await run();

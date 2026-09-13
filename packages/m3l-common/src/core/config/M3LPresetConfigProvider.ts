@@ -21,7 +21,7 @@ import { M3LConfigProvider } from "./M3LConfigProvider.js";
  *
  * @example
  * ```ts
- * import { M3LPresetConfigProvider } from "@m3l-automation/m3l-common/core";
+ * import { M3LPresetConfigProvider } from "@monte3l/m3l-common/core";
  *
  * const provider = new M3LPresetConfigProvider({ stage: "prod" });
  * provider.getRawValue("stage"); // "prod"

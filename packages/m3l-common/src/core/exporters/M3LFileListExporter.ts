@@ -30,7 +30,7 @@ export interface M3LFileListExporterOptions {
  * @typeParam TItem - The shape of each exported item.
  * @example
  * ```typescript
- * import { Core } from "@m3l-automation/m3l-common";
+ * import { Core } from "@monte3l/m3l-common";
  *
  * const exporter = new Core.M3LFileListExporter<{ id: string }>({
  *   filePath: "./data/outputs/list.json",
@@ -64,8 +64,8 @@ export class M3LFileListExporter<TItem> {
    *
    * @example
    * ```typescript
-   * import { M3LError } from "@m3l-automation/m3l-common/core";
-   * import { Core } from "@m3l-automation/m3l-common";
+   * import { M3LError } from "@monte3l/m3l-common/core";
+   * import { Core } from "@monte3l/m3l-common";
    *
    * const exporter = new Core.M3LFileListExporter<{ id: string }>({
    *   filePath: "./data/outputs/list.json",

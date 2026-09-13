@@ -22,7 +22,7 @@ import type { M3LLogEvent, M3LLoggerHandler } from "./M3LLogEvent.js";
  *
  * @example
  * ```ts
- * import type { M3LFileLoggerHandlerOptions } from "@m3l-automation/m3l-common/core";
+ * import type { M3LFileLoggerHandlerOptions } from "@monte3l/m3l-common/core";
  *
  * const options: M3LFileLoggerHandlerOptions = { filePath: "run.log" };
  * ```
@@ -72,7 +72,7 @@ export interface M3LFileLoggerHandlerOptions {
  *
  * @example
  * ```ts
- * import { Core } from "@m3l-automation/m3l-common";
+ * import { Core } from "@monte3l/m3l-common";
  *
  * const handler = new Core.M3LFileLoggerHandler({ filePath: "run.log" });
  * const logger = new Core.M3LLogger([handler]);
@@ -141,7 +141,7 @@ export class M3LFileLoggerHandler implements M3LLoggerHandler {
    *
    * @example
    * ```ts
-   * import { Core } from "@m3l-automation/m3l-common";
+   * import { Core } from "@monte3l/m3l-common";
    *
    * const handler = new Core.M3LFileLoggerHandler({ filePath: "run.log" });
    * handler.handle({ category: Core.M3LLogEventCategory.INFO, message: "done" });

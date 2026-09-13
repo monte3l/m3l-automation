@@ -64,7 +64,7 @@ export interface M3LProcedureStepTraceClassification {
  *
  * @example
  * ```ts
- * import type { Core } from "@m3l-automation/m3l-common";
+ * import type { Core } from "@monte3l/m3l-common";
  * declare function projectFlowToScalar(
  *   flow: Core.M3LProcedureFlow<string>,
  * ): "continue" | "stop" | "resolve" | `goTo:${string}` | undefined;

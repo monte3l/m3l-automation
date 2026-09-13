@@ -175,7 +175,7 @@ export interface M3LFtsIndexStats {
  *
  * @example
  * ```ts
- * import { Core } from "@m3l-automation/m3l-common";
+ * import { Core } from "@monte3l/m3l-common";
  *
  * const index = new Core.M3LFtsIndex({ dbPath: ":memory:", table: "documents" });
  * const db: Core.M3LSqliteDatabase = index.getDatabase();
@@ -189,7 +189,7 @@ export type M3LSqliteDatabase = BetterSqlite3.Database;
  *
  * @example
  * ```ts
- * import { Core } from "@m3l-automation/m3l-common";
+ * import { Core } from "@monte3l/m3l-common";
  *
  * const index = new Core.M3LFtsIndex({ dbPath: ":memory:", table: "documents" });
  * const statement: Core.M3LSqliteStatement = index

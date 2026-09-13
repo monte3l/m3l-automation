@@ -136,7 +136,7 @@ class M3LJSONStreamWriter<
  * @typeParam TItem - The shape of each exported item.
  * @example
  * ```typescript
- * import { Core } from "@m3l-automation/m3l-common";
+ * import { Core } from "@monte3l/m3l-common";
  *
  * const exporter = new Core.M3LJSONListExporter<{ id: string }>({
  *   filePath: "./data/outputs/records.jsonl",

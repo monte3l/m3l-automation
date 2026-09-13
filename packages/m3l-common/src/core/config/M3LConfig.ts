@@ -21,7 +21,7 @@ interface M3LConfigEntry {
  *
  * @example
  * ```ts
- * import { M3LConfig } from "@m3l-automation/m3l-common/core";
+ * import { M3LConfig } from "@monte3l/m3l-common/core";
  *
  * const config = new M3LConfig();
  * config.set("region", "eu-west-1", "cli");

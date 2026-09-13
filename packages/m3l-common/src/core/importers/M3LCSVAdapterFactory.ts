@@ -11,7 +11,7 @@ import { M3LCSVFormatAdapter } from "./M3LCSVFormatAdapter.js";
  *
  * @example
  * ```typescript
- * import { M3LCSVAdapterFactory } from "@m3l-automation/m3l-common/core";
+ * import { M3LCSVAdapterFactory } from "@monte3l/m3l-common/core";
  *
  * const factory = new M3LCSVAdapterFactory();
  * const adapter = factory.create({ columnMapping: { id: "id", name: "name" } });

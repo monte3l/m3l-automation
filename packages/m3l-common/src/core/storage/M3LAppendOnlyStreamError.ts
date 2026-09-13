@@ -58,8 +58,8 @@ interface M3LAppendOnlyStreamErrorOptions {
  *   M3LAppendOnlyStream,
  *   M3LAppendOnlyStreamError,
  *   M3LError,
- * } from "@m3l-automation/m3l-common/core";
- * import type { M3LAppendOnlyEntry } from "@m3l-automation/m3l-common/core";
+ * } from "@monte3l/m3l-common/core";
+ * import type { M3LAppendOnlyEntry } from "@monte3l/m3l-common/core";
  *
  * async function record(
  *   stream: M3LAppendOnlyStream,

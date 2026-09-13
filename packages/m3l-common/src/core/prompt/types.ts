@@ -16,7 +16,7 @@
  *
  * @example
  * ```ts
- * import type { M3LChoice } from "@m3l-automation/m3l-common/core";
+ * import type { M3LChoice } from "@monte3l/m3l-common/core";
  *
  * const choice: M3LChoice<string> = {
  *   name: "Europe (South)",
@@ -52,7 +52,7 @@ export interface M3LChoice<Value> {
  *
  * @example
  * ```ts
- * import type { M3LChoices } from "@m3l-automation/m3l-common/core";
+ * import type { M3LChoices } from "@monte3l/m3l-common/core";
  *
  * const regions: M3LChoices<string> = ["eu-south-1", "us-east-1"];
  * ```
@@ -72,7 +72,7 @@ export type M3LChoices<Value> =
  *
  * @example
  * ```ts
- * import type { M3LSuggestFn } from "@m3l-automation/m3l-common/core";
+ * import type { M3LSuggestFn } from "@monte3l/m3l-common/core";
  *
  * const suggestRegion: M3LSuggestFn<string> = (term) => {
  *   const regions = ["eu-south-1", "us-east-1", "ap-northeast-1"];
@@ -90,7 +90,7 @@ export type M3LSuggestFn<Value = string> = (
  *
  * @example
  * ```ts
- * import type { M3LNumberPromptOptions } from "@m3l-automation/m3l-common/core";
+ * import type { M3LNumberPromptOptions } from "@monte3l/m3l-common/core";
  *
  * const options: M3LNumberPromptOptions = { min: 0, max: 10, default: 3 };
  * ```
@@ -115,7 +115,7 @@ export interface M3LNumberPromptOptions {
  *
  * @example
  * ```ts
- * import type { M3LPromptAdapter } from "@m3l-automation/m3l-common/core";
+ * import type { M3LPromptAdapter } from "@monte3l/m3l-common/core";
  *
  * const noopAdapter: M3LPromptAdapter = {
  *   input: async () => "value",

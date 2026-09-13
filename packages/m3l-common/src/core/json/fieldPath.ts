@@ -30,7 +30,7 @@ const DIGIT_ONLY_PATTERN = /^\d+$/;
  *
  * @example
  * ```typescript
- * import { parseFieldPath } from "@m3l-automation/m3l-common/core";
+ * import { parseFieldPath } from "@monte3l/m3l-common/core";
  * parseFieldPath("metadata.author"); // ["metadata", "author"]
  * parseFieldPath("items.0.name"); // ["items", "0", "name"]
  * parseFieldPath(""); // []
@@ -107,7 +107,7 @@ function resolveLiteralSegment(
  *
  * @example
  * ```typescript
- * import { navigateFieldPath } from "@m3l-automation/m3l-common/core";
+ * import { navigateFieldPath } from "@monte3l/m3l-common/core";
  * navigateFieldPath({ metadata: { author: "Ada" } }, "metadata.author");
  * // "Ada"
  * navigateFieldPath({ items: ["x", "y"] }, "items.1"); // "y"
@@ -184,7 +184,7 @@ function expandSegment(current: unknown, segment: string): readonly unknown[] {
  *
  * @example
  * ```typescript
- * import { extractAll } from "@m3l-automation/m3l-common/core";
+ * import { extractAll } from "@monte3l/m3l-common/core";
  * extractAll({ items: [{ id: 1 }, { id: 2 }] }, "items.*.id"); // [1, 2]
  * extractAll({ a: { v: 1 }, b: { v: 2 } }, "*.v"); // [1, 2]
  * extractAll({ metadata: {} }, "metadata.author"); // []

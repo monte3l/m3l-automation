@@ -1,5 +1,5 @@
 /**
- * `core/utils` — general-purpose utilities for the `@m3l-automation/m3l-common` library.
+ * `core/utils` — general-purpose utilities for the `@monte3l/m3l-common` library.
  *
  * Re-exports all public symbols from the utility submodules:
  * type guards, safe serialization, date token expansion, formatting helpers,

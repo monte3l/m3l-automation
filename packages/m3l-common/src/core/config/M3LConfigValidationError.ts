@@ -60,7 +60,7 @@ interface M3LConfigValidationErrorOptions {
  *   M3LConfigParameterType,
  *   M3LConfigValidationError,
  *   M3LConfigValidators,
- * } from "@m3l-automation/m3l-common/core";
+ * } from "@monte3l/m3l-common/core";
  *
  * try {
  *   new M3LConfigParameter({

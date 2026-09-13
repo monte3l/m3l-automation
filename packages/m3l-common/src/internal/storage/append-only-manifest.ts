@@ -416,7 +416,7 @@ async function highestSegmentName(
  * @returns The baseline, if any, and every seal keyed by segment name.
  * @example
  * ```ts
- * import { M3LError } from "@m3l-automation/m3l-common/core";
+ * import { M3LError } from "@monte3l/m3l-common/core";
  *
  * const contents = await readManifest(
  *   directory,
@@ -464,7 +464,7 @@ export async function readManifest(
  * @returns The manifest's contents, including a baseline just written.
  * @example
  * ```ts
- * import { M3LError } from "@m3l-automation/m3l-common/core";
+ * import { M3LError } from "@monte3l/m3l-common/core";
  *
  * const contents = await loadOrInitializeManifest(
  *   directory,
@@ -515,7 +515,7 @@ export async function loadOrInitializeManifest(
  * @param buildError - The caller's error vocabulary for every failure here.
  * @example
  * ```ts
- * import { M3LError } from "@m3l-automation/m3l-common/core";
+ * import { M3LError } from "@monte3l/m3l-common/core";
  *
  * await appendSeal(directory, { segment, ...digest }, (message, options) =>
  *   new M3LError(message, { code: "ERR_STORAGE_WRITE", ...options }),

@@ -38,7 +38,7 @@ import type {
  *
  * @example
  * ```typescript
- * import type { M3LJSONListImporterOptions } from "@m3l-automation/m3l-common/core";
+ * import type { M3LJSONListImporterOptions } from "@monte3l/m3l-common/core";
  *
  * const recordsPath = "./data/inputs/records.jsonl";
  * const options: M3LJSONListImporterOptions<{ author: string }> = {
@@ -140,7 +140,7 @@ function detectFormatFromBytes(bytes: Buffer): M3LJSONFormat {
  *
  * @example
  * ```typescript
- * import { M3LJSONListImporter } from "@m3l-automation/m3l-common/core";
+ * import { M3LJSONListImporter } from "@monte3l/m3l-common/core";
  *
  * const recordsPath = "./data/inputs/records.jsonl";
  * const importer = new M3LJSONListImporter<{ author: string }>({
@@ -197,7 +197,7 @@ export class M3LJSONListImporter<TItem>
    *
    * @example
    * ```typescript
-   * import { M3LJSONListImporter } from "@m3l-automation/m3l-common/core";
+   * import { M3LJSONListImporter } from "@monte3l/m3l-common/core";
    *
    * const recordsPath = "./data/inputs/records.json";
    * const importer = new M3LJSONListImporter<{ id: number }>({});
@@ -248,7 +248,7 @@ export class M3LJSONListImporter<TItem>
    *
    * @example
    * ```typescript
-   * import { M3LJSONListImporter } from "@m3l-automation/m3l-common/core";
+   * import { M3LJSONListImporter } from "@monte3l/m3l-common/core";
    *
    * const recordsPath = "./data/inputs/records.jsonl";
    * const importer = new M3LJSONListImporter<{ id: number }>({});

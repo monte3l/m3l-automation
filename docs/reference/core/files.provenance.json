@@ -8,55 +8,55 @@
         {
           "file": "packages/m3l-common/src/core/files/M3LFileCopier.ts",
           "symbol": "M3LFileCopier",
-          "blob": "f4ce67523f41a17f9a11c2f45c5e6e1eb1106de5"
+          "blob": "6156f6b5aee180a7916601eb44ff6de5472c35cd"
         },
         {
           "file": "packages/m3l-common/src/core/files/M3LFileCopier.ts",
           "symbol": "M3L_FILE_COPIER_DEFAULTS",
-          "blob": "f4ce67523f41a17f9a11c2f45c5e6e1eb1106de5"
+          "blob": "6156f6b5aee180a7916601eb44ff6de5472c35cd"
         },
         {
           "file": "packages/m3l-common/src/core/files/getDefaultSubdirForPathType.ts",
           "symbol": "getDefaultSubdirForPathType",
-          "blob": "623edb16f2f9b3d2c2c331f50306a1b2fc32fb87"
+          "blob": "10a62cd3032d878f98eb484e64d9bf7919315d27"
         },
         {
           "file": "packages/m3l-common/src/core/files/M3LFileCopier.ts",
           "symbol": "M3LFileCopierOptions",
-          "blob": "f4ce67523f41a17f9a11c2f45c5e6e1eb1106de5"
+          "blob": "6156f6b5aee180a7916601eb44ff6de5472c35cd"
         },
         {
           "file": "packages/m3l-common/src/core/files/M3LFileCopier.ts",
           "symbol": "M3LFileCopyResult",
-          "blob": "f4ce67523f41a17f9a11c2f45c5e6e1eb1106de5"
+          "blob": "6156f6b5aee180a7916601eb44ff6de5472c35cd"
         },
         {
           "file": "packages/m3l-common/src/core/files/M3LFileCopier.ts",
           "symbol": "M3LFileCopySkipReason",
-          "blob": "f4ce67523f41a17f9a11c2f45c5e6e1eb1106de5"
+          "blob": "6156f6b5aee180a7916601eb44ff6de5472c35cd"
         },
         {
           "file": "packages/m3l-common/src/core/files/M3LFileCopier.ts",
           "symbol": "M3LFileCopyReport",
-          "blob": "f4ce67523f41a17f9a11c2f45c5e6e1eb1106de5"
+          "blob": "6156f6b5aee180a7916601eb44ff6de5472c35cd"
         },
         {
           "file": "packages/m3l-common/src/core/files/M3LFileCopier.ts",
           "symbol": "M3LFileCopyReportSummary",
-          "blob": "f4ce67523f41a17f9a11c2f45c5e6e1eb1106de5"
+          "blob": "6156f6b5aee180a7916601eb44ff6de5472c35cd"
         },
         {
           "file": "packages/m3l-common/src/core/files/M3LFileCopyError.ts",
           "symbol": "M3LFileCopyError",
-          "blob": "8603d0a905add5662c50ce2d670ba95673e64898"
+          "blob": "b1055748600ef0065fab69e01291f87624a4af6a"
         },
         {
           "file": "packages/m3l-common/src/core/files/M3LInputFileReader.ts",
           "symbol": "M3LInputFileReader",
-          "blob": "4f46630044de24fdc5dd59f163694e00350db958"
+          "blob": "094283ce8415341c8faee07e3816a00011f347c0"
         }
       ],
-      "retrieved": "2026-07-28"
+      "retrieved": "2026-09-13"
     },
     {
       "heading": "Methods",
@@ -64,10 +64,10 @@
         {
           "file": "packages/m3l-common/src/core/files/M3LFileCopier.ts",
           "symbol": "M3LFileCopier",
-          "blob": "f4ce67523f41a17f9a11c2f45c5e6e1eb1106de5"
+          "blob": "6156f6b5aee180a7916601eb44ff6de5472c35cd"
         }
       ],
-      "retrieved": "2026-07-11"
+      "retrieved": "2026-09-13"
     },
     {
       "heading": "Reading an input file (`M3LInputFileReader`)",
@@ -75,15 +75,15 @@
         {
           "file": "packages/m3l-common/src/core/files/M3LInputFileReader.ts",
           "symbol": "M3LInputFileReader",
-          "blob": "4f46630044de24fdc5dd59f163694e00350db958"
+          "blob": "094283ce8415341c8faee07e3816a00011f347c0"
         },
         {
           "file": "packages/m3l-common/src/core/files/M3LInputFileReader.ts",
           "symbol": "M3LInputFileReaderOptions",
-          "blob": "4f46630044de24fdc5dd59f163694e00350db958"
+          "blob": "094283ce8415341c8faee07e3816a00011f347c0"
         }
       ],
-      "retrieved": "2026-07-28"
+      "retrieved": "2026-09-13"
     },
     {
       "heading": "Default subdirectory for a path type",
@@ -91,10 +91,10 @@
         {
           "file": "packages/m3l-common/src/core/files/getDefaultSubdirForPathType.ts",
           "symbol": "getDefaultSubdirForPathType",
-          "blob": "623edb16f2f9b3d2c2c331f50306a1b2fc32fb87"
+          "blob": "10a62cd3032d878f98eb484e64d9bf7919315d27"
         }
       ],
-      "retrieved": "2026-07-11"
+      "retrieved": "2026-09-13"
     },
     {
       "heading": "Notes and behavior",
@@ -102,20 +102,20 @@
         {
           "file": "packages/m3l-common/src/core/files/M3LFileCopier.ts",
           "symbol": "M3LFileCopier",
-          "blob": "f4ce67523f41a17f9a11c2f45c5e6e1eb1106de5"
+          "blob": "6156f6b5aee180a7916601eb44ff6de5472c35cd"
         },
         {
           "file": "packages/m3l-common/src/core/files/M3LFileCopier.ts",
           "symbol": "M3L_FILE_COPIER_DEFAULTS",
-          "blob": "f4ce67523f41a17f9a11c2f45c5e6e1eb1106de5"
+          "blob": "6156f6b5aee180a7916601eb44ff6de5472c35cd"
         },
         {
           "file": "packages/m3l-common/src/core/files/M3LFileCopyError.ts",
           "symbol": "M3LFileCopyError",
-          "blob": "8603d0a905add5662c50ce2d670ba95673e64898"
+          "blob": "b1055748600ef0065fab69e01291f87624a4af6a"
         }
       ],
-      "retrieved": "2026-07-11"
+      "retrieved": "2026-09-13"
     }
   ]
 }

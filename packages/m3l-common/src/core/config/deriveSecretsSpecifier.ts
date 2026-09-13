@@ -55,7 +55,7 @@ export interface M3LDeriveSecretsSpecifierOptions {
  *   M3LConfigSchema,
  *   M3LConfigParameter,
  *   M3LConfigParameterType,
- * } from "@m3l-automation/m3l-common/core";
+ * } from "@monte3l/m3l-common/core";
  *
  * const schema = new M3LConfigSchema([
  *   new M3LConfigParameter({

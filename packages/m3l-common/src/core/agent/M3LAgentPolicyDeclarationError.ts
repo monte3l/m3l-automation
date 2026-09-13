@@ -40,7 +40,7 @@ interface M3LAgentPolicyDeclarationErrorOptions {
  *   validateAgentPolicy,
  *   M3LAgentPolicyDeclarationError,
  *   M3LError,
- * } from "@m3l-automation/m3l-common/core";
+ * } from "@monte3l/m3l-common/core";
  *
  * try {
  *   validateAgentPolicy({ version: 2, scripts: [] });

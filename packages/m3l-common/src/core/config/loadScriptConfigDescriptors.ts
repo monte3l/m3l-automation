@@ -95,7 +95,7 @@ function isParameterLike(value: unknown): value is M3LConfigParameterLike {
  *
  * @example
  * ```ts
- * import { loadScriptConfigDescriptors } from "@m3l-automation/m3l-common/core";
+ * import { loadScriptConfigDescriptors } from "@monte3l/m3l-common/core";
  *
  * const descriptors = await loadScriptConfigDescriptors("/repo/scripts/foo");
  * // one M3LConfigParameterDescriptor per declared config parameter

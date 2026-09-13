@@ -42,7 +42,7 @@ interface M3LTextExtractionErrorOptions extends Omit<M3LErrorOptions, "code"> {
  *
  * @example
  * ```ts
- * import { M3LTextExtractionError } from "@m3l-automation/m3l-common/core";
+ * import { M3LTextExtractionError } from "@monte3l/m3l-common/core";
  *
  * try {
  *   await registry.extract("application/pdf", "./report.pdf");

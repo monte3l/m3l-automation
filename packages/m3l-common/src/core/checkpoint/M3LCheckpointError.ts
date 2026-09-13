@@ -124,7 +124,7 @@ interface M3LCheckpointErrorOptions {
  * import {
  *   M3LCheckpointStore,
  *   M3LCheckpointError,
- * } from "@m3l-automation/m3l-common/core";
+ * } from "@monte3l/m3l-common/core";
  *
  * declare const store: M3LCheckpointStore<{ readonly cursor?: string }>;
  *

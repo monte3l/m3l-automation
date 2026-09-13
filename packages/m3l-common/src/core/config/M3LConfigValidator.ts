@@ -24,7 +24,7 @@
  *
  * @example
  * ```ts
- * import type { M3LConfigValidator } from "@m3l-automation/m3l-common/core";
+ * import type { M3LConfigValidator } from "@monte3l/m3l-common/core";
  *
  * const isPositive: M3LConfigValidator<number> = (value) =>
  *   value > 0 ? true : "must be a positive number";
@@ -48,7 +48,7 @@ export type M3LConfigValidator<T> = (value: T) => true | string;
  *   M3LConfigParameter,
  *   M3LConfigParameterType,
  *   M3LConfigValidators,
- * } from "@m3l-automation/m3l-common/core";
+ * } from "@monte3l/m3l-common/core";
  *
  * const port = new M3LConfigParameter({
  *   name: "PORT",

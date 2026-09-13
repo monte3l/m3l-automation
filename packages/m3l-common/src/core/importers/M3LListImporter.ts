@@ -13,7 +13,7 @@
  *
  * @example
  * ```typescript
- * import type { M3LListImporterEvents } from "@m3l-automation/m3l-common/core";
+ * import type { M3LListImporterEvents } from "@monte3l/m3l-common/core";
  *
  * function onProgress(
  *   payload: M3LListImporterEvents<{ id: string }>["import:progress"],
@@ -56,7 +56,7 @@ export interface M3LListImporterEvents<TItem> {
  *
  * @example
  * ```typescript
- * import type { M3LListImporterResult } from "@m3l-automation/m3l-common/core";
+ * import type { M3LListImporterResult } from "@monte3l/m3l-common/core";
  *
  * function summarize(result: M3LListImporterResult<{ id: string }>): string {
  *   return `${String(result.items.length)} items in ${String(result.durationMs)}ms`;
@@ -90,7 +90,7 @@ export interface M3LListImporterResult<TItem> {
  *
  * @example
  * ```typescript
- * import { M3LJSONListImporter } from "@m3l-automation/m3l-common/core";
+ * import { M3LJSONListImporter } from "@monte3l/m3l-common/core";
  *
  * const importer = new M3LJSONListImporter<{ id: number }>({});
  * const stream = importer.importStream("./data/inputs/records.jsonl");
@@ -120,7 +120,7 @@ export interface M3LImportStreamSummary {
  *
  * @example
  * ```typescript
- * import type { M3LListImporter } from "@m3l-automation/m3l-common/core";
+ * import type { M3LListImporter } from "@monte3l/m3l-common/core";
  *
  * async function importAll<TItem>(
  *   importer: M3LListImporter<TItem>,

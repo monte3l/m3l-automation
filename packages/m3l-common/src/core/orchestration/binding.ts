@@ -19,7 +19,7 @@ import type { M3LStepReference } from "./step-reference.js";
  *
  * @example
  * ```ts
- * import type { M3LBindingExpectedType } from "@m3l-automation/m3l-common/core";
+ * import type { M3LBindingExpectedType } from "@monte3l/m3l-common/core";
  *
  * function isScalar(expectedType: M3LBindingExpectedType): boolean {
  *   return expectedType !== "object";
@@ -38,7 +38,7 @@ export type M3LBindingExpectedType = "string" | "number" | "boolean" | "object";
  * import type {
  *   M3LStepBinding,
  *   M3LStepReference,
- * } from "@m3l-automation/m3l-common/core";
+ * } from "@monte3l/m3l-common/core";
  *
  * function describe(
  *   binding: M3LStepBinding,
@@ -105,7 +105,7 @@ function matchesExpectedType(
  *
  * @example
  * ```ts
- * import { validateBindingValue } from "@m3l-automation/m3l-common/core";
+ * import { validateBindingValue } from "@monte3l/m3l-common/core";
  *
  * validateBindingValue("queue-a", { expectedType: "string", multiSelect: false }); // true
  * validateBindingValue([1, 2], { expectedType: "string", multiSelect: true }); // false

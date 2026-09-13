@@ -29,7 +29,7 @@ import type {
  *
  * @example
  * ```ts
- * import type { Core } from "@m3l-automation/m3l-common";
+ * import type { Core } from "@monte3l/m3l-common";
  *
  * const loop: Core.M3LProcedureLoop = { reason: "retry until quiet", maxRevisits: 3 };
  * ```
@@ -68,7 +68,7 @@ export type M3LProcedureFlow<TJump extends string = never> =
  *
  * @example
  * ```ts
- * import type { Core } from "@m3l-automation/m3l-common";
+ * import type { Core } from "@monte3l/m3l-common";
  *
  * function execute(): Core.M3LProcedureStepResult<Core.M3LProcedureShape> {
  *   return { flow: "continue", output: 3 };
@@ -99,7 +99,7 @@ export interface M3LProcedureStepResult<
  *
  * @example
  * ```ts
- * import type { Core } from "@m3l-automation/m3l-common";
+ * import type { Core } from "@monte3l/m3l-common";
  *
  * interface Triage extends Core.M3LProcedureShape {
  *   deps: Record<string, never>;
@@ -166,7 +166,7 @@ export interface M3LProcedureStep<
  *
  * @example
  * ```ts
- * import type { Core } from "@m3l-automation/m3l-common";
+ * import type { Core } from "@monte3l/m3l-common";
  *
  * function readCount(context: Core.M3LProcedureContext<Core.M3LProcedureShape>): number {
  *   return context.iteration;

@@ -32,8 +32,8 @@ import type {
  * import {
  *   M3L_AGENT_MAX_LOG_ENTRY_BYTES,
  *   serializeAgentDecisionLogEntry,
- * } from "@m3l-automation/m3l-common/core";
- * import type { M3LAgentDecisionLogEntry } from "@m3l-automation/m3l-common/core";
+ * } from "@monte3l/m3l-common/core";
+ * import type { M3LAgentDecisionLogEntry } from "@monte3l/m3l-common/core";
  *
  * function isOversized(entry: M3LAgentDecisionLogEntry): boolean {
  *   const line = serializeAgentDecisionLogEntry(entry);
@@ -61,7 +61,7 @@ export const M3L_AGENT_MAX_LOG_ENTRY_BYTES = 65536;
  *
  * @example
  * ```ts
- * import type { M3LAgentIdentity } from "@m3l-automation/m3l-common/core";
+ * import type { M3LAgentIdentity } from "@monte3l/m3l-common/core";
  *
  * const identity: M3LAgentIdentity = {
  *   name: "release-bot",
@@ -91,7 +91,7 @@ export interface M3LAgentIdentity {
  *
  * @example
  * ```ts
- * import type { M3LAgentDecisionOutcome } from "@m3l-automation/m3l-common/core";
+ * import type { M3LAgentDecisionOutcome } from "@monte3l/m3l-common/core";
  *
  * const outcome: M3LAgentDecisionOutcome = { dryRun: false, exitCode: 0 };
  * ```
@@ -123,7 +123,7 @@ export interface M3LAgentDecisionOutcome {
  *
  * @example
  * ```ts
- * import type { M3LAgentDecisionLogEntry } from "@m3l-automation/m3l-common/core";
+ * import type { M3LAgentDecisionLogEntry } from "@monte3l/m3l-common/core";
  *
  * function summarize(entry: M3LAgentDecisionLogEntry): string {
  *   return `${entry.timestamp} ${entry.identity.name} ${entry.verdict} ${entry.script}`;
@@ -174,8 +174,8 @@ export interface M3LAgentDecisionLogEntry {
  *
  * @example
  * ```ts
- * import type { M3LAgentDecisionLogEntryOptions } from "@m3l-automation/m3l-common/core";
- * import { evaluateAgentAction, validateAgentPolicy } from "@m3l-automation/m3l-common/core";
+ * import type { M3LAgentDecisionLogEntryOptions } from "@monte3l/m3l-common/core";
+ * import { evaluateAgentAction, validateAgentPolicy } from "@monte3l/m3l-common/core";
  *
  * const policy = validateAgentPolicy({
  *   version: 1,

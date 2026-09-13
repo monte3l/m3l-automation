@@ -1,14 +1,14 @@
 /**
- * `@m3l-automation/m3l-common` — main entry / public barrel.
+ * `@monte3l/m3l-common` — main entry / public barrel.
  *
  * The library exposes two namespaces. Import the one you need:
  *
  * @example
  * ```typescript
- * import { Core, AWS } from "@m3l-automation/m3l-common";
+ * import { Core, AWS } from "@monte3l/m3l-common";
  * // or, narrower:
- * import * as Core from "@m3l-automation/m3l-common/core";
- * import * as AWS from "@m3l-automation/m3l-common/aws";
+ * import * as Core from "@monte3l/m3l-common/core";
+ * import * as AWS from "@monte3l/m3l-common/aws";
  * ```
  *
  * @packageDocumentation

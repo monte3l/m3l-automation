@@ -1,5 +1,5 @@
 /**
- * Typed error hierarchy for `@m3l-automation/m3l-common`.
+ * Typed error hierarchy for `@monte3l/m3l-common`.
  *
  * All library errors extend `M3LError` so callers can `catch (e)` and narrow
  * by `instanceof M3LError`, then further by `e.code` or a subclass check.
@@ -316,7 +316,7 @@ function serializeM3LError(
  *
  * @example
  * ```ts
- * import type { M3LErrorCauseJSON } from "@m3l-automation/m3l-common/core";
+ * import type { M3LErrorCauseJSON } from "@monte3l/m3l-common/core";
  *
  * const terminal: M3LErrorCauseJSON = { name: "Error" };
  * ```
@@ -342,7 +342,7 @@ export interface M3LErrorCauseJSON {
  *
  * @example
  * ```ts
- * import type { M3LErrorJSON } from "@m3l-automation/m3l-common/core";
+ * import type { M3LErrorJSON } from "@monte3l/m3l-common/core";
  *
  * function logSafely(json: M3LErrorJSON): void {
  *   console.error(JSON.stringify(json));
@@ -378,7 +378,7 @@ export interface M3LErrorJSON {
 }
 
 /**
- * Base error class for the `@m3l-automation/m3l-common` library.
+ * Base error class for the `@monte3l/m3l-common` library.
  *
  * Extends the built-in `Error` with a mandatory machine-readable `code`,
  * an optional structured `context` bag, and proper cause-chaining via

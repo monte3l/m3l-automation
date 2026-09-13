@@ -46,7 +46,7 @@ import type { M3LScriptRunOptions } from "./M3LScriptOptions.js";
  *
  * @example
  * ```ts
- * import type { M3LRunScriptOptions } from "@m3l-automation/m3l-common/core";
+ * import type { M3LRunScriptOptions } from "@monte3l/m3l-common/core";
  *
  * const options: M3LRunScriptOptions = { dryRun: true, report: false };
  * ```
@@ -485,8 +485,8 @@ async function handleRunFailure(
  *
  * @example
  * ```ts
- * import { M3LScript, runScript } from "@m3l-automation/m3l-common/core";
- * import { M3LError } from "@m3l-automation/m3l-common/core";
+ * import { M3LScript, runScript } from "@monte3l/m3l-common/core";
+ * import { M3LError } from "@monte3l/m3l-common/core";
  *
  * const script = new M3LScript({
  *   metadata: { name: "import-users", version: "1.0.0" },

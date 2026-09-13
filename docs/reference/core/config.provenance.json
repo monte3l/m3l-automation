@@ -8,235 +8,235 @@
         {
           "file": "packages/m3l-common/src/core/config/M3LConfig.ts",
           "symbol": "M3LConfig",
-          "blob": "3610973eb15b572131b4a3546595feff7682e6b2"
+          "blob": "4c55de8d704785a9aa1c38ebe3bb75089e6e7aef"
         },
         {
           "file": "packages/m3l-common/src/core/config/M3LConfigReader.ts",
           "symbol": "M3LConfigReader",
-          "blob": "2f22135f503cb66e79531e3c4b80dbd957e2bea5"
+          "blob": "b416181e537649280516098acd03ee423cae907a"
         },
         {
           "file": "packages/m3l-common/src/core/config/M3LConfigReader.ts",
           "symbol": "M3LConfigResolution",
-          "blob": "2f22135f503cb66e79531e3c4b80dbd957e2bea5"
+          "blob": "b416181e537649280516098acd03ee423cae907a"
         },
         {
           "file": "packages/m3l-common/src/core/config/M3LConfigProvider.ts",
           "symbol": "M3LConfigProvider",
-          "blob": "18046b79d1dc86e00f8c12aa21cb702083b04cab"
+          "blob": "99292b199bb1302672d725be2318503a2afc3c7c"
         },
         {
           "file": "packages/m3l-common/src/core/config/M3LConfigParameter.ts",
           "symbol": "M3LConfigParameter",
-          "blob": "509918de2da71918d5eb46cd12cf35ab39298618"
+          "blob": "ee4c4996d656e323c991c5537fc614efc19431eb"
         },
         {
           "file": "packages/m3l-common/src/core/config/M3LConfigParameterType.ts",
           "symbol": "M3LConfigParameterType",
-          "blob": "851afd725425003f938e1b53167e12f0438dbe6f"
+          "blob": "ac419568721d5c06a5cd449dba07cdcb00096648"
         },
         {
           "file": "packages/m3l-common/src/core/config/M3LConfigHelpFormatter.ts",
           "symbol": "M3LConfigHelpFormatter",
-          "blob": "8a6345fdaa74e6ce0f78b354dfcb08b4bea0a50f"
+          "blob": "01b1b65a6083ebd7b193164564cae3b7a90ec48f"
         },
         {
           "file": "packages/m3l-common/src/core/config/M3LConfigParameterType.ts",
           "symbol": "M3LCoercedValue",
-          "blob": "851afd725425003f938e1b53167e12f0438dbe6f"
+          "blob": "ac419568721d5c06a5cd449dba07cdcb00096648"
         },
         {
           "file": "packages/m3l-common/src/core/config/M3LConfigSchema.ts",
           "symbol": "M3LConfigSchema",
-          "blob": "6192cf5f6738fd10bbb6e61867ce8e8139137680"
+          "blob": "573ff720d88a5f7a9a8549696b2c357469571ea3"
         },
         {
           "file": "packages/m3l-common/src/core/config/M3LCommandLineConfigProvider.ts",
           "symbol": "M3LCommandLineConfigProvider",
-          "blob": "f8a6031ba14c1c154d046fda37b2f50bb2e5daa3"
+          "blob": "400ee045ac4215eb5dc35afa4241a3bcd3e3076f"
         },
         {
           "file": "packages/m3l-common/src/core/config/M3LJSONConfigProvider.ts",
           "symbol": "M3LJSONConfigProvider",
-          "blob": "7ea3a3ecde92485f5db027849372de1caf62ce7b"
+          "blob": "53d95a16037ff1c5de3d3401c6ecf4b7ef3d5b25"
         },
         {
           "file": "packages/m3l-common/src/core/config/M3LYAMLConfigProvider.ts",
           "symbol": "M3LYAMLConfigProvider",
-          "blob": "3f7e0b69ec24201afa7d480df8fef907f3f588d9"
+          "blob": "17aa45bfa15c91943a11c719883c7c219a8c5e24"
         },
         {
           "file": "packages/m3l-common/src/core/config/M3LEnvironmentConfigProvider.ts",
           "symbol": "M3LEnvironmentConfigProvider",
-          "blob": "d8444bf67b93723e839f7eaf25ab759100832634"
+          "blob": "32a27c32ca5367783dfdaef758f8779c8a0a7527"
         },
         {
           "file": "packages/m3l-common/src/core/config/M3LInMemoryConfigProvider.ts",
           "symbol": "M3LInMemoryConfigProvider",
-          "blob": "e908df90a2bcbb38c711e7ae90e90300e577510b"
+          "blob": "e75ed9281867b7f3da4e79a44492fe882ee4d49c"
         },
         {
           "file": "packages/m3l-common/src/core/config/M3LLambdaEventConfigProvider.ts",
           "symbol": "M3LLambdaEventConfigProvider",
-          "blob": "8daed12940ec6f61188ece9531981cb08049e019"
+          "blob": "fe3f734bc7c926fb653f0828146e99cb84026140"
         },
         {
           "file": "packages/m3l-common/src/core/config/M3LPresetConfigProvider.ts",
           "symbol": "M3LPresetConfigProvider",
-          "blob": "e7dcdaab968abdd9dcb2091aca2369d3d7f89862"
+          "blob": "e3c15dde43f6eb22895d2dea44b719cd14df6461"
         },
         {
           "file": "packages/m3l-common/src/core/config/coerceConfigValue.ts",
           "symbol": "coerceConfigValue",
-          "blob": "8bf741804c93308af5dfc67fbc447ae98fd63212"
+          "blob": "b4125a6881f4251bce0eec31da340206690d2329"
         },
         {
           "file": "packages/m3l-common/src/core/config/M3LSecretsSpecifier.ts",
           "symbol": "M3LSecretsSpecifier",
-          "blob": "3646b174c0e160ad10c1275c003e82604cf1a6a8"
+          "blob": "04f965a642f2a4229a1e59f3bd16bbffe9c7f7fc"
         },
         {
           "file": "packages/m3l-common/src/core/config/M3LUnknownParameterDetector.ts",
           "symbol": "M3LUnknownParameterDetector",
-          "blob": "c0027909605b1350e697c4e69fe939f1e5947be7"
+          "blob": "69cfd5d11343182d5d432762fe2c8516d93f180b"
         },
         {
           "file": "packages/m3l-common/src/core/config/M3LUnknownParameterDetector.ts",
           "symbol": "M3LUnknownParameterSuggestion",
-          "blob": "c0027909605b1350e697c4e69fe939f1e5947be7"
+          "blob": "69cfd5d11343182d5d432762fe2c8516d93f180b"
         },
         {
           "file": "packages/m3l-common/src/core/config/M3LUnknownParameterDetector.ts",
           "symbol": "M3LUnknownParameterSuggestOptions",
-          "blob": "c0027909605b1350e697c4e69fe939f1e5947be7"
+          "blob": "69cfd5d11343182d5d432762fe2c8516d93f180b"
         },
         {
           "file": "packages/m3l-common/src/core/config/M3LConfigCoercionError.ts",
           "symbol": "M3LConfigCoercionError",
-          "blob": "65f07c1651fe96e76e293dc8072d76a6bab947f9"
+          "blob": "68b75d0a6227177a801e5616f5be13084fc0806d"
         },
         {
           "file": "packages/m3l-common/src/core/config/M3LConfigParseError.ts",
           "symbol": "M3LConfigParseError",
-          "blob": "6ebe34a16aa77e5341adeb6c7ccf31548d7aeeaa"
+          "blob": "9edce95cc7109ccfadec5a5e1e9877b79a881f51"
         },
         {
           "file": "packages/m3l-common/src/core/config/M3LUnsafeConfigKeyError.ts",
           "symbol": "M3LUnsafeConfigKeyError",
-          "blob": "28b50f112552ca2406ca76cbd13aa4c52c0aad16"
+          "blob": "726966899fcabec528bb6a25b67f4490be21a361"
         },
         {
           "file": "packages/m3l-common/src/core/config/M3LConfigValidator.ts",
           "symbol": "M3LConfigValidator",
-          "blob": "1de1944a83d1acd579ebfd51df5e7853666ea9d4"
+          "blob": "45eb5a03fa4859b7be1bf74b6b96c3fba0d20ac6"
         },
         {
           "file": "packages/m3l-common/src/core/config/M3LConfigValidator.ts",
           "symbol": "M3LConfigValidators",
-          "blob": "1de1944a83d1acd579ebfd51df5e7853666ea9d4"
+          "blob": "45eb5a03fa4859b7be1bf74b6b96c3fba0d20ac6"
         },
         {
           "file": "packages/m3l-common/src/core/config/M3LConfigValidationError.ts",
           "symbol": "M3LConfigValidationError",
-          "blob": "fb6c05c7990b40d02ad26d7938665bab9afbaf6e"
+          "blob": "a106be14e0870035ab179384153d8bc58b712131"
         },
         {
           "file": "packages/m3l-common/src/core/config/M3LConfigMissingError.ts",
           "symbol": "M3LConfigMissingError",
-          "blob": "d2c6486bb9c6e7c0051bbceee332c05f19cb522b"
+          "blob": "d2c5b81db6f68e57d83112d4fd41e3eb28490d46"
         },
         {
           "file": "packages/m3l-common/src/core/config/M3LConfigAccessor.ts",
           "symbol": "M3LConfigAccessor",
-          "blob": "a180f8a36159b37014bc48ef993af037fc2d47bc"
+          "blob": "b6b7a2e6b1f9fb79c48b02ce503059ac3574de1c"
         },
         {
           "file": "packages/m3l-common/src/core/config/M3LConfigSchemaValidator.ts",
           "symbol": "M3LConfigSchemaValidator",
-          "blob": "59bdba62320799392ab10640c9e6e56a8258522b"
+          "blob": "2f0672747ff08cde01602ee174715880faa68b39"
         },
         {
           "file": "packages/m3l-common/src/core/config/deriveEnvVarName.ts",
           "symbol": "deriveEnvVarName",
-          "blob": "09758ee4421f1135d64b63642c0fa5d742c87477"
+          "blob": "689bb6f14059f45e73d8c8f877ccf701c28e5bd6"
         },
         {
           "file": "packages/m3l-common/src/core/config/deriveSecretsSpecifier.ts",
           "symbol": "deriveSecretsSpecifier",
-          "blob": "7e6f72e6b149f6cab73374391d872f6a13439c7a"
+          "blob": "53588372457ba93ff2284c9aae25adab658f653d"
         },
         {
           "file": "packages/m3l-common/src/core/config/deriveSecretsSpecifier.ts",
           "symbol": "M3LDeriveSecretsSpecifierOptions",
-          "blob": "7e6f72e6b149f6cab73374391d872f6a13439c7a"
+          "blob": "53588372457ba93ff2284c9aae25adab658f653d"
         },
         {
           "file": "packages/m3l-common/src/core/config/M3LConfigSchemaValidator.ts",
           "symbol": "M3LConfigSchemaValidators",
-          "blob": "59bdba62320799392ab10640c9e6e56a8258522b"
+          "blob": "2f0672747ff08cde01602ee174715880faa68b39"
         },
         {
           "file": "packages/m3l-common/src/core/config/M3LOperationDeclaration.ts",
           "symbol": "M3LOperationDeclaration",
-          "blob": "b9f214fe092d318f15365b19cb1ad73c7d301679"
+          "blob": "e7bcbf5e25ba96fc2aeddebd97a1a91e7adf81d6"
         },
         {
           "file": "packages/m3l-common/src/core/config/M3LOperationDeclaration.ts",
           "symbol": "M3LOperationDeclarationList",
-          "blob": "b9f214fe092d318f15365b19cb1ad73c7d301679"
+          "blob": "e7bcbf5e25ba96fc2aeddebd97a1a91e7adf81d6"
         },
         {
           "file": "packages/m3l-common/src/core/config/M3LOperationDeclaration.ts",
           "symbol": "deriveOperationNames",
-          "blob": "b9f214fe092d318f15365b19cb1ad73c7d301679"
+          "blob": "e7bcbf5e25ba96fc2aeddebd97a1a91e7adf81d6"
         },
         {
           "file": "packages/m3l-common/src/core/config/deriveOperationValidators.ts",
           "symbol": "deriveOperationValidators",
-          "blob": "e8f7d200eda60dddeddbee9ee093bf3fc2f6d361"
+          "blob": "4f8c4d822c70fb10295c54ffa6e3f066b8f98452"
         },
         {
           "file": "packages/m3l-common/src/core/config/M3LConfigParameterDescriptor.ts",
           "symbol": "M3LConfigParameterDescriptor",
-          "blob": "8b5e1a83171efed5acabfedc1ff7d2364ce128d0"
+          "blob": "e1dcaf9479efd099a895f9a2ad7bc2057147d7c5"
         },
         {
           "file": "packages/m3l-common/src/core/config/M3LConfigParameterDescriptor.ts",
           "symbol": "M3LConfigOperationDescriptor",
-          "blob": "8b5e1a83171efed5acabfedc1ff7d2364ce128d0"
+          "blob": "e1dcaf9479efd099a895f9a2ad7bc2057147d7c5"
         },
         {
           "file": "packages/m3l-common/src/core/config/M3LConfigParameterDescriptor.ts",
           "symbol": "M3LConfigParameterLike",
-          "blob": "8b5e1a83171efed5acabfedc1ff7d2364ce128d0"
+          "blob": "e1dcaf9479efd099a895f9a2ad7bc2057147d7c5"
         },
         {
           "file": "packages/m3l-common/src/core/config/M3LConfigParameterDescriptor.ts",
           "symbol": "M3LConfigParameterValue",
-          "blob": "8b5e1a83171efed5acabfedc1ff7d2364ce128d0"
+          "blob": "e1dcaf9479efd099a895f9a2ad7bc2057147d7c5"
         },
         {
           "file": "packages/m3l-common/src/core/config/M3LConfigParameterDescriptor.ts",
           "symbol": "describeConfigParameters",
-          "blob": "8b5e1a83171efed5acabfedc1ff7d2364ce128d0"
+          "blob": "e1dcaf9479efd099a895f9a2ad7bc2057147d7c5"
         },
         {
           "file": "packages/m3l-common/src/core/config/M3LConfigModuleLocator.ts",
           "symbol": "M3LConfigModuleLocation",
-          "blob": "6eff0db836be68c5c3e76168df320e7a7c88f8a6"
+          "blob": "8cea568090dcf42ede150c18ccc9bc32752eae40"
         },
         {
           "file": "packages/m3l-common/src/core/config/M3LConfigModuleLocator.ts",
           "symbol": "resolveConfigModulePath",
-          "blob": "6eff0db836be68c5c3e76168df320e7a7c88f8a6"
+          "blob": "8cea568090dcf42ede150c18ccc9bc32752eae40"
         },
         {
           "file": "packages/m3l-common/src/core/config/loadScriptConfigDescriptors.ts",
           "symbol": "loadScriptConfigDescriptors",
-          "blob": "6974fb8bec2939cb0b05f82e659801d745e17348"
+          "blob": "1624adb93a2549f29f0a6a33a6c738beb984ebb1"
         }
       ],
-      "retrieved": "2026-09-01"
+      "retrieved": "2026-09-13"
     },
     {
       "heading": "Defensive typed reads (`M3LConfigAccessor`)",
@@ -244,15 +244,15 @@
         {
           "file": "packages/m3l-common/src/core/config/M3LConfigAccessor.ts",
           "symbol": "M3LConfigAccessor",
-          "blob": "a180f8a36159b37014bc48ef993af037fc2d47bc"
+          "blob": "b6b7a2e6b1f9fb79c48b02ce503059ac3574de1c"
         },
         {
           "file": "packages/m3l-common/src/core/config/M3LConfigAccessor.ts",
           "symbol": "M3LConfigAccessorOptions",
-          "blob": "a180f8a36159b37014bc48ef993af037fc2d47bc"
+          "blob": "b6b7a2e6b1f9fb79c48b02ce503059ac3574de1c"
         }
       ],
-      "retrieved": "2026-07-28"
+      "retrieved": "2026-09-13"
     },
     {
       "heading": "Schema-time validation",
@@ -260,45 +260,45 @@
         {
           "file": "packages/m3l-common/src/core/config/M3LConfigValidator.ts",
           "symbol": "M3LConfigValidator",
-          "blob": "1de1944a83d1acd579ebfd51df5e7853666ea9d4"
+          "blob": "45eb5a03fa4859b7be1bf74b6b96c3fba0d20ac6"
         },
         {
           "file": "packages/m3l-common/src/core/config/M3LConfigValidator.ts",
           "symbol": "M3LConfigValidators",
-          "blob": "1de1944a83d1acd579ebfd51df5e7853666ea9d4"
+          "blob": "45eb5a03fa4859b7be1bf74b6b96c3fba0d20ac6"
         },
         {
           "file": "packages/m3l-common/src/core/config/M3LConfigValidationError.ts",
           "symbol": "M3LConfigValidationError",
-          "blob": "fb6c05c7990b40d02ad26d7938665bab9afbaf6e"
+          "blob": "a106be14e0870035ab179384153d8bc58b712131"
         },
         {
           "file": "packages/m3l-common/src/core/config/M3LConfigParameter.ts",
           "symbol": "M3LConfigParameter",
-          "blob": "509918de2da71918d5eb46cd12cf35ab39298618"
+          "blob": "ee4c4996d656e323c991c5537fc614efc19431eb"
         },
         {
           "file": "packages/m3l-common/src/core/config/M3LConfigMissingError.ts",
           "symbol": "M3LConfigMissingError",
-          "blob": "d2c6486bb9c6e7c0051bbceee332c05f19cb522b"
+          "blob": "d2c5b81db6f68e57d83112d4fd41e3eb28490d46"
         },
         {
           "file": "packages/m3l-common/src/core/config/M3LConfigSchemaValidator.ts",
           "symbol": "M3LConfigSchemaValidator",
-          "blob": "59bdba62320799392ab10640c9e6e56a8258522b"
+          "blob": "2f0672747ff08cde01602ee174715880faa68b39"
         },
         {
           "file": "packages/m3l-common/src/core/config/M3LConfigSchema.ts",
           "symbol": "M3LConfigSchema",
-          "blob": "6192cf5f6738fd10bbb6e61867ce8e8139137680"
+          "blob": "573ff720d88a5f7a9a8549696b2c357469571ea3"
         },
         {
           "file": "packages/m3l-common/src/core/config/M3LConfigSchemaValidator.ts",
           "symbol": "M3LConfigSchemaValidators",
-          "blob": "59bdba62320799392ab10640c9e6e56a8258522b"
+          "blob": "2f0672747ff08cde01602ee174715880faa68b39"
         }
       ],
-      "retrieved": "2026-08-26"
+      "retrieved": "2026-09-13"
     },
     {
       "heading": "Descriptions and `--help` rendering",
@@ -306,15 +306,15 @@
         {
           "file": "packages/m3l-common/src/core/config/M3LConfigParameter.ts",
           "symbol": "M3LConfigParameter",
-          "blob": "509918de2da71918d5eb46cd12cf35ab39298618"
+          "blob": "ee4c4996d656e323c991c5537fc614efc19431eb"
         },
         {
           "file": "packages/m3l-common/src/core/config/M3LConfigHelpFormatter.ts",
           "symbol": "M3LConfigHelpFormatter",
-          "blob": "8a6345fdaa74e6ce0f78b354dfcb08b4bea0a50f"
+          "blob": "01b1b65a6083ebd7b193164564cae3b7a90ec48f"
         }
       ],
-      "retrieved": "2026-08-26"
+      "retrieved": "2026-09-13"
     },
     {
       "heading": "Declarative operations",
@@ -322,35 +322,35 @@
         {
           "file": "packages/m3l-common/src/core/config/M3LOperationDeclaration.ts",
           "symbol": "M3LOperationDeclaration",
-          "blob": "b9f214fe092d318f15365b19cb1ad73c7d301679"
+          "blob": "e7bcbf5e25ba96fc2aeddebd97a1a91e7adf81d6"
         },
         {
           "file": "packages/m3l-common/src/core/config/M3LOperationDeclaration.ts",
           "symbol": "M3LOperationDeclarationList",
-          "blob": "b9f214fe092d318f15365b19cb1ad73c7d301679"
+          "blob": "e7bcbf5e25ba96fc2aeddebd97a1a91e7adf81d6"
         },
         {
           "file": "packages/m3l-common/src/core/config/M3LOperationDeclaration.ts",
           "symbol": "deriveOperationNames",
-          "blob": "b9f214fe092d318f15365b19cb1ad73c7d301679"
+          "blob": "e7bcbf5e25ba96fc2aeddebd97a1a91e7adf81d6"
         },
         {
           "file": "packages/m3l-common/src/core/config/deriveOperationValidators.ts",
           "symbol": "deriveOperationValidators",
-          "blob": "e8f7d200eda60dddeddbee9ee093bf3fc2f6d361"
+          "blob": "4f8c4d822c70fb10295c54ffa6e3f066b8f98452"
         },
         {
           "file": "packages/m3l-common/src/core/config/M3LConfigParameter.ts",
           "symbol": "M3LConfigParameter",
-          "blob": "509918de2da71918d5eb46cd12cf35ab39298618"
+          "blob": "ee4c4996d656e323c991c5537fc614efc19431eb"
         },
         {
           "file": "packages/m3l-common/src/core/config/M3LConfigHelpFormatter.ts",
           "symbol": "M3LConfigHelpFormatter",
-          "blob": "8a6345fdaa74e6ce0f78b354dfcb08b4bea0a50f"
+          "blob": "01b1b65a6083ebd7b193164564cae3b7a90ec48f"
         }
       ],
-      "retrieved": "2026-08-26"
+      "retrieved": "2026-09-13"
     },
     {
       "heading": "Typo suggestions",
@@ -358,20 +358,20 @@
         {
           "file": "packages/m3l-common/src/core/config/M3LUnknownParameterDetector.ts",
           "symbol": "M3LUnknownParameterDetector",
-          "blob": "c0027909605b1350e697c4e69fe939f1e5947be7"
+          "blob": "69cfd5d11343182d5d432762fe2c8516d93f180b"
         },
         {
           "file": "packages/m3l-common/src/core/config/M3LUnknownParameterDetector.ts",
           "symbol": "M3LUnknownParameterSuggestion",
-          "blob": "c0027909605b1350e697c4e69fe939f1e5947be7"
+          "blob": "69cfd5d11343182d5d432762fe2c8516d93f180b"
         },
         {
           "file": "packages/m3l-common/src/core/config/M3LUnknownParameterDetector.ts",
           "symbol": "M3LUnknownParameterSuggestOptions",
-          "blob": "c0027909605b1350e697c4e69fe939f1e5947be7"
+          "blob": "69cfd5d11343182d5d432762fe2c8516d93f180b"
         }
       ],
-      "retrieved": "2026-08-11"
+      "retrieved": "2026-09-13"
     },
     {
       "heading": "Source tracking",
@@ -379,10 +379,10 @@
         {
           "file": "packages/m3l-common/src/core/config/M3LConfig.ts",
           "symbol": "M3LConfig",
-          "blob": "3610973eb15b572131b4a3546595feff7682e6b2"
+          "blob": "4c55de8d704785a9aa1c38ebe3bb75089e6e7aef"
         }
       ],
-      "retrieved": "2026-07-11"
+      "retrieved": "2026-09-13"
     },
     {
       "heading": "Notes and behavior",
@@ -390,20 +390,20 @@
         {
           "file": "packages/m3l-common/src/core/config/M3LSecretsSpecifier.ts",
           "symbol": "M3LSecretsSpecifier",
-          "blob": "3646b174c0e160ad10c1275c003e82604cf1a6a8"
+          "blob": "04f965a642f2a4229a1e59f3bd16bbffe9c7f7fc"
         },
         {
           "file": "packages/m3l-common/src/core/config/M3LUnknownParameterDetector.ts",
           "symbol": "M3LUnknownParameterDetector",
-          "blob": "c0027909605b1350e697c4e69fe939f1e5947be7"
+          "blob": "69cfd5d11343182d5d432762fe2c8516d93f180b"
         },
         {
           "file": "packages/m3l-common/src/core/config/M3LConfigHelpFormatter.ts",
           "symbol": "M3LConfigHelpFormatter",
-          "blob": "8a6345fdaa74e6ce0f78b354dfcb08b4bea0a50f"
+          "blob": "01b1b65a6083ebd7b193164564cae3b7a90ec48f"
         }
       ],
-      "retrieved": "2026-08-26"
+      "retrieved": "2026-09-13"
     },
     {
       "heading": "Script introspection",
@@ -411,45 +411,45 @@
         {
           "file": "packages/m3l-common/src/core/config/M3LConfigParameterDescriptor.ts",
           "symbol": "M3LConfigParameterDescriptor",
-          "blob": "8b5e1a83171efed5acabfedc1ff7d2364ce128d0"
+          "blob": "e1dcaf9479efd099a895f9a2ad7bc2057147d7c5"
         },
         {
           "file": "packages/m3l-common/src/core/config/M3LConfigParameterDescriptor.ts",
           "symbol": "M3LConfigOperationDescriptor",
-          "blob": "8b5e1a83171efed5acabfedc1ff7d2364ce128d0"
+          "blob": "e1dcaf9479efd099a895f9a2ad7bc2057147d7c5"
         },
         {
           "file": "packages/m3l-common/src/core/config/M3LConfigParameterDescriptor.ts",
           "symbol": "M3LConfigParameterLike",
-          "blob": "8b5e1a83171efed5acabfedc1ff7d2364ce128d0"
+          "blob": "e1dcaf9479efd099a895f9a2ad7bc2057147d7c5"
         },
         {
           "file": "packages/m3l-common/src/core/config/M3LConfigParameterDescriptor.ts",
           "symbol": "M3LConfigParameterValue",
-          "blob": "8b5e1a83171efed5acabfedc1ff7d2364ce128d0"
+          "blob": "e1dcaf9479efd099a895f9a2ad7bc2057147d7c5"
         },
         {
           "file": "packages/m3l-common/src/core/config/M3LConfigParameterDescriptor.ts",
           "symbol": "describeConfigParameters",
-          "blob": "8b5e1a83171efed5acabfedc1ff7d2364ce128d0"
+          "blob": "e1dcaf9479efd099a895f9a2ad7bc2057147d7c5"
         },
         {
           "file": "packages/m3l-common/src/core/config/M3LConfigModuleLocator.ts",
           "symbol": "M3LConfigModuleLocation",
-          "blob": "6eff0db836be68c5c3e76168df320e7a7c88f8a6"
+          "blob": "8cea568090dcf42ede150c18ccc9bc32752eae40"
         },
         {
           "file": "packages/m3l-common/src/core/config/M3LConfigModuleLocator.ts",
           "symbol": "resolveConfigModulePath",
-          "blob": "6eff0db836be68c5c3e76168df320e7a7c88f8a6"
+          "blob": "8cea568090dcf42ede150c18ccc9bc32752eae40"
         },
         {
           "file": "packages/m3l-common/src/core/config/loadScriptConfigDescriptors.ts",
           "symbol": "loadScriptConfigDescriptors",
-          "blob": "6974fb8bec2939cb0b05f82e659801d745e17348"
+          "blob": "1624adb93a2549f29f0a6a33a6c738beb984ebb1"
         }
       ],
-      "retrieved": "2026-08-30"
+      "retrieved": "2026-09-13"
     }
   ]
 }

@@ -66,7 +66,7 @@ import type { M3LAgentPolicy } from "./policy-types.js";
  *
  * @example
  * ```ts
- * import { validateAgentPolicy } from "@m3l-automation/m3l-common/core";
+ * import { validateAgentPolicy } from "@monte3l/m3l-common/core";
  *
  * const policy = validateAgentPolicy({
  *   version: 1,

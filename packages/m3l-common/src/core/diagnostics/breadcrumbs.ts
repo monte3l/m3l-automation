@@ -31,7 +31,7 @@ import { scrubUrlsInText } from "./format-error.js";
  *
  * @example
  * ```ts
- * import type { M3LBreadcrumb } from "@m3l-automation/m3l-common/core";
+ * import type { M3LBreadcrumb } from "@monte3l/m3l-common/core";
  *
  * const entry: M3LBreadcrumb = {
  *   timestamp: new Date().toISOString(),
@@ -61,7 +61,7 @@ export interface M3LBreadcrumb {
  *
  * @example
  * ```ts
- * import type { M3LBreadcrumbScalar } from "@m3l-automation/m3l-common/core";
+ * import type { M3LBreadcrumbScalar } from "@monte3l/m3l-common/core";
  *
  * const values: M3LBreadcrumbScalar[] = ["ok", 200, true, null];
  * ```
@@ -78,7 +78,7 @@ export type M3LBreadcrumbScalar = string | number | boolean | null;
  *
  * @example
  * ```ts
- * import type { M3LBreadcrumbSource } from "@m3l-automation/m3l-common/core";
+ * import type { M3LBreadcrumbSource } from "@monte3l/m3l-common/core";
  *
  * declare const emitter: M3LBreadcrumbSource;
  * emitter.on("tick", (payload) => console.log(payload));
@@ -96,7 +96,7 @@ export interface M3LBreadcrumbSource {
  *
  * @example
  * ```ts
- * import type { M3LBreadcrumbTrailOptions } from "@m3l-automation/m3l-common/core";
+ * import type { M3LBreadcrumbTrailOptions } from "@monte3l/m3l-common/core";
  *
  * const options: M3LBreadcrumbTrailOptions = { limit: 50 };
  * ```
@@ -127,7 +127,7 @@ export interface M3LBreadcrumbTrailOptions {
  *
  * @example
  * ```ts
- * import type { M3LBreadcrumbAttachOptions } from "@m3l-automation/m3l-common/core";
+ * import type { M3LBreadcrumbAttachOptions } from "@monte3l/m3l-common/core";
  *
  * const options: M3LBreadcrumbAttachOptions = {
  *   source: "primary-client",
@@ -664,8 +664,8 @@ function defaultSourceLabel(source: unknown): string {
  *
  * @example
  * ```ts
- * import { M3LBreadcrumbTrail } from "@m3l-automation/m3l-common/core";
- * import { M3LHttpClient } from "@m3l-automation/m3l-common/core";
+ * import { M3LBreadcrumbTrail } from "@monte3l/m3l-common/core";
+ * import { M3LHttpClient } from "@monte3l/m3l-common/core";
  *
  * const client = new M3LHttpClient({ baseUrl: "https://api.example.com" });
  * const trail = new M3LBreadcrumbTrail({ limit: 50 });
@@ -681,8 +681,8 @@ function defaultSourceLabel(source: unknown): string {
  * caller-authored breadcrumb payload might otherwise carry verbatim:
  *
  * ```ts
- * import { M3LBreadcrumbTrail } from "@m3l-automation/m3l-common/core";
- * import { deriveSecretsSpecifier } from "@m3l-automation/m3l-common/core";
+ * import { M3LBreadcrumbTrail } from "@monte3l/m3l-common/core";
+ * import { deriveSecretsSpecifier } from "@monte3l/m3l-common/core";
  *
  * declare const script: { configSchema: Parameters<typeof deriveSecretsSpecifier>[0] };
  *
@@ -741,8 +741,8 @@ export class M3LBreadcrumbTrail {
    *
    * @example
    * ```ts
-   * import { M3LBreadcrumbTrail } from "@m3l-automation/m3l-common/core";
-   * import { M3LPoller } from "@m3l-automation/m3l-common/core";
+   * import { M3LBreadcrumbTrail } from "@monte3l/m3l-common/core";
+   * import { M3LPoller } from "@monte3l/m3l-common/core";
    *
    * const poller = new M3LPoller({ backoff: undefined as never });
    * const trail = new M3LBreadcrumbTrail();
@@ -803,7 +803,7 @@ export class M3LBreadcrumbTrail {
    *
    * @example
    * ```ts
-   * import { M3LBreadcrumbTrail } from "@m3l-automation/m3l-common/core";
+   * import { M3LBreadcrumbTrail } from "@monte3l/m3l-common/core";
    *
    * const trail = new M3LBreadcrumbTrail();
    * trail.record("custom-source", "custom:tick", { count: 1 });
@@ -848,7 +848,7 @@ export class M3LBreadcrumbTrail {
    *
    * @example
    * ```ts
-   * import { M3LBreadcrumbTrail } from "@m3l-automation/m3l-common/core";
+   * import { M3LBreadcrumbTrail } from "@monte3l/m3l-common/core";
    *
    * const trail = new M3LBreadcrumbTrail();
    * trail.record("s", "custom:tick", { n: 1 });
@@ -865,7 +865,7 @@ export class M3LBreadcrumbTrail {
    *
    * @example
    * ```ts
-   * import { M3LBreadcrumbTrail } from "@m3l-automation/m3l-common/core";
+   * import { M3LBreadcrumbTrail } from "@monte3l/m3l-common/core";
    *
    * const trail = new M3LBreadcrumbTrail();
    * trail.record("s", "custom:tick", { n: 1 });

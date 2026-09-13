@@ -94,8 +94,8 @@ function splitDataFields(data: Record<string, unknown>): SplitDataFields {
  *
  * @example
  * ```ts
- * import type { M3LJsonLoggerHandlerOptions } from "@m3l-automation/m3l-common/core";
- * import { M3LLogEventCategory } from "@m3l-automation/m3l-common/core";
+ * import type { M3LJsonLoggerHandlerOptions } from "@monte3l/m3l-common/core";
+ * import { M3LLogEventCategory } from "@monte3l/m3l-common/core";
  *
  * const options: M3LJsonLoggerHandlerOptions = {
  *   minLevel: M3LLogEventCategory.WARNING,
@@ -121,7 +121,7 @@ export interface M3LJsonLoggerHandlerOptions {
  *
  * @example
  * ```ts
- * import { Core } from "@m3l-automation/m3l-common";
+ * import { Core } from "@monte3l/m3l-common";
  *
  * const handler = new Core.M3LJsonLoggerHandler();
  * const logger = new Core.M3LLogger([handler]);

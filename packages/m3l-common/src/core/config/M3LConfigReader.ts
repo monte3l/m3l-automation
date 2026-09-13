@@ -15,7 +15,7 @@ import type { M3LConfigProvider } from "./M3LConfigProvider.js";
  *
  * @example
  * ```ts
- * import type { M3LConfigResolution } from "@m3l-automation/m3l-common/core";
+ * import type { M3LConfigResolution } from "@monte3l/m3l-common/core";
  *
  * const resolution: M3LConfigResolution<string> = {
  *   value: "eu-west-1",
@@ -48,7 +48,7 @@ export interface M3LConfigResolution<TValue = unknown> {
  *   M3LConfigReader,
  *   M3LCommandLineConfigProvider,
  *   M3LEnvironmentConfigProvider,
- * } from "@m3l-automation/m3l-common/core";
+ * } from "@monte3l/m3l-common/core";
  *
  * const reader = new M3LConfigReader([
  *   new M3LCommandLineConfigProvider(),

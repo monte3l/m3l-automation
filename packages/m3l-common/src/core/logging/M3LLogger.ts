@@ -123,8 +123,8 @@ function redactRowsSafely(
  *
  * @example
  * ```ts
- * import { M3LLogger } from "@m3l-automation/m3l-common/core";
- * import type { M3LLoggerOptions } from "@m3l-automation/m3l-common/core";
+ * import { M3LLogger } from "@monte3l/m3l-common/core";
+ * import type { M3LLoggerOptions } from "@monte3l/m3l-common/core";
  *
  * const options: M3LLoggerOptions = { correlationId: "run-1234" };
  * const logger = new M3LLogger([], options);
@@ -203,7 +203,7 @@ export interface M3LErrorFromOptions {
  *
  * @example
  * ```ts
- * import { Core } from "@m3l-automation/m3l-common";
+ * import { Core } from "@monte3l/m3l-common";
  *
  * const logger = new Core.M3LLogger([
  *   new Core.M3LConsoleLoggerHandler(),
@@ -319,7 +319,7 @@ export class M3LLogger {
    *   {@link M3LLoggerOptions.secrets} (union, never narrowed).
    * @example
    * ```ts
-   * import { Core } from "@m3l-automation/m3l-common";
+   * import { Core } from "@monte3l/m3l-common";
    *
    * const logger = new Core.M3LLogger([new Core.M3LConsoleLoggerHandler()]);
    * try {
@@ -384,7 +384,7 @@ export class M3LLogger {
    * @returns A callable that emits the `DEBUG` timing event when invoked.
    * @example
    * ```ts
-   * import { Core } from "@m3l-automation/m3l-common";
+   * import { Core } from "@monte3l/m3l-common";
    *
    * const logger = new Core.M3LLogger([new Core.M3LConsoleLoggerHandler()]);
    * const stop = logger.time("import-step");

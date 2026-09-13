@@ -14,8 +14,8 @@ import type { M3LLogEventCategory } from "./M3LLogEventCategory.js";
  *
  * @example
  * ```ts
- * import type { M3LLogEvent } from "@m3l-automation/m3l-common/core";
- * import { M3LLogEventCategory } from "@m3l-automation/m3l-common/core";
+ * import type { M3LLogEvent } from "@monte3l/m3l-common/core";
+ * import { M3LLogEventCategory } from "@monte3l/m3l-common/core";
  *
  * const event: M3LLogEvent = {
  *   category: M3LLogEventCategory.SUCCESS,

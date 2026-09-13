@@ -42,7 +42,7 @@ import { isNodeError, isNonEmptyString } from "../utils/guards.js";
  * import {
  *   M3LExecutionEnvironmentType,
  *   M3LEnv,
- * } from "@m3l-automation/m3l-common/core";
+ * } from "@monte3l/m3l-common/core";
  *
  * const { environmentType } = M3LEnv.detect();
  * if (environmentType === M3LExecutionEnvironmentType.CI) {
@@ -72,7 +72,7 @@ export const M3LExecutionEnvironmentType = {
  *
  * @example
  * ```ts
- * import type { M3LExecutionEnvironmentType } from "@m3l-automation/m3l-common/core";
+ * import type { M3LExecutionEnvironmentType } from "@monte3l/m3l-common/core";
  *
  * function describe(t: M3LExecutionEnvironmentType): string {
  *   return `Running in: ${t}`;
@@ -96,7 +96,7 @@ export type M3LExecutionEnvironmentType =
  * import {
  *   M3LDeploymentMode,
  *   M3LEnv,
- * } from "@m3l-automation/m3l-common/core";
+ * } from "@monte3l/m3l-common/core";
  *
  * const { deploymentMode } = M3LEnv.detect();
  * if (deploymentMode === M3LDeploymentMode.MONOREPO) {
@@ -116,7 +116,7 @@ export const M3LDeploymentMode = {
  *
  * @example
  * ```ts
- * import type { M3LDeploymentMode } from "@m3l-automation/m3l-common/core";
+ * import type { M3LDeploymentMode } from "@monte3l/m3l-common/core";
  *
  * function label(mode: M3LDeploymentMode): string {
  *   return mode === "MONOREPO" ? "workspace" : "standalone";
@@ -141,7 +141,7 @@ export type M3LDeploymentMode =
  * import {
  *   M3LCredentialSource,
  *   M3LEnv,
- * } from "@m3l-automation/m3l-common/core";
+ * } from "@monte3l/m3l-common/core";
  *
  * const { credentialSource } = M3LEnv.detect();
  * if (credentialSource === M3LCredentialSource.SSO_PROFILE) {
@@ -177,7 +177,7 @@ export const M3LCredentialSource = {
  *
  * @example
  * ```ts
- * import type { M3LCredentialSource } from "@m3l-automation/m3l-common/core";
+ * import type { M3LCredentialSource } from "@monte3l/m3l-common/core";
  *
  * function needsLogin(source: M3LCredentialSource): boolean {
  *   return source === "SSO_PROFILE";
@@ -218,7 +218,7 @@ interface M3LEnvironmentDetectionErrorOptions {
  * import {
  *   M3LEnv,
  *   M3LEnvironmentDetectionError,
- * } from "@m3l-automation/m3l-common/core";
+ * } from "@monte3l/m3l-common/core";
  *
  * try {
  *   const info = M3LEnv.detect();
@@ -262,7 +262,7 @@ export class M3LEnvironmentDetectionError extends M3LError {
  *
  * @example
  * ```ts
- * import { M3LEnv } from "@m3l-automation/m3l-common/core";
+ * import { M3LEnv } from "@monte3l/m3l-common/core";
  *
  * const { detectionDetails } = M3LEnv.detect();
  * console.log("stdout is TTY:", detectionDetails.stdoutIsTTY);
@@ -334,8 +334,8 @@ interface M3LExecutionEnvironmentInfoBase {
  *
  * @example
  * ```ts
- * import { M3LEnv, M3LDeploymentMode } from "@m3l-automation/m3l-common/core";
- * import type { M3LExecutionEnvironmentInfo } from "@m3l-automation/m3l-common/core";
+ * import { M3LEnv, M3LDeploymentMode } from "@monte3l/m3l-common/core";
+ * import type { M3LExecutionEnvironmentInfo } from "@monte3l/m3l-common/core";
  *
  * const info: M3LExecutionEnvironmentInfo = M3LEnv.detect();
  * if (info.deploymentMode === M3LDeploymentMode.MONOREPO) {
@@ -742,7 +742,7 @@ let cached: M3LExecutionEnvironmentInfo | undefined;
  * import {
  *   M3LExecutionEnvironment,
  *   M3LExecutionEnvironmentType,
- * } from "@m3l-automation/m3l-common/core";
+ * } from "@monte3l/m3l-common/core";
  *
  * const info = M3LExecutionEnvironment.detect();
  * if (info.environmentType === M3LExecutionEnvironmentType.CI) {
@@ -765,7 +765,7 @@ export class M3LExecutionEnvironment {
    *
    * @example
    * ```ts
-   * import { M3LExecutionEnvironment } from "@m3l-automation/m3l-common/core";
+   * import { M3LExecutionEnvironment } from "@monte3l/m3l-common/core";
    *
    * const info = M3LExecutionEnvironment.detect();
    * console.log(info.environmentType);
@@ -789,7 +789,7 @@ export class M3LExecutionEnvironment {
    *
    * @example
    * ```ts
-   * import { M3LExecutionEnvironment } from "@m3l-automation/m3l-common/core";
+   * import { M3LExecutionEnvironment } from "@monte3l/m3l-common/core";
    *
    * process.env["CI"] = "true";
    * const fresh = M3LExecutionEnvironment.detectFresh();
@@ -811,7 +811,7 @@ export class M3LExecutionEnvironment {
    *
    * @example
    * ```ts
-   * import { M3LExecutionEnvironment } from "@m3l-automation/m3l-common/core";
+   * import { M3LExecutionEnvironment } from "@monte3l/m3l-common/core";
    *
    * if (M3LExecutionEnvironment.isInteractive()) {
    *   // show progress spinner
@@ -835,7 +835,7 @@ export class M3LExecutionEnvironment {
    *
    * @example
    * ```ts
-   * import { M3LExecutionEnvironment } from "@m3l-automation/m3l-common/core";
+   * import { M3LExecutionEnvironment } from "@monte3l/m3l-common/core";
    *
    * beforeEach(() => {
    *   M3LExecutionEnvironment.resetForTesting();
@@ -860,7 +860,7 @@ export class M3LExecutionEnvironment {
  *
  * @example
  * ```ts
- * import { M3LEnv } from "@m3l-automation/m3l-common/core";
+ * import { M3LEnv } from "@monte3l/m3l-common/core";
  *
  * if (M3LEnv.isInteractive()) {
  *   // show progress spinner
