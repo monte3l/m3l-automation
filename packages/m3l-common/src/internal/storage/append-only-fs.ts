@@ -228,3 +228,34 @@ export async function assertSegmentIsReadable(
     );
   }
 }
+
+/**
+ * `true` for a filesystem error meaning "there is nothing at that path" —
+ * the shared "is this ENOENT" test for every stream consumer that has to
+ * tell an absent file apart from a failure it must not swallow:
+ * `./append-only-manifest.js` (an absent `manifest.jsonl` reads as a fresh,
+ * unsealed stream), `./append-only-segments.js` (a segment that vanished
+ * between `readdir` and `stat`/`lstat` is skipped, not fatal), and
+ * `./append-only-verify.js` (a claimed segment that is genuinely gone is the
+ * `"archived"` verdict).
+ *
+ * Reads `cause.code` with `Object.hasOwn` rather than the `in` operator
+ * (`.claude/rules/library-src.md`): `in` walks the prototype chain, so an
+ * object with no *own* `code` but an *inherited* one reading `"ENOENT"`
+ * would satisfy `"code" in cause` even though the object itself never set
+ * it. Every error Node's `fs`/`fs/promises` layer actually throws sets
+ * `code` as an own property, so this is hardening against a shape the
+ * filesystem does not currently produce, not a fix for a live bug — but the
+ * failure direction it forecloses is a real hazard for one of the three
+ * callers above: in `./append-only-verify.js`, a false positive here turns
+ * an undetermined failure into the silent `"archived"` verdict, which is
+ * exactly the "archived absorbs undetermined" conflation that module's
+ * verify contract is built to prevent. Do not "simplify" this back to `in`.
+ */
+export function isFileNotFound(cause: unknown): boolean {
+  return (
+    cause instanceof Error &&
+    Object.hasOwn(cause, "code") &&
+    (cause as Error & { readonly code?: unknown }).code === "ENOENT"
+  );
+}

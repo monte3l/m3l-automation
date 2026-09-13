@@ -1,5 +1,5 @@
 /**
- * `core/storage/append-only-stream-errors` — `M3LAppendOnlyStream`'s error
+ * `internal/storage/append-only-stream-errors` — `M3LAppendOnlyStream`'s error
  * vocabulary: one named builder for each port the class hands to its
  * collaborators (the generic writer, the reader, the sealer, and the verify
  * engine), collected here so the mapping from failure to error class is a
@@ -43,12 +43,12 @@
  * @packageDocumentation
  */
 
-import type { M3LError } from "../errors/index.js";
-import type { AppendOnlyReadFailure } from "../../internal/storage/append-only-lines.js";
-import type { AppendOnlyWriterErrors } from "../../internal/storage/append-only-writer.js";
-import { M3LAppendOnlyStreamError } from "./M3LAppendOnlyStreamError.js";
-import { M3LAppendOnlyStreamManifestError } from "./M3LAppendOnlyStreamManifestError.js";
-import { M3LAppendOnlyStreamReadError } from "./M3LAppendOnlyStreamReadError.js";
+import type { M3LError } from "../../core/errors/index.js";
+import { M3LAppendOnlyStreamError } from "../../core/storage/M3LAppendOnlyStreamError.js";
+import { M3LAppendOnlyStreamManifestError } from "../../core/storage/M3LAppendOnlyStreamManifestError.js";
+import { M3LAppendOnlyStreamReadError } from "../../core/storage/M3LAppendOnlyStreamReadError.js";
+import type { AppendOnlyReadFailure } from "./append-only-lines.js";
+import type { AppendOnlyWriterErrors } from "./append-only-writer.js";
 
 /**
  * This stream's half of the generic writer's error port: it turns the two
@@ -80,9 +80,9 @@ export const APPEND_ONLY_STREAM_WRITE_ERRORS: AppendOnlyWriterErrors = {
 /**
  * Builds {@link M3LAppendOnlyStreamManifestError} — the trail is unprovable —
  * for every port that reports a failure of the `manifest.jsonl` sidecar
- * itself: {@link "../../internal/storage/append-only-sealer.js".AppendOnlySealer}'s
+ * itself: {@link "./append-only-sealer.js".AppendOnlySealer}'s
  * `buildError` (sealing a segment) and
- * {@link "../../internal/storage/append-only-verify.js".verifyAppendOnlySegments}'s
+ * {@link "./append-only-verify.js".verifyAppendOnlySegments}'s
  * `buildManifestError` (reading the sidecar back while verifying).
  *
  * The manifest is a storage-layer artifact shared by both owners of the
@@ -102,7 +102,7 @@ export const buildAppendOnlyStreamManifestError: AppendOnlyReadFailure = (
  * Builds {@link M3LAppendOnlyStreamReadError} — the trail is corrupt — for
  * every port that reports a failure reading segments back:
  * `M3LAppendOnlyStream.read`'s `buildError` and
- * {@link "../../internal/storage/append-only-verify.js".verifyAppendOnlySegments}'s
+ * {@link "./append-only-verify.js".verifyAppendOnlySegments}'s
  * `buildSegmentError` (re-digesting a claimed segment while verifying).
  */
 export const buildAppendOnlyStreamReadError: AppendOnlyReadFailure = (

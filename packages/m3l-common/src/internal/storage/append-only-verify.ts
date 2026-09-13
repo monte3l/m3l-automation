@@ -63,6 +63,7 @@ import type {
 import type { M3LAppendOnlySegment } from "../../core/storage/append-only-read-types.js";
 import type { SegmentDigestResult } from "./append-only-digest.js";
 import { digestSegmentFile } from "./append-only-digest.js";
+import { isFileNotFound } from "./append-only-fs.js";
 import type { AppendOnlyReadFailure } from "./append-only-lines.js";
 import type { ManifestContents } from "./append-only-manifest.js";
 import { readManifest } from "./append-only-manifest.js";
@@ -139,11 +140,6 @@ type ClaimOutcome =
       readonly kind: "failure";
       readonly failure: M3LAppendOnlyVerificationFailure;
     };
-
-/** `true` for a filesystem error meaning "there is nothing at that path". */
-function isFileNotFound(cause: unknown): boolean {
-  return cause instanceof Error && "code" in cause && cause.code === "ENOENT";
-}
 
 /**
  * Refuses a ceiling that is not a positive integer, through the caller's own

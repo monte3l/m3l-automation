@@ -1,9 +1,11 @@
 /**
- * `core/storage/append-only-entry-types` — the entry vocabulary shared by
- * {@link "./M3LAppendOnlyStream.js".M3LAppendOnlyStream}, its renderer
+ * `core/storage/append-only-entry-types` — the entry vocabulary for
+ * {@link "./M3LAppendOnlyStream.js".M3LAppendOnlyStream}, the only module
+ * that actually imports it; its renderer
  * (`internal/storage/append-only-render.ts`) and its projection
- * (`internal/storage/append-only-projection.ts`): the value type an append-only
- * entry may carry, and the entry shape itself.
+ * (`internal/storage/append-only-projection.ts`) reference the vocabulary
+ * only in their own TSDoc: the value type an append-only entry may carry,
+ * and the entry shape itself.
  *
  * This sits alongside `core/storage`'s three other public-type modules —
  * `append-only-read-types.ts`, `append-only-write-types.ts`,

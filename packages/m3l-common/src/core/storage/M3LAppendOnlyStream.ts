@@ -82,8 +82,7 @@ import {
   APPEND_ONLY_STREAM_WRITE_ERRORS,
   buildAppendOnlyStreamManifestError,
   buildAppendOnlyStreamReadError,
-} from "./append-only-stream-errors.js";
-import { M3LAppendOnlyStreamReadError } from "./M3LAppendOnlyStreamReadError.js";
+} from "../../internal/storage/append-only-stream-errors.js";
 
 /**
  * An append-only, segmented JSONL stream: one JSON object per line, appended
@@ -299,7 +298,7 @@ export class M3LAppendOnlyStream {
    * @throws {@link M3LError} `ERR_INVALID_ARGUMENT` for a non-object
    *   `options`, an unknown own key on it, or a non-callable
    *   `onTruncatedTail`.
-   * @throws {@link M3LAppendOnlyStreamReadError} for a malformed/oversized
+   * @throws {@link "./M3LAppendOnlyStreamReadError.js".M3LAppendOnlyStreamReadError} for a malformed/oversized
    *   line, a missing sequence, an intolerable fragment, or a read failure.
    *
    * @example
@@ -346,7 +345,7 @@ export class M3LAppendOnlyStream {
    * for it. Gap detection stays on `read()`, which hands entries back and
    * must vouch for the trail it hands them from.
    *
-   * @throws {@link M3LAppendOnlyStreamReadError} when listing the directory,
+   * @throws {@link "./M3LAppendOnlyStreamReadError.js".M3LAppendOnlyStreamReadError} when listing the directory,
    *   or inspecting one of its entries, fails for a reason other than the
    *   entry not existing.
    *
@@ -366,7 +365,7 @@ export class M3LAppendOnlyStream {
     try {
       listing = await listSegmentFiles(this.streamDirectory);
     } catch (cause) {
-      throw new M3LAppendOnlyStreamReadError(
+      throw buildAppendOnlyStreamReadError(
         "append-only stream: failed to list segments",
         { cause },
       );
