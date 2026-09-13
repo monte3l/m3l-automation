@@ -260,11 +260,11 @@ describe("M3LAppendOnlyStream — onSealFailed reports the new manifest error cl
 
     expect(failure.error).toBeInstanceOf(M3LAppendOnlyStreamManifestError);
     expect(failure.error.code).toBe("ERR_APPEND_ONLY_STREAM_MANIFEST");
-    // The two wrong classes this slice removes: asserting only the new class
-    // above would still pass if the old one were left in place as a
-    // superclass, so both are asserted absent explicitly.
+    // The wrong class this owner's `buildError` port used to pass for both
+    // directions: asserting only the new class above would still pass if the
+    // old one were left in place as a superclass, so it is asserted absent
+    // explicitly.
     expect(failure.error).not.toBeInstanceOf(M3LAppendOnlyStreamReadError);
-    expect(failure.error).not.toBeInstanceOf(M3LAgentDecisionLogWriteError);
 
     const serializedContext = JSON.stringify(failure.error.context ?? {});
     expect(failure.error.message).not.toContain(secretDirName);
@@ -482,8 +482,11 @@ describe("M3LAgentDecisionLog — onSealFailed reports the new manifest error cl
 
     expect(failure.error).toBeInstanceOf(M3LAppendOnlyStreamManifestError);
     expect(failure.error.code).toBe("ERR_APPEND_ONLY_STREAM_MANIFEST");
+    // The wrong class this owner's `buildError` port used to pass for both
+    // directions: asserting only the new class above would still pass if the
+    // old one were left in place as a superclass, so it is asserted absent
+    // explicitly.
     expect(failure.error).not.toBeInstanceOf(M3LAgentDecisionLogWriteError);
-    expect(failure.error).not.toBeInstanceOf(M3LAppendOnlyStreamReadError);
 
     const serializedContext = JSON.stringify(failure.error.context ?? {});
     expect(failure.error.message).not.toContain(secretDirName);

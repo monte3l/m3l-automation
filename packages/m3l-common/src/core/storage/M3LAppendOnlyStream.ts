@@ -242,6 +242,13 @@ export class M3LAppendOnlyStream {
       maxSegmentBytes: resolved.maxSegmentBytes,
       maxLineBytes: resolved.maxLineBytes,
       maxManifestBytes: DEFAULT_MAX_MANIFEST_BYTES,
+      // The manifest is a storage-layer artifact shared by both owners of
+      // the append-only writer, so one direction-neutral error class makes a
+      // seal failure mean the same thing wherever it surfaces — this sealer
+      // previously built `M3LAppendOnlyStreamReadError`, so a failed
+      // manifest *write* was reported as a read error. This reaches a
+      // caller only through `onSealFailed` (still-unreleased 4.8.0), so no
+      // released behaviour changes.
       buildError: (message, errorOptions) =>
         new M3LAppendOnlyStreamManifestError(message, errorOptions),
       // Conditional spread, not a direct assignment: `exactOptionalPropertyTypes`
