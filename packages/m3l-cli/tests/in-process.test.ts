@@ -18,7 +18,7 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import * as fs from "node:fs";
 import { join } from "node:path";
 
-import type * as M3LCommon from "@m3l-automation/m3l-common";
+import type * as M3LCommon from "@monte3l/m3l-common";
 
 // Make 'node:fs' configurable so vi.spyOn can intercept individual functions
 // (ESM namespace objects are non-writable) — mirrors run/spawn.ts's own test.
@@ -29,7 +29,7 @@ vi.mock("node:fs", async () => {
 
 /**
  * `Core.createCommandLogger` is mocked at the package level (the fleet's
- * established `vi.mock("@m3l-automation/m3l-common", ...)` factory pattern)
+ * established `vi.mock("@monte3l/m3l-common", ...)` factory pattern)
  * so the exact options `runInProcess` builds can be asserted without
  * depending on the real factory's ambient `--log-level`/`M3L_LOG_LEVEL`
  * resolution or `M3LConfigSchema` construction — neither of which is under
@@ -40,7 +40,7 @@ const runMocks = vi.hoisted(() => ({
   createCommandLoggerCalls: [] as unknown[],
 }));
 
-vi.mock("@m3l-automation/m3l-common", async (importOriginal) => {
+vi.mock("@monte3l/m3l-common", async (importOriginal) => {
   const actual = await importOriginal<typeof M3LCommon>();
   return {
     ...actual,
@@ -54,7 +54,7 @@ vi.mock("@m3l-automation/m3l-common", async (importOriginal) => {
   };
 });
 
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 import {
   defaultImportModule,

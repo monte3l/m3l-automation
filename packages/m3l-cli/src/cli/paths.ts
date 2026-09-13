@@ -10,7 +10,7 @@
 import { join } from "node:path";
 
 /**
- * The environment variable `@m3l-automation/m3l-common`'s `M3LPaths`
+ * The environment variable `@monte3l/m3l-common`'s `M3LPaths`
  * honors to redirect its cache directory (see
  * `M3LPathEnvironmentVariables.CACHE_DIR` in `core/utils/M3LPaths.ts`).
  * Consulted directly here — rather
@@ -64,7 +64,7 @@ export function resolveHistoryFilePath(
 /**
  * The environment variable overriding the managed output directory (V2
  * slice 2, #539 / ADR-0063) — distinct from {@link CACHE_DIR_ENV_VAR} and
- * from `@m3l-automation/m3l-common`'s own `M3L_DATA_DIR`: this module never
+ * from `@monte3l/m3l-common`'s own `M3L_DATA_DIR`: this module never
  * consults either when resolving the output directory.
  *
  * Deliberately the SAME variable name `M3LPathEnvironmentVariables.OUTPUT_DIR`

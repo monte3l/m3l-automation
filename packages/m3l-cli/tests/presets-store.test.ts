@@ -25,7 +25,7 @@ vi.mock("node:fs", async () => {
   return { ...actual };
 });
 
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 import {
   buildSchemaFromDescriptors,

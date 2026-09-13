@@ -228,7 +228,7 @@ describe("discoverScriptsFromDependencyGraph", () => {
 
     const options = buildGraphOptions(
       {
-        "@m3l-automation/m3l-common": "workspace:*",
+        "@monte3l/m3l-common": "workspace:*",
         "@m3l-automation/json-etl": "workspace:*",
         "@m3l-automation/s3-objects": "workspace:*",
       },
@@ -254,11 +254,11 @@ describe("discoverScriptsFromDependencyGraph", () => {
     ]);
   });
 
-  test("excludes @m3l-automation/m3l-common — it is the library, never a script", () => {
+  test("excludes @monte3l/m3l-common — it no longer shares the @m3l-automation/* scope prefix", () => {
     vi.spyOn(fs, "readFileSync").mockReturnValue(JSON.stringify({}));
     const options = buildGraphOptions(
-      { "@m3l-automation/m3l-common": "workspace:*" },
-      { "@m3l-automation/m3l-common": "/graph/m3l-common/package.json" },
+      { "@monte3l/m3l-common": "workspace:*" },
+      { "@monte3l/m3l-common": "/graph/m3l-common/package.json" },
     );
 
     expect(discoverScriptsFromDependencyGraph(options)).toEqual([]);

@@ -310,9 +310,6 @@ importers:
       '@m3l-automation/lambda-ops':
         specifier: workspace:*
         version: link:../../scripts/lambda-ops
-      '@m3l-automation/m3l-common':
-        specifier: workspace:@monte3l/m3l-common@*
-        version: link:../m3l-common
       '@m3l-automation/rds-data-sql':
         specifier: workspace:*
         version: link:../../scripts/rds-data-sql
@@ -325,6 +322,9 @@ importers:
       '@m3l-automation/sqs-etl':
         specifier: workspace:*
         version: link:../../scripts/sqs-etl
+      '@monte3l/m3l-common':
+        specifier: workspace:*
+        version: link:../m3l-common
 
   packages/m3l-common:
     dependencies:

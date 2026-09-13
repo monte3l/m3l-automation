@@ -1,6 +1,6 @@
 /**
  * `discovery/load-config` — a thin CLI-facing adapter over
- * `@m3l-automation/m3l-common`'s `core/config` seam
+ * `@monte3l/m3l-common`'s `core/config` seam
  * (`M3LConfigParameterDescriptor`, `M3LConfigModuleLocator`,
  * `loadScriptConfigDescriptors`), which now owns parameter-descriptor
  * mapping, dist-first config-module resolution, and the
@@ -15,7 +15,7 @@
  * @packageDocumentation
  */
 
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 import { M3LCliError } from "../cli/errors.js";
 
@@ -60,7 +60,7 @@ export type M3LCliConfigModuleLocation = Core.M3LConfigModuleLocation;
  *
  * @example
  * ```ts
- * import { Core } from "@m3l-automation/m3l-common";
+ * import { Core } from "@monte3l/m3l-common";
  *
  * const port = new Core.M3LConfigParameter({
  *   name: "PORT",

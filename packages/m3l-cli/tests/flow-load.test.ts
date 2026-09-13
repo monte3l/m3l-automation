@@ -42,7 +42,7 @@ vi.mock("node:fs", async () => {
   return { ...actual };
 });
 
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 import { exitCodeForError, M3LCliError } from "../src/cli/errors.js";
 import { DEFAULT_MAX_STEP_EXECUTIONS } from "../src/flow/types.js";

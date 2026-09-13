@@ -11,7 +11,7 @@
  * @packageDocumentation
  */
 
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 import type { M3LCliRunOutcome } from "../run/envelope.js";
 import type { M3LCliFlowBranch, M3LCliFlowStep } from "./types.js";

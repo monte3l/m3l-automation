@@ -15,7 +15,7 @@
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
-    "@m3l-automation/m3l-common": "workspace:@monte3l/m3l-common@*",
+    "@monte3l/m3l-common": "workspace:*",
     "@m3l-automation/api-gateway-client": "workspace:*",
     "@m3l-automation/athena-query": "workspace:*",
     "@m3l-automation/cloudformation-stacks": "workspace:*",

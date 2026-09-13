@@ -965,7 +965,7 @@ describe("runDoctor — discoverScripts and checkDependencyGraph share one resol
         return JSON.stringify({
           dependencies: {
             "@m3l-automation/graph-dep-that-blows-up": "workspace:*",
-            "@m3l-automation/m3l-common": "workspace:*",
+            "@m3l-automation/another-dep-that-blows-up": "workspace:*",
           },
         });
       }

@@ -12,7 +12,7 @@
  * @packageDocumentation
  */
 
-import { Core } from "@m3l-automation/m3l-common";
+import { Core } from "@monte3l/m3l-common";
 
 /**
  * The closed set of terminal run outcomes this envelope can carry, kept

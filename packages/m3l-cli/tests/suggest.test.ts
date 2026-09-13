@@ -3,7 +3,7 @@
  * routine (`Core.M3LConfigSchema` + `Core.M3LUnknownParameterDetector`) that
  * `main.ts` (unknown command), `commands/inspect.ts`, and `commands/run.ts`
  * (unknown script) all consume (m3l-cli 8c addendum, review finding CR#3).
- * Exercised against the real `@m3l-automation/m3l-common` library — no
+ * Exercised against the real `@monte3l/m3l-common` library — no
  * mocks, since the point of the dedup is that its output is identical to the
  * previously-duplicated inline bodies.
  */

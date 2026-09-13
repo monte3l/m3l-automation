@@ -33,7 +33,7 @@
 //                            properties) so the m3l CLI's native
 //                            type-stripping fallback stays loadable (ADR-0042).
 //   8. m3l-cli boundary    — packages/m3l-cli/src may import only
-//                            @m3l-automation/m3l-common and node: builtins,
+//                            @monte3l/m3l-common and node: builtins,
 //                            and is covered by the no-cycle rule (ADR-0042).
 //   9. console-server      — the same library+node: import boundary (ADR-0065),
 //                            the ADR-0065 modular-monolith layering (one zone
@@ -237,7 +237,7 @@ const hasCliImportBoundary = config.some((block) => {
     patterns.some(
       (pattern) =>
         typeof pattern?.regex === "string" &&
-        pattern.regex.includes("@m3l-automation/m3l-common") &&
+        pattern.regex.includes("@monte3l/m3l-common") &&
         pattern.regex.includes("node:") &&
         pattern.allowTypeImports === false,
     )
