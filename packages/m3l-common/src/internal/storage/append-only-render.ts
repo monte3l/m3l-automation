@@ -40,7 +40,7 @@ import { invalidArgument } from "./append-only-options.js";
  * would tell an operator the filesystem is unhealthy when the argument was.
  *
  * The parameter is `unknown` rather than
- * {@link "../../core/storage/M3LAppendOnlyStream.js".M3LAppendOnlyEntry}
+ * {@link "../../core/storage/append-only-entry-types.js".M3LAppendOnlyEntry}
  * because that is what it honestly is: `append` is a public method reached by
  * callers with no types at all, and this function's whole job is to prove the
  * shape at runtime rather than assume it. It is also what lets `append`

@@ -69,6 +69,10 @@ import {
   validateStreamOptions,
 } from "../../internal/storage/append-only-options.js";
 import type {
+  M3LAppendOnlyEntry,
+  M3LAppendOnlyValue,
+} from "./append-only-entry-types.js";
+import type {
   M3LAppendOnlyReadOptions,
   M3LAppendOnlySegmentListing,
 } from "./append-only-read-types.js";
@@ -76,62 +80,6 @@ import type { M3LAppendOnlyStreamOptions } from "./append-only-write-types.js";
 import { M3LAppendOnlyStreamError } from "./M3LAppendOnlyStreamError.js";
 import { M3LAppendOnlyStreamManifestError } from "./M3LAppendOnlyStreamManifestError.js";
 import { M3LAppendOnlyStreamReadError } from "./M3LAppendOnlyStreamReadError.js";
-
-/**
- * A value an append-only stream entry may carry. Closed on purpose: exactly
- * what JSON can carry back out unchanged, and nothing else.
- *
- * `undefined`, a `bigint`, a function, a symbol and a class instance (a
- * `Date`, a `Map`, an `Error`) are all excluded, because each would make the
- * persisted line disagree with the entry the caller handed over — silently
- * dropped, coerced to `null`, or serialized through whatever `toJSON` it
- * carries. Pass a `Date` as `date.toISOString()` and any richer collection as
- * the plain array or object you want recorded.
- *
- * @example
- * ```ts
- * import type { M3LAppendOnlyValue } from "@monte3l/m3l-common/core";
- *
- * const actor: M3LAppendOnlyValue = { id: "u-1", roles: ["reader"] };
- * ```
- */
-export type M3LAppendOnlyValue =
-  | string
-  | number
-  | boolean
-  | null
-  | readonly M3LAppendOnlyValue[]
-  | { readonly [key: string]: M3LAppendOnlyValue };
-
-/**
- * One entry: a JSON object of {@link M3LAppendOnlyValue}s, persisted as
- * exactly one line.
- *
- * The stream never serializes the caller's object — it rebuilds a detached,
- * null-prototype copy first — so an entry may be handed over and then
- * mutated without changing what was written.
- *
- * This is the **shape** an entry has — the type to annotate a value with. It
- * is not the constraint {@link M3LAppendOnlyStream.append} imposes: an
- * `interface` carries no index signature, so a record declared as one (the
- * normal way a consumer models an audit record) does not satisfy this alias
- * and would need a cast that throws away the closure the alias provides.
- * `append` constrains its own type parameter instead, admitting any object
- * type whose properties are all {@link M3LAppendOnlyValue}s. Everything
- * assignable to this alias satisfies that constraint.
- *
- * @example
- * ```ts
- * import type { M3LAppendOnlyEntry } from "@monte3l/m3l-common/core";
- *
- * const entry: M3LAppendOnlyEntry = {
- *   at: new Date().toISOString(),
- *   event: "approval.granted",
- *   actor: { id: "u-1" },
- * };
- * ```
- */
-export type M3LAppendOnlyEntry = { readonly [key: string]: M3LAppendOnlyValue };
 
 /**
  * This stream's half of the generic writer's error port: it turns the two
@@ -297,12 +245,13 @@ export class M3LAppendOnlyStream {
    * that crosses it rather than a whole batch late. A rejected append is
    * reported to its own caller only and never poisons the chain.
    *
-   * The parameter is constrained rather than typed {@link M3LAppendOnlyEntry}
-   * so an `interface`-declared record — the normal way a consumer models an
-   * audit record, and one that carries no index signature — is accepted
-   * without a cast. The closure is unchanged: every property still has to be
-   * an {@link M3LAppendOnlyValue}, so a `Date`- or `bigint`-valued field is
-   * still a compile error.
+   * The parameter is constrained rather than typed
+   * {@link "./append-only-entry-types.js".M3LAppendOnlyEntry} so an
+   * `interface`-declared record — the normal way a consumer models an audit
+   * record, and one that carries no index signature — is accepted without a
+   * cast. The closure is unchanged: every property still has to be an
+   * {@link "./append-only-entry-types.js".M3LAppendOnlyValue}, so a `Date`- or
+   * `bigint`-valued field is still a compile error.
    *
    * @remarks
    * Resolving means the entry is durable — it does not mean the directory is
@@ -317,9 +266,9 @@ export class M3LAppendOnlyStream {
    * recovers.
    *
    * @typeParam T - The caller's own record type; every property must be an
-   *   {@link M3LAppendOnlyValue}.
+   *   {@link "./append-only-entry-types.js".M3LAppendOnlyValue}.
    * @param entry - The record to append; a plain object of
-   *   {@link M3LAppendOnlyValue}s.
+   *   {@link "./append-only-entry-types.js".M3LAppendOnlyValue}s.
    * @throws {@link M3LError} with `code: "ERR_INVALID_ARGUMENT"` when `entry`
    *   is not a plain object, carries an own `__proto__` / `constructor` /
    *   `prototype` key, or holds a value JSON cannot carry back out unchanged

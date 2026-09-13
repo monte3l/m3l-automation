@@ -11,6 +11,7 @@
  * @packageDocumentation
  */
 
+export * from "./append-only-entry-types.js";
 export * from "./append-only-manifest-types.js";
 export * from "./append-only-read-types.js";
 export * from "./append-only-write-types.js";
