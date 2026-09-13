@@ -1,6 +1,6 @@
 # U13 — private-registry publishing: scope rename + staged first release (2026-09-12)
 
-- **Status:** in progress — slices 1-3 of 4 landed (PR #1214, #1216, #1217); slice 4 (optional hygiene, not required to publish) split into P4a/P4a2/P4b1-P4b5 to stay under the review-size ceiling; P4a landed (PR #1221), P4a2 landed (PR #1223), P4b1-P4b5 remain
+- **Status:** in progress — slices 1-3 of 4 landed (PR #1214, #1216, #1217); slice 4 (optional hygiene, not required to publish) split into P4a/P4a2/P4b1-P4b6 to stay under the review-size ceiling; P4a landed (PR #1221), P4a2 landed (PR #1223), P4b1-P4b6 remain
 - **Owner:** Enrico Lionello (maintainer)
 - **Decisions:** [ADR-0103](../adr/0103-publish-scope-rename-and-staged-first-release.md)
   (partially supersedes [ADR-0057](../adr/0057-private-registry-distribution.md)
