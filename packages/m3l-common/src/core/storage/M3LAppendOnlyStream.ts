@@ -293,14 +293,10 @@ export class M3LAppendOnlyStream {
    * `internal/storage/append-only-read-plan.ts` (which segments) and
    * `append-only-reader.ts` (their bytes).
    *
-   * **The archival check is eager.** Every `onArchivedSegment` call is
-   * resolved before the first entry is yielded, so a caller that supplied no
-   * handler learns the trail is incomplete — by the throw — before it has
-   * consumed anything at all. This deliberately differs from
-   * `onTruncatedTail`, which fires in read order at the point the torn
-   * fragment is reached: detecting a torn tail requires reading a segment's
-   * bytes, whereas the archival scan needs only the manifest and the
-   * directory listing, so nothing is gained by deferring it.
+   * **The archival check is eager**, and fires at a deliberately different
+   * point from `onTruncatedTail` — see
+   * `core/storage/append-only-integrity-contract.ts`'s header for the
+   * read/verify integrity contract in full.
    *
    * @param options - `onTruncatedTail` tolerates an unterminated trailing
    *   fragment on the LAST segment only; the same fragment mid-stream — data
@@ -392,31 +388,13 @@ export class M3LAppendOnlyStream {
    * or `"unsealed"` (see
    * {@link "./append-only-verify-types.js".M3LAppendOnlyVerificationStatus}).
    *
-   * **Never rejects.** That is the entire reason an operator reaches for
-   * this method: `read()` has typically already started throwing by the
-   * time `verify()` is called, and a verification that itself threw on a
-   * damaged trail would be useless exactly when the damage is why it was
-   * called. Every failure this stream can hit while verifying — the
-   * directory cannot be listed, the manifest cannot be read, a claimed
-   * segment cannot be re-digested — becomes an entry in the resolved
-   * report's `failures` array instead of a rejection. The classification
-   * rules themselves (the precedence between a seal and a baseline, the
-   * ordering, the boundary) are
-   * {@link "../../internal/storage/append-only-verify.js".verifyAppendOnlySegments}'s
-   * to state; this method only wires this stream's own directory and
-   * ceilings to that engine.
-   *
-   * **The returned report is not a simple pass/fail.** Read it through
-   * {@link "./append-only-verify-types.js".M3LAppendOnlyVerification}, which
-   * documents what each field can — and cannot — prove about this stream's
-   * directory; no single field on it is a clean bill of health by itself.
-   *
-   * The digest bound handed to the engine is `maxSegmentBytes + maxLineBytes`,
-   * never `maxSegmentBytes` alone: `shouldRotate` fires at
-   * `>= maxSegmentBytes`, so the line that crosses the ceiling is written
-   * before rotation, and a segment legitimately larger than
-   * `maxSegmentBytes` on its very first write would otherwise be refused as
-   * unreadable rather than reported `"sealed"`.
+   * **Never rejects**, **the returned report is not a simple pass/fail**, and
+   * the digest bound handed to the engine is `maxSegmentBytes + maxLineBytes`
+   * rather than `maxSegmentBytes` alone — see
+   * `core/storage/append-only-integrity-contract.ts`'s header for each of
+   * those three in full, and
+   * {@link "./append-only-verify-types.js".M3LAppendOnlyVerification} for
+   * what the report's own fields can and cannot prove.
    *
    * @returns The full report: one verdict per segment this stream could
    *   classify, one failure per thing it could not, totals, and the

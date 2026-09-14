@@ -310,7 +310,7 @@
       },
       {
         "path": "docs/reference/symbol-map.json",
-        "blob": "c76b8e25944cee3506d8e02ae864edd9729c87ae"
+        "blob": "7f51db8919be5963b60bf1545d91a975202b43c1"
       }
     ],
     "verifiedAt": "2026-09-14"
@@ -613,7 +613,7 @@
       },
       {
         "path": "docs/reference/symbol-map.json",
-        "blob": "c76b8e25944cee3506d8e02ae864edd9729c87ae"
+        "blob": "7f51db8919be5963b60bf1545d91a975202b43c1"
       }
     ],
     "verifiedAt": "2026-09-14"
@@ -686,7 +686,7 @@
       },
       {
         "path": "docs/reference/symbol-map.json",
-        "blob": "c76b8e25944cee3506d8e02ae864edd9729c87ae"
+        "blob": "7f51db8919be5963b60bf1545d91a975202b43c1"
       },
       {
         "path": "docs/ROADMAP.md",
@@ -1516,7 +1516,7 @@
       },
       {
         "path": "docs/plans/2026-08-20-m3l-console.md",
-        "blob": "fe0addd9373d3f88cfed2f7b43f08d7f91dbf86b"
+        "blob": "1f0511776dae4f258e8be01b77c507558220418c"
       },
       {
         "path": "docs/plans/IMPLEMENTATION.md",
@@ -1616,7 +1616,7 @@
     "sourceFiles": [
       {
         "path": "docs/plans/2026-08-20-m3l-console.md",
-        "blob": "fe0addd9373d3f88cfed2f7b43f08d7f91dbf86b"
+        "blob": "1f0511776dae4f258e8be01b77c507558220418c"
       },
       {
         "path": "docs/plans/IMPLEMENTATION.md",
@@ -1655,7 +1655,7 @@
     "sourceFiles": [
       {
         "path": "docs/plans/2026-08-20-m3l-console.md",
-        "blob": "fe0addd9373d3f88cfed2f7b43f08d7f91dbf86b"
+        "blob": "1f0511776dae4f258e8be01b77c507558220418c"
       },
       {
         "path": "docs/plans/IMPLEMENTATION.md",
@@ -2146,7 +2146,7 @@
       },
       {
         "path": "docs/research/retrospective.md",
-        "blob": "c062b308260448cae0466ac1c5936053a505168d"
+        "blob": "8d2fed4c260bdb7f75f6b0032884e951a756e089"
       }
     ],
     "verifiedAt": "2026-09-14"
@@ -2672,7 +2672,7 @@
       },
       {
         "path": "docs/plans/2026-08-20-m3l-console.md",
-        "blob": "fe0addd9373d3f88cfed2f7b43f08d7f91dbf86b"
+        "blob": "1f0511776dae4f258e8be01b77c507558220418c"
       },
       {
         "path": "packages/m3l-console-server/src/boot/audit-rebuild.ts",

@@ -2343,7 +2343,7 @@
   "M3LAppendOnlySegmentMeasurement": {
     "submodule": "storage",
     "namespace": "core",
-    "file": "packages/m3l-common/src/core/storage/append-only-verify-types.ts"
+    "file": "packages/m3l-common/src/core/storage/append-only-integrity-contract.ts"
   },
   "M3LAppendOnlySealedSegment": {
     "submodule": "storage",
