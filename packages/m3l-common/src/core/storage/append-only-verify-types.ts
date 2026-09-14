@@ -250,12 +250,16 @@ export interface M3LAppendOnlyVerificationFailure {
  * **Invariant:** every segment `verify()` *considered* appears in `verdicts`
  * or in `failures` — never in both, and never in neither. That invariant has
  * a boundary: an entry `listSegmentFiles` refused during inventory (a
- * symlink or hardlink planted at a segment name) was never considered at
- * all, and is counted only in `skipped` — it is not a completeness guarantee
- * over the raw directory listing, only over the segments this stream
- * recognized as its own. A caller can rely on `verdicts`, `failures` and
- * `skipped` together to reconcile the report against, say, a directory
- * listing taken at the same time.
+ * symlink or hardlink planted at a segment name) was never considered by
+ * that pass, and is always counted in `skipped` — it is not a completeness
+ * guarantee over the raw directory listing, only over the segments this
+ * stream recognized as its own. **`skipped` can still overlap `failures`:**
+ * a refused entry at a name the manifest separately CLAIMS is re-checked
+ * directly and reported as a `failures` entry too (see `skipped`'s own doc
+ * below for why `listSegmentFiles` cannot subtract that overlap out). A
+ * caller reconciling the report against a directory listing taken at the
+ * same time must add `verdicts`, `failures` and `skipped` with that overlap
+ * in mind, not treat them as three disjoint partitions.
  *
  * **No single field on the returned report is an alarm.** `verify()`
  * reasons only from evidence inside this stream's own directory, and the
@@ -358,11 +362,32 @@ export interface M3LAppendOnlyVerification {
   /**
    * The mirror of
    * {@link "./append-only-read-types.js".M3LAppendOnlySegmentListing.skipped}
-   * — see that field for exactly what it counts and why. A non-zero value
-   * here means the directory holds segment-named entries this writer did
-   * not leave behind, which received **no verdict at all**, because they
-   * were never segments: they are excluded from `verdicts`, `failures` and
-   * `totals` alike, so this is the only place their presence is visible.
+   * — see that field for exactly what it counts and why. This field reports
+   * that same inventory count **verbatim**, unchanged by anything the
+   * manifest states, which is exactly what makes it comparable with
+   * `listSegments()`'s own `skipped`.
+   *
+   * **This is not disjoint from `failures`.** `listSegmentFiles` raises
+   * `skipped` for any segment-shaped entry that is not a plain, single-link
+   * regular file — a symlink or a hardlink planted at that name — before
+   * this report ever learns whether the manifest claims that name. When it
+   * does (see this module's header for why a CLAIMED name is re-checked
+   * directly rather than trusted to the inventory's filter), the same entry
+   * *also* becomes a `failures` entry naming it, because a refusal to read a
+   * claimed name is a finding, not silence. `verify()` cannot subtract those
+   * overlapping names out of `skipped` — `listSegmentFiles` returns a count,
+   * not the names it refused — so `verdicts`, `failures` and `skipped` are
+   * **not** a partition of the directory listing; treat `skipped` as an
+   * upper bound on entries this writer never produced, not as a disjoint
+   * third bucket.
+   *
+   * The genuinely-true invariant survives this: every segment `verify()`
+   * *considered* — every name the manifest claims, or that
+   * `listSegmentFiles`'s inventory accepted as segment-shaped — appears in
+   * `verdicts` or in `failures`, never in both and never in neither. An
+   * entry `listSegmentFiles` refused was never considered by that
+   * definition, whether or not it separately surfaces in `failures` via the
+   * claimed-name path above.
    */
   readonly skipped: number;
 }

@@ -1,6 +1,6 @@
 /**
  * `M3LAppendOnlyStream.verify()` — the PUBLIC method's wiring and contract
- * (ADR-0102, X8b slice 6), exercised through the public class only.
+ * (ADR-0102, X8b4b), exercised through the public class only.
  *
  * Split from `storage-append-only-stream.test.ts` on purpose, for two
  * independent reasons: that file already sits at 55,996 bytes against

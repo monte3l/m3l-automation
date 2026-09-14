@@ -88,32 +88,32 @@
         {
           "file": "packages/m3l-common/src/core/storage/append-only-verify-types.ts",
           "symbol": "M3LAppendOnlySegmentMeasurement",
-          "blob": "cd44759d3b6248910f42c6bec1f97df1c3d77ce7"
+          "blob": "f117280a21283662cc15dbbc4f5526fd45171ee6"
         },
         {
           "file": "packages/m3l-common/src/core/storage/append-only-verify-types.ts",
           "symbol": "M3LAppendOnlySealedSegment",
-          "blob": "cd44759d3b6248910f42c6bec1f97df1c3d77ce7"
+          "blob": "f117280a21283662cc15dbbc4f5526fd45171ee6"
         },
         {
           "file": "packages/m3l-common/src/core/storage/append-only-verify-types.ts",
           "symbol": "M3LAppendOnlyVerificationStatus",
-          "blob": "cd44759d3b6248910f42c6bec1f97df1c3d77ce7"
+          "blob": "f117280a21283662cc15dbbc4f5526fd45171ee6"
         },
         {
           "file": "packages/m3l-common/src/core/storage/append-only-verify-types.ts",
           "symbol": "M3LAppendOnlySegmentVerdict",
-          "blob": "cd44759d3b6248910f42c6bec1f97df1c3d77ce7"
+          "blob": "f117280a21283662cc15dbbc4f5526fd45171ee6"
         },
         {
           "file": "packages/m3l-common/src/core/storage/append-only-verify-types.ts",
           "symbol": "M3LAppendOnlyVerificationFailure",
-          "blob": "cd44759d3b6248910f42c6bec1f97df1c3d77ce7"
+          "blob": "f117280a21283662cc15dbbc4f5526fd45171ee6"
         },
         {
           "file": "packages/m3l-common/src/core/storage/append-only-verify-types.ts",
           "symbol": "M3LAppendOnlyVerification",
-          "blob": "cd44759d3b6248910f42c6bec1f97df1c3d77ce7"
+          "blob": "f117280a21283662cc15dbbc4f5526fd45171ee6"
         },
         {
           "file": "packages/m3l-common/src/core/storage/append-only-entry-types.ts",
@@ -171,7 +171,7 @@
           "blob": "2bc7a2c9237f09f74143920fb06cd30d360b60c0"
         }
       ],
-      "retrieved": "2026-09-13"
+      "retrieved": "2026-09-14"
     },
     {
       "heading": "Notes & behavior",

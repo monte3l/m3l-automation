@@ -1,6 +1,6 @@
 /**
  * Tests for `internal/storage/append-only-verify` — the append-only stream's
- * bounded audit-trail verification (ADR-0102, X8b slice 5): re-digesting
+ * bounded audit-trail verification (ADR-0102, X8b4b): re-digesting
  * every segment a directory's `manifest.jsonl` sidecar makes a claim about,
  * and classifying every segment — claimed or not — into one of five
  * verdicts, oldest first, never throwing on a damaged trail.
@@ -65,9 +65,6 @@ import type {
 } from "../src/core/storage/append-only-verify-types.js";
 import type { AppendOnlyReadFailure } from "../src/internal/storage/append-only-lines.js";
 import { MANIFEST_FORMAT_VERSION } from "../src/internal/storage/append-only-manifest.js";
-// The module under test does not exist yet — this import is expected to fail
-// module resolution until `code-implementer` writes it against this same
-// contract. That failure IS the RED result this suite is meant to produce.
 import type { AppendOnlyVerifyOptions } from "../src/internal/storage/append-only-verify.js";
 import { verifyAppendOnlySegments } from "../src/internal/storage/append-only-verify.js";
 
@@ -359,9 +356,35 @@ describe("C2 classification", () => {
     if (verdict.status !== "sealed") {
       throw new Error(`expected status "sealed", got "${verdict.status}"`);
     }
-    expect(verdict.sealed).toMatchObject(measurement);
+    expect(verdict.sealed).toEqual({
+      ...measurement,
+      segment: SEG,
+      at: "2026-09-11T01:00:00.000Z",
+    });
     expect(verdict.observed).toEqual(measurement);
     expect(result.failures).toEqual([]);
+    // The internal `ManifestSealRecord` this is built from also carries
+    // `kind` and `formatVersion` — two properties `M3LAppendOnlySealedSegment`
+    // does not declare. Structural typing lets a superset assignment through
+    // silently, and a field-by-field `toMatchObject` (or even a `toEqual`
+    // against a same-shaped expected object, if the fixture happened to omit
+    // the extra keys too) would not catch it either. An explicit own-key
+    // check is the assertion that actually does: it fails the moment any
+    // extra own property rides along, regardless of what the fixture knows
+    // to expect.
+    expect(Object.keys(verdict.sealed).sort()).toEqual([
+      "at",
+      "byteLength",
+      "entryCount",
+      "segment",
+      "sha256",
+    ]);
+    // The channel a caller actually sees: the internal-record leak this
+    // suite is pinning was found by probing `JSON.stringify` of the public
+    // report, so that is the assertion that proves it is closed.
+    const serialized = JSON.stringify(result);
+    expect(serialized).not.toContain('"formatVersion"');
+    expect(serialized).not.toContain('"kind":"seal"');
   });
 
   test("a sealed segment tampered with after sealing classifies mismatched, and observed reports the exact drifted numbers", async () => {
@@ -384,11 +407,26 @@ describe("C2 classification", () => {
     if (verdict.status !== "mismatched") {
       throw new Error(`expected status "mismatched", got "${verdict.status}"`);
     }
-    expect(verdict.sealed).toMatchObject(trueMeasurement);
+    expect(verdict.sealed).toEqual({
+      ...trueMeasurement,
+      segment: SEG,
+      at: "2026-09-11T01:00:00.000Z",
+    });
     expect(verdict.observed).toEqual(observedMeasurement);
     expect(verdict.observed.entryCount).toBe(trueMeasurement.entryCount);
     expect(verdict.observed.byteLength).not.toBe(trueMeasurement.byteLength);
     expect(verdict.observed.sha256).not.toBe(trueMeasurement.sha256);
+    // Same own-key guarantee as the "sealed" arm above, pinned here too
+    // because `sealedOrMismatchedVerdict` is the one function that builds
+    // BOTH arms — a fix that only closed the leak on one branch would still
+    // leave the other exposed.
+    expect(Object.keys(verdict.sealed).sort()).toEqual([
+      "at",
+      "byteLength",
+      "entryCount",
+      "segment",
+      "sha256",
+    ]);
   });
 
   test("a sealed segment absent from disk classifies archived, carrying the full claim including sha256, with observed undefined", async () => {
@@ -402,7 +440,11 @@ describe("C2 classification", () => {
     if (verdict.status !== "archived") {
       throw new Error(`expected status "archived", got "${verdict.status}"`);
     }
-    expect(verdict.sealed).toMatchObject(measurement);
+    expect(verdict.sealed).toEqual({
+      ...measurement,
+      segment: SEG,
+      at: "2026-09-11T01:00:00.000Z",
+    });
     // `sha256` explicitly, not just "the claim": this is the field that lets
     // an operator holding an archive copy run `sha256sum` against it — the
     // whole point of `archived` carrying the full claim.
@@ -411,6 +453,22 @@ describe("C2 classification", () => {
     // digested — so absence is an own-key check, not a `.toBeUndefined()`
     // read the type no longer permits.
     expect(Object.hasOwn(verdict, "observed")).toBe(false);
+    // Own-key guarantee pinned here too: `archivedVerdict` is a SEPARATE
+    // function from `sealedOrMismatchedVerdict` above, with its own
+    // opportunity to assign the raw internal record straight to `sealed`.
+    // Structural typing accepts that superset silently; the own-key check
+    // is what actually catches it.
+    expect(Object.keys(verdict.sealed).sort()).toEqual([
+      "at",
+      "byteLength",
+      "entryCount",
+      "segment",
+      "sha256",
+    ]);
+    // The channel a caller actually sees, for this producer too.
+    const serialized = JSON.stringify(result);
+    expect(serialized).not.toContain('"formatVersion"');
+    expect(serialized).not.toContain('"kind":"seal"');
   });
 
   test("an on-disk segment with no seal and no baseline classifies unsealed, with sealed and observed both undefined", async () => {
@@ -608,7 +666,7 @@ describe("C5 failure routing", () => {
     expect(manifestPort.calls.length).toBeGreaterThanOrEqual(1);
   });
 
-  test("a sealed segment replaced by a symlink reports one failure carrying that segment's name, and the OTHER segments still receive their verdicts", async () => {
+  test("a sealed segment replaced by a symlink reports one failure carrying that segment's name (and is double-counted in skipped), and the OTHER segments still receive their verdicts", async () => {
     const readableSegment = "2026-09-01-0001.jsonl";
     const symlinkedSegment = "2026-09-01-0002.jsonl";
     const readableBuffer = await writeSegment(readableSegment, "{}\n");
@@ -639,6 +697,18 @@ describe("C5 failure routing", () => {
     // only diagnostic an operator has for why this segment could not be
     // read; dropping it would leave them nothing beyond a generic message.
     expect(result.failures[0]?.error.cause).toBeDefined();
+    // `skipped` mirrors `listSegmentFiles`'s inventory verbatim — which is
+    // what makes it directly comparable with `listSegments()` — and that
+    // inventory refuses this symlink on its OWN pass, independently of
+    // whether the manifest claims the name. So `symlinkedSegment` is counted
+    // BOTH here (as a `failures` entry, because it is also claimed) AND in
+    // `skipped`. This is deliberate double-counting, not a bug:
+    // `verdicts + failures + skipped` is NOT a partition of the directory —
+    // a refused entry the manifest claims is seen independently by the
+    // inventory and by the claimed-segment presence/digest check. Anyone
+    // "fixing" this to make the three collections disjoint would break
+    // `skipped`'s parity with `listSegments()` for every unclaimed refusal.
+    expect(result.skipped).toBe(1);
   });
 
   describe("the directory cannot be listed", () => {
@@ -759,7 +829,11 @@ describe("C5 failure routing", () => {
       if (verdict.status !== "archived") {
         throw new Error(`expected status "archived", got "${verdict.status}"`);
       }
-      expect(verdict.sealed).toMatchObject(measurement);
+      expect(verdict.sealed).toEqual({
+        ...measurement,
+        segment: archivedSegment,
+        at: "2026-09-11T01:00:00.000Z",
+      });
       expect(Object.hasOwn(verdict, "observed")).toBe(false);
     });
   });
@@ -923,9 +997,13 @@ describe("C7 skipped inventory", () => {
     // A symlink at a segment-shaped name this writer never sealed and never
     // claimed in the manifest: `listSegmentFiles` refuses it during
     // inventory (not `isFile()`), so it was never a segment in the first
-    // place — never CONSIDERED at all, per this module's own doc. It
-    // therefore cannot appear in either `verdicts` or `failures`; `skipped`
-    // is the ONLY place its presence can surface.
+    // place — never CONSIDERED at all, per this module's own doc. Because
+    // NOTHING claims this name, it cannot appear in either `verdicts` or
+    // `failures`; `skipped` is the ONLY place its presence can surface. This
+    // is specific to an UNCLAIMED name — the C5 claimed-symlink test above
+    // plants the same kind of refused entry at a name the manifest DOES
+    // claim, and there it appears in both `failures` and `skipped` at once;
+    // together the two tests are what makes the distinction legible.
     await symlink(
       path.join(sandbox, "nowhere-in-particular"),
       path.join(sandbox, plantedLinkName),
