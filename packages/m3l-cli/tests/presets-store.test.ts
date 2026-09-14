@@ -287,6 +287,43 @@ describe("readPresetRecord", () => {
     expect((thrown as M3LCliError).cause).toBe(original);
   });
 
+  // X8e slice 2 (issue #1251): pins single-read correctness for the local
+  // `hasErrnoCode` helper, which classifies via `Core.errnoCodeOf`
+  // (`packages/m3l-common/src/core/utils/guards.ts`) and reads `.code`
+  // exactly ONCE. An accessor `code` that answers "EACCES" on the first
+  // read and something else on later reads must still classify as
+  // "permission denied" — a double-read implementation would throw away the
+  // first (validated) read and fall through to the generic "invalid preset"
+  // category instead.
+  test("classifies a permission error from a flip-flopping `code` accessor (first read EACCES, later reads differ) as 'permission denied' — single-read correctness", () => {
+    const original = new Error("EACCES") as NodeJS.ErrnoException;
+    let reads = 0;
+    Object.defineProperty(original, "code", {
+      configurable: true,
+      enumerable: true,
+      get() {
+        reads += 1;
+        return reads === 1 ? "EACCES" : "OTHER";
+      },
+    });
+    vi.spyOn(Core.M3LScriptPresetLoader.prototype, "load").mockImplementation(
+      () => {
+        throw original;
+      },
+    );
+
+    let thrown: unknown;
+    try {
+      readPresetRecord(filePath, [regionDescriptor]);
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LCliError);
+    expect((thrown as M3LCliError).code).toBe("ERR_CLI_PRESET_INVALID");
+    expect((thrown as M3LCliError).message).toContain("permission denied");
+  });
+
   test("classifies a preset nested deeper than the loader's max structure depth as 'nesting too deep'", () => {
     // 70 levels of nesting exceeds M3LScriptPresetLoader's internal
     // MAX_PRESET_STRUCTURE_DEPTH (64) — the exact number of levels is an

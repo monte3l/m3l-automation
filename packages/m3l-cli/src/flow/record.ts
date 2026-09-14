@@ -19,6 +19,8 @@ import { createHash } from "node:crypto";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 
+import { Core } from "@monte3l/m3l-common";
+
 import { M3LCliError } from "../cli/errors.js";
 import type { M3LCliRunOutcome } from "../run/envelope.js";
 import type { M3LCliFlowRunResult } from "./run.js";
@@ -552,11 +554,7 @@ export function readFlowRunRecord(
   try {
     raw = readFileSync(recordFilePath, "utf8");
   } catch (cause) {
-    if (
-      typeof cause === "object" &&
-      cause !== null &&
-      (cause as NodeJS.ErrnoException).code === "ENOENT"
-    ) {
+    if (Core.isEnoentError(cause)) {
       return undefined;
     }
     throw new M3LCliError(

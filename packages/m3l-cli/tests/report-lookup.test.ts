@@ -176,6 +176,25 @@ describe("locateRunReport — enumerating the output directory", () => {
     });
   });
 
+  // X8e slice 2 (issue #1251): pins the Error-instance-only ENOENT check now
+  // that listCandidates classifies via Core.isEnoentError(cause), which
+  // requires `cause instanceof Error`. A plain object carrying an
+  // ENOENT-shaped `code` (no `Error` in its prototype chain at all) does not
+  // qualify as "directory missing" and must surface as
+  // output-directory-unreadable instead of the tolerant -missing reason a
+  // prior any-object check would have produced.
+  test("returns unavailable/output-directory-unreadable when readdirSync throws a plain-object ENOENT-shaped value (not an Error instance)", () => {
+    vi.spyOn(fs, "readdirSync").mockImplementation(() => {
+      // eslint-disable-next-line @typescript-eslint/only-throw-error -- intentionally throws a plain non-Error object shaped like an errno failure, to prove the post-conversion Core.isEnoentError (Error-instance-only) no longer tolerates it the way a prior any-object check would
+      throw { code: "ENOENT" };
+    });
+
+    expect(locateRunReport(baseOptions())).toEqual({
+      status: "unavailable",
+      reason: "output-directory-unreadable",
+    });
+  });
+
   test("invokes readdirSync with withFileTypes: true", () => {
     mockReaddirSync([]);
 
@@ -409,6 +428,28 @@ describe("locateRunReport — per-candidate report read", () => {
       reportPath: reportPathFor(olderName),
     });
     expect(fs.readFileSync).toHaveBeenCalledTimes(2);
+  });
+
+  // X8e slice 2 (issue #1251): pins the Error-instance-only ENOENT check now
+  // that readReportFile classifies via Core.isEnoentError(cause), which
+  // requires `cause instanceof Error`. A plain object carrying an
+  // ENOENT-shaped `code` (no `Error` in its prototype chain at all) no
+  // longer qualifies as "no report file" (the silently-skipped `enoent`
+  // path, which — with only one candidate and no report found anywhere —
+  // would surface as `no-matching-report`); it now surfaces as the
+  // remembered `report-unreadable` stop reason instead.
+  test("classifies a plain-object ENOENT-shaped readFileSync throw (not an Error instance) as report-unreadable, not enoent", () => {
+    const dirName = dirNameFor(STARTED_AT);
+    mockReaddirSync([fakeDirent(dirName)]);
+    vi.spyOn(fs, "readFileSync").mockImplementation(() => {
+      // eslint-disable-next-line @typescript-eslint/only-throw-error -- intentionally throws a plain non-Error object shaped like an errno failure, to prove the post-conversion Core.isEnoentError (Error-instance-only) no longer tolerates it the way a prior any-object check would
+      throw { code: "ENOENT" };
+    });
+
+    expect(locateRunReport(baseOptions())).toEqual({
+      status: "unavailable",
+      reason: "report-unreadable",
+    });
   });
 
   test("continues to an older candidate after malformed JSON on a newer one, finding its match", () => {

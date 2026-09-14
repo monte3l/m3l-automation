@@ -50,7 +50,7 @@ function readOwnManifestDefault(): M3LCliOwnManifest {
  * @returns Whether `error` represents a module-not-found condition.
  */
 function isModuleNotFound(error: unknown): boolean {
-  return Core.isNodeError(error) && error.code === "MODULE_NOT_FOUND";
+  return Core.errnoCodeOf(error) === "MODULE_NOT_FOUND";
 }
 
 /**

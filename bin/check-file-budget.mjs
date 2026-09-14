@@ -40,6 +40,7 @@ import { execFileSync } from "node:child_process";
 import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseJsonFlag, createReporter, repoRoot } from "./lib/report.mjs";
+import { errnoCodeOf } from "./lib/errno.mjs";
 
 const root = repoRoot(import.meta.url);
 const baselineRel = "bin/file-budget-baseline.json";
@@ -75,8 +76,7 @@ export function walkMatching(dir, matches) {
       // lacking src/ or tests/) is the only expected failure here; anything
       // else (EACCES, ELOOP, …) is a real problem and must not be silently
       // swallowed into "this subtree has zero files".
-      if (cause instanceof Error && "code" in cause && cause.code === "ENOENT")
-        return;
+      if (errnoCodeOf(cause) === "ENOENT") return;
       throw cause;
     }
     for (const entry of entries) {

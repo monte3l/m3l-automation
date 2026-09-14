@@ -343,10 +343,8 @@ function nearestExistingAncestor(directory: string): string {
  * @returns Whether `error` represents a permission-denied condition.
  */
 function isPermissionDenied(error: unknown): boolean {
-  return (
-    Core.isNodeError(error) &&
-    (error.code === "EACCES" || error.code === "EPERM")
-  );
+  const code = Core.errnoCodeOf(error);
+  return code === "EACCES" || code === "EPERM";
 }
 
 /**

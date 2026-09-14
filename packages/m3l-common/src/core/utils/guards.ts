@@ -89,11 +89,12 @@ export function isError(v: unknown): v is Error {
  * one of them checked. `Object.hasOwn` tests for the property without
  * reading it, so the ownership guard adds no second read.
  *
- * `packages/m3l-console-server/src/errors/errno.ts` currently carries an
- * independent, byte-for-byte mirror of this same algorithm under the same
- * name (`errnoCodeOf`) — it predates this export and cannot yet depend on it
- * without crossing the console's own zone-import boundary in a way not yet
- * wired up. A follow-up collapses that copy into a re-export of this symbol.
+ * `packages/m3l-console-server/src/errors/errno.ts` delegates to this
+ * export directly. The one remaining independent copy is
+ * `bin/lib/errno.mjs` — `.mjs` tooling scripts cannot import this
+ * TypeScript source directly, so that file hand-mirrors the same
+ * own-property, single-read algorithm; keep the two in sync by hand
+ * whenever either one changes.
  *
  * @param v - The value to inspect.
  * @returns The own `code` string, or `undefined` when `v` is not an `Error`

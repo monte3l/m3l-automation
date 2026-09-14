@@ -846,6 +846,29 @@ describe("readFlowRunRecord", () => {
     expect(readFlowRunRecord(RECORD_PATH)).toBeUndefined();
   });
 
+  // X8e slice 2 (issue #1251): pins the Error-instance-only ENOENT check
+  // now that `readFlowRunRecord` classifies via `Core.isEnoentError(cause)`,
+  // which requires `cause instanceof Error`. A plain object carrying an
+  // ENOENT-shaped `code` (no `Error` in its prototype chain at all) does not
+  // qualify as "file does not exist" and must surface as a loud read
+  // failure instead of the tolerant `undefined`.
+  test("throws ERR_CLI_FLOW_RECORD_INVALID for a plain-object ENOENT-shaped throw (not an Error instance) — Core.isEnoentError requires an Error, unlike today's inline object check", () => {
+    vi.spyOn(fs, "readFileSync").mockImplementation(() => {
+      // eslint-disable-next-line @typescript-eslint/only-throw-error -- intentionally throws a plain non-Error object shaped like an errno failure, to prove the post-conversion Core.isEnoentError (Error-instance-only) no longer tolerates it the way the current inline object check does
+      throw { code: "ENOENT" };
+    });
+
+    let thrown: unknown;
+    try {
+      readFlowRunRecord(RECORD_PATH);
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LCliError);
+    expect((thrown as M3LCliError).code).toBe("ERR_CLI_FLOW_RECORD_INVALID");
+  });
+
   test("throws ERR_CLI_FLOW_RECORD_INVALID for a non-ENOENT read failure, chaining the cause", () => {
     const cause = errnoError("EACCES");
     vi.spyOn(fs, "readFileSync").mockImplementation(() => {

@@ -26,6 +26,8 @@ import { readdirSync, readFileSync } from "node:fs";
 import type { Dirent } from "node:fs";
 import { join } from "node:path";
 
+import { Core } from "@monte3l/m3l-common";
+
 import type {
   M3LCliRunOutcome,
   M3LCliRunReportLookup,
@@ -91,17 +93,6 @@ type OutputDirectoryFailureReason =
   "output-directory-missing" | "output-directory-unreadable";
 
 /**
- * Safely reads a caught value's `.code` property (e.g. `"ENOENT"`),
- * tolerating a non-`Error`/non-object throw.
- */
-function readErrnoCode(cause: unknown): unknown {
-  if (typeof cause !== "object" || cause === null || !("code" in cause)) {
-    return undefined;
-  }
-  return (cause as { readonly code?: unknown }).code;
-}
-
-/**
  * Parses a directory name against {@link RUN_DIRECTORY_NAME_PATTERN} and
  * resolves its timestamp, or `undefined` when the name doesn't match the
  * shape or parses to an invalid date.
@@ -152,10 +143,9 @@ function listCandidates(
   try {
     entries = readdirSync(outputDirPath, { withFileTypes: true });
   } catch (cause) {
-    const reason: OutputDirectoryFailureReason =
-      readErrnoCode(cause) === "ENOENT"
-        ? "output-directory-missing"
-        : "output-directory-unreadable";
+    const reason: OutputDirectoryFailureReason = Core.isEnoentError(cause)
+      ? "output-directory-missing"
+      : "output-directory-unreadable";
     return { ok: false, reason };
   }
 
@@ -273,7 +263,7 @@ function readReportFile(
     return readFileSync(reportPath, "utf8");
   } catch (cause) {
     return {
-      kind: readErrnoCode(cause) === "ENOENT" ? "enoent" : "stop-unreadable",
+      kind: Core.isEnoentError(cause) ? "enoent" : "stop-unreadable",
     };
   }
 }

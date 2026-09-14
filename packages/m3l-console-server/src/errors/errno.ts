@@ -55,11 +55,7 @@ import { Core } from "@monte3l/m3l-common";
  * ```
  */
 export function errnoCodeOf(cause: unknown): string | undefined {
-  if (!(cause instanceof Error) || !Object.hasOwn(cause, "code")) {
-    return undefined;
-  }
-  const code: unknown = (cause as NodeJS.ErrnoException).code;
-  return typeof code === "string" ? code : undefined;
+  return Core.errnoCodeOf(cause);
 }
 
 /**
