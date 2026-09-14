@@ -266,6 +266,11 @@ export const COMMAND_CATALOG = [
       "Runs the m3l operations-console backend (packages/m3l-console-server, ADR-0064/0065) in the foreground: binds a loopback-only listener, serves /health and /ready, and drains gracefully on SIGINT/SIGTERM/SIGQUIT. Requires M3L_CONSOLE_OPERATOR_NAME (ADR-0071). Settings: the package README's Configuration table.",
   },
   {
+    name: "mcp:serve",
+    description:
+      "Runs the runtime MCP server (packages/m3l-mcp, ADR-0062) in the foreground, speaking JSON-RPC over stdio — so it expects an MCP client on the other end and is only useful bare as a smoke test. Exposes intent-grouped fleet operations, every call gated by the ADR-0060 policy layer and recorded in the ADR-0061 decision log. Requires data/input/agent-policy.json; there is no fallback policy. NOT the dev-time server bin/mcp-server.mjs (ADR-0030/0096) — see docs/reference/mcp.md.",
+  },
+  {
     name: "console:web",
     description:
       "Runs the m3l operations-console frontend's Vite dev server (packages/m3l-console-web, ADR-0064/0067). Proxies /health and /ready to console:server's default loopback bind so the shell's health check works against the real backend.",

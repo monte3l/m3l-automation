@@ -1,0 +1,21 @@
+{
+  "name": "@m3l-automation/m3l-mcp",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Runtime MCP surface: exposes intent-grouped m3l fleet operations to any MCP client over stdio, under the ADR-0060 policy layer and the ADR-0061 decision log (ADR-0062)",
+  "engines": {
+    "node": ">=24"
+  },
+  "bin": {
+    "m3l-mcp": "./bin/m3l-mcp.mjs"
+  },
+  "scripts": {
+    "build": "tsc -b tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.30.0",
+    "zod": "4.5.4"
+  }
+}

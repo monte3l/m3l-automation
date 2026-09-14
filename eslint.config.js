@@ -152,7 +152,21 @@ export default tseslint.config(
       // dynamically via `createRequire(...).resolve(...)`, never a
       // static import — so there is nothing left for that entry to
       // suppress.
-      "import-x/no-unresolved": ["error", { ignore: ["^@monte3l/m3l-common"] }],
+      //
+      // `^@modelcontextprotocol/sdk` is a different reason: it is a real,
+      // installed dependency, but this resolver cannot follow its `exports`
+      // map to a deep subpath. Node itself resolves
+      // `@modelcontextprotocol/sdk/server/mcp.js` (verified directly), and so
+      // does `pnpm typecheck` — which is the authoritative resolver named
+      // above. The dev-time server hits exactly the same specifiers and never
+      // reported it only because `bin/**/*.mjs` turns this rule `off`
+      // wholesale further down; `packages/m3l-mcp/src` is the first TypeScript
+      // consumer of the SDK, so the gap surfaced here first. Bounded to the
+      // one package for the same reason as above.
+      "import-x/no-unresolved": [
+        "error",
+        { ignore: ["^@monte3l/m3l-common", "^@modelcontextprotocol/sdk"] },
+      ],
     },
   },
   {
@@ -264,9 +278,17 @@ export default tseslint.config(
     // outside that seam. `bin/m3l-console-server.mjs` is the process entry
     // and is deliberately not covered — it prints boot/drain failures before
     // and after a logger exists.
+    // The runtime MCP server (ADR-0062) is covered for a stricter reason than
+    // either of the above: under stdio transport `stdout` IS the JSON-RPC
+    // framing channel, so a stray `console.log` does not merely emit an
+    // unstructured line — it corrupts every message framed after it and
+    // breaks the session. `bin/m3l-mcp.mjs` is the process entry and is
+    // deliberately not covered; it reports boot failure to stderr, before any
+    // transport exists.
     files: [
       "packages/m3l-common/src/**/*.ts",
       "packages/m3l-console-server/src/**/*.ts",
+      "packages/m3l-mcp/src/**/*.ts",
     ],
     rules: {
       "no-console": "error",
@@ -578,6 +600,78 @@ export default tseslint.config(
               allowTypeImports: false,
               message:
                 "The m3l CLI may only import @monte3l/m3l-common (or a subpath) and node: builtins — ADR-0042 keeps it zero-dependency.",
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    // The runtime MCP server (ADR-0062) is the ONE package allowed to hold
+    // the MCP SDK — that is the whole reason it exists as a separate package
+    // rather than an `m3l mcp` subcommand, since adding the SDK to the CLI
+    // would break ADR-0042's zero-dependency invariant. So its boundary is
+    // the m3l-cli/console-server boundary plus exactly two specifiers:
+    // `@modelcontextprotocol/sdk` and `zod` (a NON-optional peer of that SDK,
+    // and the type `registerTool`'s `inputSchema` takes — recorded in
+    // ADR-0062's 2026-09-14 Update, which corrects the ADR's original
+    // one-dependency framing).
+    //
+    // Deliberately NOT allowed: `scripts/*/src/**`. ADR-0029's own zone only
+    // constrains files *inside* a script, so a packages/* module reaching
+    // into `scripts/agent-operator/src/lib/*` was mechanically unguarded —
+    // and that path is tempting here, because agent-operator already
+    // implements a CLI facade this package needs. Sharing goes through the
+    // library instead (the reverse zone added below closes the hole for
+    // every package, not just this one).
+    files: ["packages/m3l-mcp/src/**/*.ts"],
+    rules: {
+      "@typescript-eslint/no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              regex:
+                "^(?!\\.)(?!node:)(?!@monte3l/m3l-common($|/))(?!@modelcontextprotocol/sdk($|/))(?!zod($|/)).+$",
+              allowTypeImports: false,
+              message:
+                "The runtime MCP server may only import @monte3l/m3l-common, @modelcontextprotocol/sdk, zod (their subpaths), and node: builtins — ADR-0062 scopes its dependency budget to the SDK and that SDK's mandatory zod peer. Reaching into scripts/*/src is banned outright: shared logic belongs in the library (ADR-0029).",
+            },
+          ],
+        },
+      ],
+      // The `no-restricted-imports` regex above only sees NON-relative
+      // specifiers (it opens with `(?!\.)`), so it cannot stop
+      // `../../../scripts/agent-operator/src/lib/cli-process.js`. That
+      // relative escape is the actual reachable hole, and this package is the
+      // one with a motive to use it, so the path-based rule closes it here.
+      //
+      // Scoped to this package rather than all of `packages/*/src` on
+      // purpose: flat config keeps only the LAST block that matches a file
+      // for a given rule, so a `packages/*/src/**` block setting
+      // `no-restricted-paths` after the ADR-0009 blocks below would silently
+      // REPLACE m3l-common's internal/-sealing, aws-island and
+      // core/script-rootness zones — and because `bin/check-eslint-zones.mjs`
+      // flattens zones across every block, those zones would still appear
+      // present while no longer applying to a single file. The repo-wide
+      // version of this ban is a real gap (nothing stops any other
+      // `packages/*` entry from importing a script's src today) but closing
+      // it needs per-block edits, not one broad block; tracked separately.
+      "import-x/no-restricted-paths": [
+        "error",
+        {
+          zones: [
+            {
+              target: "./packages/m3l-mcp/src",
+              from: "./scripts",
+              message:
+                "The runtime MCP server may not import a consumer script's src — not even relatively. agent-operator's CLI facade is a sibling consumer, not a library; promoting shared logic into @monte3l/m3l-common is the sanctioned path (ADR-0029, and ADR-0062's 2026-09-14 Update on the retired m3l-cli-internals clause).",
+            },
+            {
+              target: "./packages/m3l-mcp/src",
+              from: "./packages/m3l-mcp/tests",
+              message:
+                "Production source must not import from tests/ — move shared fixtures/helpers into src/ if they're needed at runtime.",
             },
           ],
         },
@@ -1114,6 +1208,7 @@ export default tseslint.config(
       "packages/m3l-console-server/src/**/*.ts",
       "packages/m3l-console-web/src/**/*.ts",
       "packages/m3l-console-web/src/**/*.tsx",
+      "packages/m3l-mcp/src/**/*.ts",
     ],
     rules: {
       "import-x/no-cycle": ["error", { maxDepth: Infinity }],
@@ -1129,6 +1224,7 @@ export default tseslint.config(
       ".claude/hooks/**/*.mjs",
       "packages/m3l-cli/bin/**/*.mjs",
       "packages/m3l-console-server/bin/**/*.mjs",
+      "packages/m3l-mcp/bin/**/*.mjs",
     ],
     extends: [tseslint.configs.disableTypeChecked],
     languageOptions: {

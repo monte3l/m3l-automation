@@ -481,6 +481,15 @@ importers:
         specifier: 8.2.2
         version: 8.2.2(@types/node@24.13.3)(jiti@2.7.0)(yaml@2.9.0)
 
+  packages/m3l-mcp:
+    dependencies:
+      '@modelcontextprotocol/sdk':
+        specifier: 1.30.0
+        version: 1.30.0(supports-color@7.2.0)(zod@4.5.4)
+      zod:
+        specifier: 4.5.4
+        version: 4.5.4
+
   scripts/agent-operator:
     dependencies:
       '@monte3l/m3l-common':

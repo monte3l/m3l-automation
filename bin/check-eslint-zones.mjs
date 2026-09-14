@@ -288,6 +288,67 @@ if (!hasConsoleServerImportBoundary) {
   errors++;
 }
 
+// ADR-0062: the runtime MCP server's dependency budget — the library, node:
+// builtins, plus exactly `@modelcontextprotocol/sdk` and its mandatory `zod`
+// peer. The SDK allowance is asserted BY NAME rather than just checking the
+// boundary exists, because this package's entire reason to exist separately
+// is that it, and only it, may hold the SDK (ADR-0042 keeps the CLI
+// zero-dependency). Naming it here means a copy-paste of this block onto
+// another package has to edit this file too.
+const hasMcpImportBoundary = config.some((block) => {
+  const files = Array.isArray(block?.files) ? block.files : [];
+  if (!files.some((f) => norm(f).endsWith("packages/m3l-mcp/src/**/*.ts"))) {
+    return false;
+  }
+  const rule = block?.rules?.["@typescript-eslint/no-restricted-imports"];
+  if (!Array.isArray(rule)) return false;
+  const [severity, options] = rule;
+  const isError = severity === "error" || severity === 2;
+  const patterns = Array.isArray(options?.patterns) ? options.patterns : [];
+  return (
+    isError &&
+    patterns.some(
+      (pattern) =>
+        typeof pattern?.regex === "string" &&
+        pattern.regex.includes("@monte3l/m3l-common") &&
+        pattern.regex.includes("node:") &&
+        pattern.regex.includes("@modelcontextprotocol/sdk") &&
+        pattern.regex.includes("zod") &&
+        pattern.allowTypeImports === false,
+    )
+  );
+});
+if (!hasMcpImportBoundary) {
+  reporter.error(
+    "missing or malformed ADR-0062 guard: @typescript-eslint/no-restricted-imports boundary over packages/m3l-mcp/src/**/*.ts (library + node: builtins + @modelcontextprotocol/sdk + zod only)",
+    { file: "eslint.config.js" },
+  );
+  errors++;
+}
+
+// ADR-0029, enforced in the direction nothing else covers. The cross-import
+// zone above is scoped `files: ["scripts/*/src/**/*.ts"]`, so it constrains
+// files INSIDE a script and says nothing about a packages/* module reaching
+// the other way — a relative `../../../scripts/<name>/src/...` import from a
+// package was mechanically unguarded. m3l-mcp is the package with a motive
+// (agent-operator already implements the CLI facade it needs), so ADR-0062's
+// own zone closes it there. Asserted separately from the import boundary
+// above because `no-restricted-imports`' regex only matches non-relative
+// specifiers and therefore cannot express this at all.
+requireZone(
+  "packages/m3l-mcp/src must not import a consumer script's src (ADR-0029, reverse direction)",
+  (zone) =>
+    norm(zone.target).endsWith("packages/m3l-mcp/src") &&
+    norm(zone.from).endsWith("/scripts"),
+);
+
+requireZone(
+  "packages/m3l-mcp prod-not-to-test (src must not import tests/)",
+  (zone) =>
+    norm(zone.target).endsWith("packages/m3l-mcp/src") &&
+    norm(zone.from).endsWith("packages/m3l-mcp/tests"),
+);
+
 // ADR-0065 modular-monolith layering. One zone per module, asserted with an
 // EXACT `except` set for the same reason the aws island is: a subset check
 // would keep passing after someone widened `except` to let http/ reach
