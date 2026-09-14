@@ -1057,6 +1057,117 @@ guard they both should have been calling.
   `isEnoentError` stops composing through `isNodeError`, comparing `v.code`
   again after the composed call re-introduces the second read.
 
+## Update (2026-09-14) — X8e closes: every remaining hand-rolled errno-code check that decides tolerate-vs-rethrow reads through one shared, single-read guard
+
+X8e — filed by the 2026-09-13 (second) Update above — is complete, shipped
+as two slices.
+
+**Slice 1** (`feat/x8e-errno-codeof`) promoted `core/utils/guards.ts`'s
+module-private `readErrnoCode` to a public export, `errnoCodeOf(v: unknown):
+string | undefined`, with `isNodeError`/`isEnoentError` rewritten to
+delegate to it. This is an additive namespace-barrel symbol — **MINOR**,
+`@monte3l/m3l-common` 4.8.1 → 4.9.0, no `exports`-map change. Five
+`m3l-common` call sites converted onto it — directly, or via its
+`isEnoentError` narrowing:
+`internal/files/copyExecution.ts` (local `errnoCode` helper deleted
+outright — this also tightened accepted input from any `object` to
+`instanceof Error`, unreachable from real `node:fs/promises` rejections, the
+same tightening X8d applied for the same forgeability reason),
+`core/config/M3LJSONConfigProvider.ts`, `M3LYAMLConfigProvider.ts`, and two
+sites in `core/environment/index.ts`.
+
+**Slice 2** (`fix/x8e-errno-consumers`) converted every remaining consumer.
+The 2026-09-13 (second) Update above under-counted `m3l-cli` at five sites —
+re-derivation at slice-2 time found six distinct hand-rolled predicates
+across six files:
+
+- **`m3l-cli`**, six sites: `discovery/cache.ts` and `run/report-lookup.ts`
+  had their local ENOENT helpers deleted outright, now call
+  `Core.isEnoentError` directly. `presets/store.ts`, `discovery/discover.ts`,
+  and `commands/doctor.ts` kept their local wrapper functions but replaced a
+  `Core.isNodeError(v) && v.code === X` double-read (the same shape X8d
+  fixed once already in the library) with a single `Core.errnoCodeOf(v)`
+  read — a genuine behavior fix, not a pure refactor, pinned by a mutation
+  test in `presets-store.test.ts` proving a flip-flopping own `code` getter
+  previously misclassified a permission error. `flow/record.ts` replaced an
+  inline, unguarded `(cause as NodeJS.ErrnoException).code === "ENOENT"`
+  object-shape check with `Core.isEnoentError(cause)`, the same
+  any-object-to-`Error`-only tightening slice 1 applied.
+- **`m3l-console-server`**: `errors/errno.ts`'s own `errnoCodeOf` — a
+  byte-for-byte mirror of the library algorithm, predating this export and
+  shared by 8 importing modules — collapsed to a one-line delegate onto
+  `Core.errnoCodeOf`. Export name, TSDoc, and `underlyingErrnoCodeOf`'s
+  internal call to the local name are all unchanged; the TSDoc's guarantees
+  remain accurate transitively through the delegation, though it still reads
+  as documentation of a local algorithm rather than a forwarded one.
+- **`bin/` tooling**, four sites (`pr-review-gate.mjs`,
+  `check-file-budget.mjs`, `session-telemetry.mjs`, `gen-project-hub.mjs`):
+  `.mjs` cannot import `guards.ts` directly (TypeScript source, not a built
+  artifact), so `bin/lib/errno.mjs` mirrors the same own-property,
+  single-read algorithm. All four sites now read through it —
+  `pr-review-gate.mjs` had no ownership check at all (a bare `.code` cast);
+  the other three used an `"code" in cause` presence check, reachable via
+  the prototype chain rather than requiring an own property.
+  `bin/check-test-counts.mjs`'s `res.error?.code === "ENOBUFS"` is a
+  deliberate exception, not a miss: it only formats a diagnostic message, it
+  never decides tolerate-vs-rethrow, so it falls outside `bin/lib/errno.mjs`'s
+  own scoping rule.
+- **`scripts/agent-operator`**, one site: `src/lib/cli-process.ts`'s
+  `readFailureCode` used the same `"code" in error` presence check as the
+  `bin/` sites above. `agent-operator` already declares
+  `"@monte3l/m3l-common": "workspace:*"` as its one runtime dependency
+  (ADR-0029), so this converts onto `Core.errnoCodeOf`, keeping its own
+  regex allow-list layered on top. Found only by a pre-push review pass
+  after this Update's first draft claimed "every remaining" spelling was
+  closed without this site — `scripts/**` was never enumerated in the
+  original X8d/X8e census, which scoped only to `m3l-common`, `m3l-cli`,
+  `m3l-console-server`, and `bin/`.
+
+### The correction to the row's own premise
+
+The X8e tracker row, as filed, claimed `m3l-cli` "cannot reach that internal
+predicate without depending on `@monte3l/m3l-common/core`'s public surface."
+**This was false when filed and re-derivation caught it before slice 2
+began**: `packages/m3l-cli/package.json` already declared
+`"@monte3l/m3l-common": "workspace:*"`, all import sites already used
+`import { Core } from "@monte3l/m3l-common";`, and two call sites
+(`discover.ts`, `doctor.ts`) already called `Core.isNodeError`. No new
+dependency and no CLI-local guard module were ever needed — slice 2 is a
+pure call-site conversion, not new plumbing. Left uncorrected, the next
+reader would have re-derived a CLI-local guard module that should not exist.
+
+### Scope boundary — X8f filed for the abort predicates
+
+Re-deriving this row's census while investigating also found four
+hand-rolled copies of an `ERR_OPERATION_ABORTED` check
+(`internal/procedure/step-exec.ts`, `core/script/run-script.ts`,
+`core/cli-contract/outcome.ts`, `m3l-cli/src/run/in-process.ts`). These are
+**not** an errno — `ERR_OPERATION_ABORTED` is an ADR-0049 cancellation
+sentinel — and re-derivation found no read-count defect in any of the four
+(`"code" in x` is a presence test, not a read, and `M3LError` sets `code` as
+an own property in its constructor). The actual problem is that the four
+disagree on what counts as an abort (one accepts any object, three accept
+`Error` only), with a pinned test on one side of that disagreement
+(`tests/cli-contract-outcome.test.ts:186`) contradicting another copy's own
+TSDoc. Unifying them is a behavior decision owned by ADR-0049, not an errno
+cleanup — filed as **X8f**, exactly as X8d filed X8e.
+
+### Rejected alternatives
+
+- **Keep `errnoCodeOf` module-private and re-clone its algorithm in
+  `m3l-cli`.** Would have left a third independent copy alongside the
+  library's and the console-server's (the latter is being collapsed by this
+  same slice) — the opposite direction from X8d's own consolidation.
+- **Add a CLI-local guard module wrapping `Core.isNodeError`.** Unnecessary
+  indirection once the false "cannot reach" premise above is corrected — the
+  CLI already depends on `@monte3l/m3l-common` and already calls `Core`
+  guards directly at two sites.
+- **Unify the four `ERR_OPERATION_ABORTED` copies in this same change.** Out
+  of scope — X8e is an errno-code cleanup, and the abort predicates are not
+  errno checks. Unifying them is a real behavior decision (which of the four
+  disagreeing definitions is correct) that belongs to ADR-0049, not folded
+  silently into this PR. Filed as X8f instead.
+
 ## Links
 
 - Programme: [ADR-0064](./0064-m3l-console-programme.md). Store/index:
