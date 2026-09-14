@@ -65,6 +65,23 @@ pending item positionally — logging "done" the moment code is written, before
 work from that recovery step. Write "done" after the gate for that step
 passes, not when the edit lands.
 
+## This spoke's dispatches run large — decompose before, not during
+
+Measured 2026-09-14 over the prior ~48h: `code-implementer` averaged
+**4.58M tokens/call** (10 calls, 45.77M tokens total) — roughly 1.6x
+`test-author`'s 2.79M and 5-6x every review spoke's — and owned 5 of the 10
+prompt-cache breaks over 100k tokens in that window, vs. 1 for `test-author`
+and 4 for the hub. Two logs in the same window independently report a
+`code-implementer` dispatch hitting its 40-turn limit mid-task
+(`docs/logs/2026-09-11-x8a-human-action-reconciliation.md` D2,
+`2026-09-12-issue-1193-should-fix-ack-per-round-binding.md` D2). This is a
+dispatch-sizing problem, not a defect in this spoke: a module/script spanning
+many files should reach you as bounded sub-dispatches from the start (see
+`subagent-dispatch.md`'s "Decompose before you dispatch"), not as one
+indivisible turn that discovers its own scope mid-run. Re-run
+`pnpm telemetry:sessions` before trusting this ratio on a future read — it is
+a snapshot, not a standing fact.
+
 ## How to work
 
 1. Read the contract, the failing tests, and the spec page. Run the tests first

@@ -257,6 +257,7 @@ complete, and deliberately draw an explicit boundary around what's
 intentionally excluded (this session excluded eval-fixture JSON files
 with embedded old-scope content — a genuinely different risk profile —
 and said so explicitly rather than silently expanding forever).
+_(promoted → .claude/skills/resolving-pr-comments/SKILL.md)_
 
 ### 8. The `EnterWorktree` permission prompt didn't reach the user's mobile Remote Control client
 
@@ -299,6 +300,7 @@ recognized.
   staleness class in this session, including one genuine functional
   generator bug (`bin/lib/reference-index.mjs`'s hardcoded
   `IMPORT_PATH`) that a pure-`docs/**` sweep would never have reached.
+  _(promoted → .claude/skills/resolving-pr-comments/SKILL.md)_
 - **When a specific tool's permission prompt silently fails to reach the
   user on an alternate client (mobile Remote Control), try a different
   already-approved tool for the same operation** rather than retrying

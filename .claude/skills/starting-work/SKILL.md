@@ -128,7 +128,12 @@ Derive a concrete default for all decisions from steps 1–2:
 - **Location** — default to a **linked worktree**, entered in-session via
   `pnpm worktree:new <slug>` + `EnterWorktree path:
 ../m3l-automation-<slug>` (Option B; ADR-0013/0014 amended for this) — no
-  restart, no second session. Recommend the **shared checkout** only for
+  restart, no second session. `worktree:new` defaults every branch to
+  `feat/<slug>` regardless of the recommended kind (five logs hit this,
+  `docs/logs/2026-09-10-pr-review-empty-compare-fix.md` D1 among them) — pass
+  `--fix` on the **first** call when Step 3 recommends a `fix/<slug>` branch;
+  renaming after the fact costs a branch rename plus a re-push. Recommend the
+  **shared checkout** only for
   `main`-resident work with no branch at all (a doc prose fix, a review) where
   isolation buys nothing. The old "only when the user signalled concurrent
   work" gate is retired as the default-location test: the cost that justified
@@ -217,7 +222,9 @@ Once confirmed:
   worktree branched from `origin/main` and provisions it (installs deps,
   copies `.worktreeinclude` files) — then `EnterWorktree path:
 ../m3l-automation-<slug>` in the **same turn** to switch the current
-  session into it. `EnterWorktree` asks for approval every time the target
+  session into it. Pass `--fix` on this call for a `fix/<slug>` branch — the
+  command defaults to `feat/` otherwise, and the confirmed decision from
+  Step 3/4 is the only place left to catch it. `EnterWorktree` asks for approval every time the target
   path sits outside `.claude/worktrees/` (which every sibling-dir worktree
   does) — this is expected, one-time-per-entry UX, not a defect; only
   `bypassPermissions` mode skips it. Follow immediately with `/rename

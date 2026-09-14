@@ -162,6 +162,7 @@ not have.
 with a command-level `&`/`nohup`/`disown` — pass the plain foreground
 command and let the tool background it. Always invoke project-local
 binaries via `pnpm exec <bin>` or the matching `pnpm <script>`, never bare.
+_(promoted → .claude/hooks/guard-double-background.mjs)_
 
 ### 5. `ExitWorktree({action: "remove"})` refused ownership after the long session
 

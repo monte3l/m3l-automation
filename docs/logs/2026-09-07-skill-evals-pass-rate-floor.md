@@ -155,6 +155,7 @@ needs its own, normally-reviewable PR; that is open debt.
 - **Write measurement ranges, not censuses, in comments.** The
   `timeout-minutes` comment first pinned "26.9–28.3 minutes across all 15
   runs" — true when written, falsified by the very next run at 30m53s.
+  _(promoted → .claude/agents/code-reviewer.md)_
 - **Disabling a gate for a narrow mode is not the same as leaving that mode
   strict.** Both read as "the floor doesn't apply to a filtered run"; only one
   exits 0 on real failures. Any per-mode exemption needs its own named test.

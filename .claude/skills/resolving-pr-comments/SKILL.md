@@ -250,6 +250,17 @@ If you are unsure what the correct fix is for a Must-fix finding, describe the i
 and ask the user rather than guessing — Must-fix cannot be silently skipped. For a
 Should-fix finding, skip it instead (see priority order above).
 
+**A finding that names one file is a sample of a class, not the full
+population.** After applying a fix, grep the repo for the same shape — string
+literals and comments, not just the logic branch the finding pointed at —
+before calling it closed. One named stale file turned out to be 23 more files
+plus a separate related bug in the same pass
+(`docs/logs/2026-09-13-u13-registry-p4b-wave.md` D7); a second bot round
+found the identical hazard behind a differently-named step because the first
+fix addressed only the reported instance
+(`docs/logs/2026-09-10-verify-jobs.md` D3). State the search's exclusion
+boundary in the commit body when the grep turns up more than the named file.
+
 ### 5 — Verify after each category
 
 After all fixes in a category are applied, run the gate for that category before moving on:
@@ -412,6 +423,18 @@ git push
 If the `git pull --rebase` stops on conflicts, do not force past it — hand off
 to the `/resolving-merge-conflicts` skill (it auto-resolves derived-artifact
 conflicts and hands back any real `src/`/test logic), then finish the push.
+
+**If this branch merged out from under you mid-fix-pass** (auto-merge fired
+while this pass was still running), don't keep pushing to a branch that no
+longer has an open PR: `git fetch origin`, confirm the merge actually landed
+on `origin/main`, then `git checkout -b <new-branch> origin/main` and re-apply
+any still-uncommitted fix as a fresh PR
+(`docs/logs/2026-09-11-pnpm-12-bump.md` D3). Diff any stray uncommitted file
+against `origin/main` before discarding it as leftover WIP — it may be
+byte-identical to a change that already landed, in which case a plain
+`git checkout -- <file>` is correct, but treating it as garbage without the
+diff can silently drop real work
+(`docs/logs/2026-09-11-intel-mac-host-resources-support.md` D1).
 
 **A conflict-free rebase here is not proof the branch still builds.** Git's
 no-conflict result only means the two histories didn't touch the same lines —

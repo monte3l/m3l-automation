@@ -96,6 +96,7 @@ or use `nohup ... & disown` and separately poll the real child PID (`pgrep
 -f <command>` right after launch, then a `Monitor` script watching that PID
 with `kill -0`) rather than trusting the wrapper's own exit as a completion
 signal.
+_(promoted → .claude/hooks/guard-double-background.mjs)_
 
 ### 2. A drafted comparison ("X points is more than Y") went stale the moment the referenced constant changed
 
@@ -118,6 +119,7 @@ for every place that describes a _relationship_ to it ("more than",
 grepping for the literal old value — and prefer `{@link CONSTANT_NAME}` over
 a restated literal wherever the prose is really about the constant's current
 value rather than a specific historical citation.
+_(promoted → .claude/agents/code-reviewer.md)_
 
 ## Insights
 

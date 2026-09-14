@@ -124,6 +124,7 @@ dedicated `grep -rn "<old-shape-string>"` across the touched files
 specifically for _string literals and comments_, separate from verifying the
 logic branch itself — the two are easy to conflate into "I already checked
 this file" when only the logic was actually checked.
+_(promoted → .claude/skills/resolving-pr-comments/SKILL.md)_
 
 ### 2. A should-fix-ack round on a genuine bug (not just doc staleness) confirms the gate's value beyond formality
 

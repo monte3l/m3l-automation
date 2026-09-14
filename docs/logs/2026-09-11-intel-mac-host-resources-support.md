@@ -144,6 +144,7 @@ identical change rather than moving the original.
 pre-existing uncommitted change against what's now on `origin/main` for
 that file — if byte-identical, it's safe to discard with a plain
 `git checkout -- <file>` rather than treating it as a conflict to resolve.
+_(promoted → .claude/skills/resolving-pr-comments/SKILL.md)_
 
 ### 2. `commitlint` rejected the first PR-2 fix-round commit on a footer line-length rule
 
@@ -190,3 +191,4 @@ to point at them.
   stray `pnpm-workspace.yaml` edit turned out to be byte-identical to what
   had merged, but that has to be verified with `git diff origin/main --`,
   never assumed from context.
+  _(promoted → .claude/skills/resolving-pr-comments/SKILL.md)_

@@ -175,6 +175,7 @@ setting `run_in_background` on the tool call, so exactly one backgrounding
 mechanism is in effect. When in doubt after a "completed" notification for a
 long-running command, verify via `ps aux` or a tight `Monitor` filter on the
 command's own real terminal marker before proceeding.
+_(promoted → .claude/hooks/guard-double-background.mjs)_
 
 ### 3. `gh pr create` inferred the wrong head branch when run from a different worktree than the target
 

@@ -149,6 +149,7 @@ true` Bash call — pick one detachment mechanism, not both. Use plain
 own; reserve `nohup ... & disown` (foreground-launched, then polled via a
 `kill -0` loop) specifically for the case the harness itself warns about —
 a push likely to hit a low-memory kill on a contended host.
+_(promoted → .claude/hooks/guard-double-background.mjs)_
 
 ### 3. A harness low-memory kill hit the detached push's own monitor loop, not just the push itself
 

@@ -42,7 +42,14 @@ than silence, because the hub will act on it.
    function — a shared formula does not imply shared inputs (a
    `pnpm verify` bot review caught exactly this overclaim past a full
    pre-push review that had verified the mechanism but not the comment's
-   own wording, `docs/logs/2026-09-10-lane-scheduling.md`).
+   own wording, `docs/logs/2026-09-10-lane-scheduling.md`). The same applies
+   to a comment restating a cardinality ("both run", "either", "the other
+   one") or a census ("N call sites", "M workflows") — flag it as
+   drift-prone: prefer a `{@link CONSTANT_NAME}` reference over restating a
+   constant's value, and a measured range over a point-in-time count, so the
+   prose can't silently outlive the code it describes
+   (`docs/logs/2026-09-10-main-health-skill-evals-coverage.md`,
+   `2026-09-10-skill-eval-pass-rate-floor-raise.md`).
 3. **Error handling** — all failure paths handled; throws subclass `M3LError`
    with `cause`; no swallowed errors; inputs validated at trust boundaries.
 4. **Testability** — happy + failure path per export; behavior, not internals;

@@ -95,6 +95,7 @@ outer wrapper's exit, not the inner process's.
 true` for the same command. Use one or the other — a plain foreground call
 with `run_in_background: true`, or a detached `nohup cmd > log 2>&1 & disown`
 polled by PID via a separate `kill -0` loop.
+_(promoted → .claude/hooks/guard-double-background.mjs)_
 
 ### 2. `ScheduleWakeup` delays did not reliably advance real wall-clock time
 
