@@ -23,13 +23,22 @@
  * filesystem invariant about which files exist, and a mocked filesystem
  * would assert the mock instead. The only files ever mutated by hand are the
  * sidecar itself (a documented, public artifact named by
- * `M3L_APPEND_ONLY_MANIFEST_NAME`) and the segment files being deleted,
- * which is the operator action the whole feature exists to notice.
+ * `M3L_APPEND_ONLY_MANIFEST_NAME`), the segment files being deleted — the
+ * operator action the whole feature exists to notice — and, for the
+ * torn-tail fixture the last block needs, an unterminated fragment appended
+ * to a flushed segment, which is the half-written record a crash leaves
+ * behind.
+ *
+ * The last block covers both of `read()`'s reporting handlers rather than
+ * only the archival one: `onArchivedSegment` and `onTruncatedTail` share a
+ * single invocation contract (a handler that fails must fail the read), and
+ * pinning one while leaving its twin unpinned is what let the two drift
+ * apart in the first place.
  *
  * @packageDocumentation
  */
 
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { appendFile, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -54,6 +63,7 @@ import type {
   M3LAppendOnlyEntry,
   M3LAppendOnlyReadOptions,
   M3LAppendOnlySealedSegment,
+  M3LAppendOnlyTruncatedSegment,
 } from "../src/core/storage/index.js";
 
 // ---------------------------------------------------------------------------
@@ -335,6 +345,70 @@ function bySegment(
   return [...claims].sort((left, right) =>
     left.segment < right.segment ? -1 : 1,
   );
+}
+
+/**
+ * A single-segment trail holding `entries`, followed by an unterminated
+ * trailing fragment — the torn tail `onTruncatedTail` exists to report.
+ *
+ * The entries are written by a REAL `M3LAppendOnlyStream` and `flush()`ed
+ * before the fragment is appended, so the hand-appended bytes cannot race
+ * the writer's own serialized tail.
+ */
+async function buildTornTailTrail(
+  dir: string,
+  entries: readonly M3LAppendOnlyEntry[],
+): Promise<void> {
+  const writer = new M3LAppendOnlyStream({ directory: dir });
+  for (const entry of entries) {
+    await writer.append(entry);
+  }
+  await writer.flush();
+
+  const listing = await new M3LAppendOnlyStream({
+    directory: dir,
+  }).listSegments();
+  const last = definedOrThrow(
+    listing.segments.at(-1),
+    "a segment on disk to tear",
+  );
+  await appendFile(
+    path.join(dir, last.name),
+    '{"partial":"unterminated',
+    "utf8",
+  );
+}
+
+/**
+ * Runs `body`, returning what it produced alongside every rejection Node
+ * reported as UNATTENDED while it ran.
+ *
+ * The single `setImmediate` boundary is a structural guarantee rather than a
+ * latency guess: Node drains the whole microtask queue and emits
+ * `unhandledRejection` for every promise still without a handler before it
+ * runs any `setImmediate` callback. Reading the list straight after `body`
+ * settles would therefore find it empty whether or not a rejection escaped.
+ *
+ * The listener is removed in a `finally` so a failed assertion cannot leak
+ * it into the next test, where it would swallow an unrelated escape.
+ */
+async function withUnhandledRejectionWatch<T>(
+  body: () => Promise<T>,
+): Promise<{ readonly result: T; readonly unhandled: readonly unknown[] }> {
+  const unhandled: unknown[] = [];
+  const listener = (reason: unknown): void => {
+    unhandled.push(reason);
+  };
+  process.on("unhandledRejection", listener);
+  try {
+    const result = await body();
+    await new Promise<void>((resolve) => {
+      setImmediate(resolve);
+    });
+    return { result, unhandled };
+  } finally {
+    process.off("unhandledRejection", listener);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -974,5 +1048,216 @@ describe("option validation: the read-options bag stays closed", () => {
       field: "options",
       violation: "unknown-key",
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// W11 — an async handler's rejection reaches the caller
+// ---------------------------------------------------------------------------
+
+describe("an async onArchivedSegment", () => {
+  // INVARIANT: a rejection from the handler's promise fails the read exactly
+  // as a synchronous throw from the same handler does — the caller's own
+  // error object, unwrapped, with NOTHING yielded.
+  //
+  // The option is typed `(segment) => void`, and TypeScript's void-return
+  // compatibility rule accepts an `async` handler, which is the natural
+  // shape for the "report it somewhere" its own TSDoc invites. So the
+  // rejecting case is reachable from ordinary, type-checked caller code; it
+  // is not an abuse of the option.
+  //
+  // The entry count is the load-bearing half of this test. A read that
+  // rejects only AFTER handing the caller every surviving entry has still
+  // reported a complete-looking trail, so asserting the rejection alone
+  // would pass an implementation that yielded first and escalated last.
+  //
+  // Polarity note: this is deliberately the OPPOSITE of the sealer's
+  // `onSealFailed`, whose `reportSealFailure` attaches and SWALLOWS a
+  // returned thenable's rejection because the sealer owes its caller a
+  // never-throws append path. The read path owes no such contract, and
+  // swallowing here loses the one notification that says the trail is
+  // incomplete.
+  test("that rejects fails the read with the handler's own error and yields nothing", async () => {
+    const dir = path.join(workDir, "audit");
+    await buildRolledOverTrail(dir, 3, 2);
+    const dayOneSegments = await segmentNamesFor(dir, DAY_ONE);
+    await deleteSegments(dir, dayOneSegments);
+
+    const handlerError = new Error("archival reporting failed");
+    const reader = new M3LAppendOnlyStream({ directory: dir });
+    const { result, unhandled } = await withUnhandledRejectionWatch(async () =>
+      collectUntilThrow(
+        reader.read({
+          // eslint-disable-next-line @typescript-eslint/no-misused-promises -- constructing the shape the rule forbids IS the test. The rule is a lint check, not a type error: the option is typed `(segment) => void`, TS's void-return compatibility rule accepts an async handler, and a caller whose options object is built separately (type inferred) draws no diagnostic at all, so the runtime contract must hold with or without the lint
+          onArchivedSegment: async (): Promise<void> => {
+            await Promise.resolve();
+            throw handlerError;
+          },
+        }),
+      ),
+    );
+
+    expect(result.thrown).toBe(handlerError);
+    expect(result.entries).toEqual([]);
+    // Not belt-and-braces: a rejection the read neither propagates nor
+    // attaches is reported to `process` from outside every caller frame,
+    // and under Node's default `--unhandled-rejections=throw` that can take
+    // the process down where no `try`/`catch` can intervene.
+    expect(unhandled).toEqual([]);
+  });
+
+  // INVARIANT: the identical rejection, in the one shape `no-misused-promises`
+  // cannot see — so this is not a variant of the test above but the reachable
+  // version of it. Measured, not assumed (probes in this session): an async
+  // handler written inline at the property IS a lint error, which is why the
+  // four suppressions in this file exist; so is one routed through a
+  // `(segment: M3LAppendOnlySealedSegment) => void` variable (flagged at the
+  // variable's initializer, not at the property) and so is one passed through
+  // a cast (flagged instead as an unnecessary assertion, because the receiver
+  // already accepts a promise-returning function). But an options object
+  // built as its own `const`, with its type INFERRED rather than annotated,
+  // draws NO diagnostic: the object's own property type is
+  // `() => Promise<void>`, and the void-return check does not descend into an
+  // argument's properties. That makes this the shape an in-repo caller can
+  // reach by accident on a green lint — the library cannot delegate this
+  // contract to the linter.
+  test("that rejects fails the read even when no lint rule objects", async () => {
+    const dir = path.join(workDir, "audit");
+    await buildRolledOverTrail(dir, 3, 2);
+    const dayOneSegments = await segmentNamesFor(dir, DAY_ONE);
+    await deleteSegments(dir, dayOneSegments);
+
+    const handlerError = new Error("archival reporting failed indirectly");
+    // Built separately and left un-annotated on purpose: annotating it
+    // `M3LAppendOnlyReadOptions` would restore the contextual type the
+    // property check needs, and the test would stop covering the blind spot.
+    const options = {
+      onArchivedSegment: async (): Promise<void> => {
+        await Promise.resolve();
+        throw handlerError;
+      },
+    };
+    const reader = new M3LAppendOnlyStream({ directory: dir });
+    const { result, unhandled } = await withUnhandledRejectionWatch(async () =>
+      collectUntilThrow(reader.read(options)),
+    );
+
+    expect(result.thrown).toBe(handlerError);
+    expect(result.entries).toEqual([]);
+    expect(unhandled).toEqual([]);
+  });
+
+  // INVARIANT: a NON-rejecting async handler keeps working. This is the
+  // regression guard against an over-broad fix that refuses, or fails on,
+  // every thenable a handler returns — an `async` handler awaiting a log
+  // write is reasonable caller code and must stay supported, reported once
+  // per archived segment with the survivors still read.
+  test("that resolves reports every archived segment and reads the survivors", async () => {
+    const dir = path.join(workDir, "audit");
+    const { dayTwoEntries } = await buildRolledOverTrail(dir, 3, 2);
+    const dayOneSegments = await segmentNamesFor(dir, DAY_ONE);
+    const lines = await readManifestLines(dir);
+    const expectedClaims = dayOneSegments.map((name) =>
+      sealClaimFor(lines, name),
+    );
+    // Precondition: "once per archived segment" only says something when
+    // the fixture archives more than one.
+    expect(expectedClaims).toHaveLength(3);
+
+    await deleteSegments(dir, dayOneSegments);
+
+    const calls: M3LAppendOnlySealedSegment[] = [];
+    const reader = new M3LAppendOnlyStream({ directory: dir });
+    const recovered = await collectEntries(
+      reader.read({
+        onArchivedSegment: async (
+          segment: M3LAppendOnlySealedSegment,
+          // eslint-disable-next-line @typescript-eslint/no-misused-promises -- the non-rejecting twin of the case above, in the same deliberate shape. A lint rule cannot stop an async handler from reaching `read`, so the keeps-working half has to be pinned in the shape callers actually write
+        ): Promise<void> => {
+          await Promise.resolve();
+          calls.push(segment);
+        },
+      }),
+    );
+
+    expect(recovered).toEqual(dayTwoEntries);
+    expect(bySegment(calls)).toEqual(bySegment(expectedClaims));
+  });
+});
+
+describe("an async onTruncatedTail", () => {
+  // INVARIANT: the sibling reporting handler, held to the same contract —
+  // a rejection fails the read rather than vanishing. Pinned alongside
+  // `onArchivedSegment` deliberately: fixing one handler and leaving its
+  // twin able to swallow a rejection is the asymmetry that produces this
+  // class of bug.
+  //
+  // The SHAPE differs from the archival case, and matches what a synchronous
+  // throw from this handler already produces: `onTruncatedTail` fires from
+  // inside the segment read, whose own `catch` re-wraps anything that is not
+  // already one of the reader's typed errors — so the caller sees
+  // M3LAppendOnlyStreamReadError carrying the handler's error as `cause`,
+  // not the raw error. "Exactly as a synchronous throw does" therefore means
+  // that wrapped shape here. The entries yielded before the torn tail was
+  // reached legitimately reach the caller, since the tail is resolved only
+  // once the segment's complete lines are exhausted; what must not happen is
+  // the iteration COMPLETING as though the tail had been reported.
+  test("that rejects fails the read, surfacing the handler's error as cause", async () => {
+    const dir = path.join(workDir, "audit");
+    const entries: readonly M3LAppendOnlyEntry[] = [
+      { event: "one" },
+      { event: "two" },
+    ];
+    await buildTornTailTrail(dir, entries);
+
+    const handlerError = new Error("torn-tail reporting failed");
+    const reader = new M3LAppendOnlyStream({ directory: dir });
+    const { result, unhandled } = await withUnhandledRejectionWatch(async () =>
+      collectUntilThrow(
+        reader.read({
+          // eslint-disable-next-line @typescript-eslint/no-misused-promises -- same deliberate shape as the archival case: a lint check rather than a type error, and it cannot constrain a caller whose handler arrives through an inferred options object
+          onTruncatedTail: async (): Promise<void> => {
+            await Promise.resolve();
+            throw handlerError;
+          },
+        }),
+      ),
+    );
+
+    expect(result.thrown).toBeInstanceOf(M3LAppendOnlyStreamReadError);
+    expect((result.thrown as M3LAppendOnlyStreamReadError).cause).toBe(
+      handlerError,
+    );
+    expect(result.entries).toEqual(entries);
+    expect(unhandled).toEqual([]);
+  });
+
+  // INVARIANT: a non-rejecting async handler still tolerates the torn tail —
+  // the read completes, the complete lines arrive, the fragment is never
+  // yielded as an entry, and the handler ran exactly once.
+  test("that resolves tolerates the torn tail and completes the read", async () => {
+    const dir = path.join(workDir, "audit");
+    const entries: readonly M3LAppendOnlyEntry[] = [
+      { event: "one" },
+      { event: "two" },
+    ];
+    await buildTornTailTrail(dir, entries);
+
+    const calls: M3LAppendOnlyTruncatedSegment[] = [];
+    const reader = new M3LAppendOnlyStream({ directory: dir });
+    const recovered = await collectEntries(
+      reader.read({
+        onTruncatedTail: async (
+          segment: M3LAppendOnlyTruncatedSegment,
+          // eslint-disable-next-line @typescript-eslint/no-misused-promises -- the non-rejecting torn-tail twin; an async handler is reachable, type-checked caller code that the rule cannot forbid, so it must keep working
+        ): Promise<void> => {
+          await Promise.resolve();
+          calls.push(segment);
+        },
+      }),
+    );
+
+    expect(recovered).toEqual(entries);
+    expect(calls).toHaveLength(1);
   });
 });

@@ -37,8 +37,11 @@
  * exists under — a fresh process reading back a stream that has lived across
  * midnight has to see all of it, not just today's slice.
  *
- * **Every read consults the directory-wide `manifest.jsonl` sidecar**
- * (ADR-0102, X8b): it is the only artifact in the directory that still
+ * **Every read of an EXISTING directory consults the directory-wide
+ * `manifest.jsonl` sidecar** (ADR-0102, X8b) — an absent directory
+ * short-circuits before the sidecar is reached, as
+ * {@link planSegmentsToRead} states. The sidecar is the only artifact in the
+ * directory that still
  * remembers a segment no longer in it. A sealed segment absent from disk is
  * escalated through `./append-only-archival.js` — reported to the owner's
  * `onArchivedSegment`, or thrown when no handler was supplied — and its
@@ -76,8 +79,9 @@
  * evidence in its own right.
  *
  * Dependency direction is one-way: this module imports the archival, manifest,
- * segment-name and line-failure-port layers, and `./append-only-reader.js`
- * imports this module. Nothing here ever imports the reader.
+ * segment-name and line-failure-port layers plus the shared read option bags
+ * (`./append-only-reader-types.js`), and `./append-only-reader.js` imports
+ * this module. Nothing here ever imports the reader.
  *
  * @packageDocumentation
  */
@@ -85,48 +89,14 @@
 import { readdir } from "node:fs/promises";
 import path from "node:path";
 
-import { isEnoentError } from "../../core/utils/guards.js";
-import type { AppendOnlyArchivedSegment } from "./append-only-archival.js";
+import { isEnoentError, isPromise } from "../../core/utils/guards.js";
 import { resolveArchivedSegments } from "./append-only-archival.js";
 import type { AppendOnlyReadFailure } from "./append-only-lines.js";
 import { readManifest } from "./append-only-manifest.js";
+import type { AppendOnlyReadPlanOptions } from "./append-only-reader-types.js";
+import type { AppendOnlySealedSegmentPayload } from "./append-only-sealed-payload.js";
 import type { ParsedSegmentName } from "./append-only-segments.js";
 import { parseSegmentName } from "./append-only-segments.js";
-
-/**
- * What {@link planSegmentsToRead} needs in order to plan one read: the
- * directory, the manifest's byte ceiling, the archival policy, and the two
- * error vocabularies a refusal is raised in.
- *
- * **A structural subset of `./append-only-reader.js`'s
- * `AppendOnlyReaderOptions`, deliberately declared here and not imported from
- * it.** Importing that type would point an edge at the reader and close the
- * dependency cycle this seam exists to avoid; it would also hand this module
- * fields it has no business reading — the per-line ceiling and the torn-tail
- * handler belong to the streaming stage. The two still cannot drift apart
- * silently: the reader passes its own options object straight into
- * {@link planSegmentsToRead}, so a field renamed or retyped on either side
- * fails to compile at that one call site.
- */
-export interface AppendOnlyReadPlanOptions {
-  /** The directory to enumerate segments and read the manifest from. */
-  readonly directory: string;
-  /** The hard ceiling the directory's `manifest.jsonl` sidecar is read under. */
-  readonly maxManifestBytes: number;
-  /**
-   * Invoked once per sealed-but-absent segment, oldest first. Omitting it is
-   * a policy, not a convenience — with no handler the archival layer throws
-   * for the first such segment rather than reading short in silence.
-   */
-  readonly onArchivedSegment?: (segment: AppendOnlyArchivedSegment) => void;
-  /** The owner's vocabulary for a listing- or continuity-level refusal. */
-  readonly buildError: AppendOnlyReadFailure;
-  /**
-   * The owner's vocabulary for a MANIFEST-level refusal — an unreadable
-   * sidecar, or a sealed segment no longer on disk.
-   */
-  readonly buildManifestError: AppendOnlyReadFailure;
-}
 
 /** One segment discovered on disk, in the order lines will be read from it. */
 export interface DiscoveredSegment extends ParsedSegmentName {
@@ -246,11 +216,17 @@ async function discoverSegmentsInOrder(
  *   nothing left in the directory claims the missing segment ever existed.
  *   That half of the old concession stands unchanged.
  *
- * An actor able to write the directory could still renumber the survivors to
- * close a gap before this check runs — though no longer without contradicting
- * whatever the manifest already sealed. This raises the bar against accidental
- * and casual tampering; it does not prove the directory's contents are
- * complete.
+ * An actor able to write the directory can still renumber the survivors to
+ * close a gap before this check runs, and nothing on the read path notices.
+ * Renaming `0002` to `0001` over a deleted `0001` does contradict the digest
+ * the manifest sealed for that name, but `read()` never re-digests a segment,
+ * so the read returns cleanly; a plain regular file planted at a sealed name
+ * reads clean the same way (an EMPTY one is refused, by the mid-stream-empty
+ * check in `./append-only-reader.js`, not by this walk). That contradiction is
+ * detectable only by `./append-only-verify.js`, which re-digests each segment
+ * against its seal — as the module header above already scopes it. This walk
+ * raises the bar against accidental and casual tampering; it does not prove
+ * the directory's contents are complete.
  */
 function assertNoSequenceGap(
   segments: readonly ParsedSegmentName[],
@@ -310,14 +286,137 @@ function presentSegmentNames(
 }
 
 /**
+ * One archival handler's outcome, once its returned promise has settled:
+ * `undefined` for a handler that resolved, or the reason it rejected with.
+ *
+ * A wrapper object rather than the bare reason, because a handler is free to
+ * reject with `undefined` and "resolved" must stay distinguishable from
+ * "rejected with nothing".
+ */
+interface ArchivalReportOutcome {
+  /** Whatever the handler's promise rejected with. */
+  readonly reason: unknown;
+}
+
+/**
+ * Attends `promise` immediately and reports how it settled, instead of
+ * rejecting.
+ *
+ * Attaching here — at the moment the handler was called, not later when the
+ * outcomes are read — is the load-bearing detail. A rejected promise nobody
+ * has attached to is reported to `process` as an `unhandledRejection` as soon
+ * as the microtask queue drains, from outside every caller frame, which under
+ * Node's default `--unhandled-rejections=throw` can end the process where no
+ * `try`/`catch` can intervene. Deferring attachment until after an earlier
+ * rejection had been re-thrown would leave a second rejecting handler's
+ * promise doing exactly that.
+ */
+async function captureArchivalReport(
+  promise: Promise<unknown>,
+): Promise<ArchivalReportOutcome | undefined> {
+  try {
+    await promise;
+    return undefined;
+  } catch (reason) {
+    return { reason };
+  }
+}
+
+/**
+ * One read's archival reporting: the handler
+ * {@link "./append-only-archival.js".resolveArchivedSegments} is given, plus
+ * the `settle` that makes an ASYNCHRONOUS failure of that handler fail the
+ * read.
+ */
+interface ArchivalReporter {
+  /** Handed to the archival policy in place of the caller's own handler. */
+  readonly onArchivedSegment: (segment: AppendOnlySealedSegmentPayload) => void;
+  /**
+   * Resolves once every promise the handler returned has settled, re-throwing
+   * the FIRST rejection in read order — the caller's own error object,
+   * unwrapped.
+   */
+  readonly settle: () => Promise<void>;
+}
+
+/**
+ * Wraps the caller's `onArchivedSegment` so a promise it returns is settled
+ * before the read proceeds, and a rejection from that promise fails the read
+ * with the caller's own raw error.
+ *
+ * **Why the wrapper lives here and not in the classifier.**
+ * {@link "./append-only-archival.js".resolveArchivedSegments} is synchronous
+ * and does no I/O — a deliberate property, and the one that makes every
+ * branch of it reachable from an in-memory fixture — so it has no point at
+ * which it could wait for a handler's promise. This module is the nearest
+ * `async` frame above it, and {@link planSegmentsToRead} runs to completion
+ * before the reader opens anything, so settling here keeps the whole
+ * archival finding eager: a rejection surfaces on the consumer's first
+ * `next()`, with nothing yielded, exactly as the no-handler throw does.
+ *
+ * **A rejection propagates RAW**, neither wrapped in `buildManifestError` nor
+ * re-routed anywhere: it is the caller's own object, matching what a
+ * synchronous throw from the same handler already does. That is the opposite
+ * polarity to `./append-only-seal-report.js`'s `reportSealFailure`, which
+ * attaches to and SWALLOWS such a promise because the sealer owes its caller
+ * a never-throws append path. The read path owes no such contract, and this
+ * handler is the only notification that says the trail is incomplete —
+ * swallowing it would hand the caller a clean, complete-looking read of a
+ * trail provably missing a sealed segment. Do not carry the sealer's rule
+ * across.
+ *
+ * Needed even though `no-misused-promises` exists, because that rule cannot
+ * see every shape an `async` handler reaches this option through — stated in
+ * full, once, on `./append-only-reader.js`'s `reportTornTail`, which holds
+ * the same contract for the reader's own handler.
+ *
+ * **One divergence from the synchronous case, and it is unavoidable.** A
+ * handler that THROWS aborts the walk at that segment, leaving later ones
+ * unreported. A handler that REJECTS cannot: the archival walk is
+ * synchronous, so every handler has already been called by the time the first
+ * promise can settle. Later handlers therefore still run, and the first
+ * rejection in read order is the one the caller sees.
+ *
+ * **A handler that never settles stalls the read** before any entry is
+ * yielded. There is no timeout, deliberately — see
+ * {@link "../../core/storage/append-only-read-types.js".M3LAppendOnlyReadOptions.onArchivedSegment},
+ * where the caller who wrote the handler is told.
+ */
+function createArchivalReporter(
+  handler: (segment: AppendOnlySealedSegmentPayload) => void,
+): ArchivalReporter {
+  const pending: Promise<ArchivalReportOutcome | undefined>[] = [];
+  return {
+    onArchivedSegment: (segment: AppendOnlySealedSegmentPayload): void => {
+      // Widened to `unknown` rather than awaited: the option's declared
+      // return type is `void`, and the value that arrives anyway is the
+      // whole subject of this wrapper.
+      const reported = handler(segment) as unknown;
+      if (isPromise(reported)) {
+        pending.push(captureArchivalReport(reported));
+      }
+    },
+    settle: async (): Promise<void> => {
+      for (const outcome of await Promise.all(pending)) {
+        if (outcome !== undefined) {
+          throw outcome.reason;
+        }
+      }
+    },
+  };
+}
+
+/**
  * Settles a whole directory's accounting BEFORE a single entry is yielded, and
  * hands back only the segments actually on disk.
  *
  * In order: list and parse the directory's segment names; read the manifest;
- * resolve which of its seals name a segment that is gone; prove continuity
- * over the union of the two. Eager on purpose — an incomplete trail must be
- * refused on the consumer's first `next()`, not midway through a read that has
- * already handed out entries the consumer acted on.
+ * resolve which of its seals name a segment that is gone; settle whatever the
+ * owner's archival handler returned ({@link createArchivalReporter}); prove
+ * continuity over the union of the listing and the archived names. Eager on
+ * purpose — an incomplete trail must be refused on the consumer's first
+ * `next()`, not midway through a read that has already handed out entries the
+ * consumer acted on.
  *
  * A missing DIRECTORY short-circuits before the manifest read: there is no
  * sidecar inside a directory that does not exist, and an `ENOENT` from the
@@ -362,6 +461,10 @@ export async function planSegmentsToRead(
     options.maxManifestBytes,
     options.buildManifestError,
   );
+  const reporter =
+    options.onArchivedSegment === undefined
+      ? undefined
+      : createArchivalReporter(options.onArchivedSegment);
   const archived = resolveArchivedSegments(
     contents,
     presentSegmentNames(segments),
@@ -370,12 +473,17 @@ export async function planSegmentsToRead(
       // `exactOptionalPropertyTypes` an optional target field rejects an
       // explicit `undefined`, and ABSENCE here is the policy itself — it is
       // what tells the archival layer to throw instead of report.
-      ...(options.onArchivedSegment !== undefined && {
-        onArchivedSegment: options.onArchivedSegment,
+      ...(reporter !== undefined && {
+        onArchivedSegment: reporter.onArchivedSegment,
       }),
       buildManifestError: options.buildManifestError,
     },
   );
+  if (reporter !== undefined) {
+    // Before the gap walk, so a reporting handler that failed is what the
+    // caller hears about — and still before any entry is yielded either way.
+    await reporter.settle();
+  }
   assertNoSequenceGap(
     [...segments, ...archived].sort(bySegmentOrder),
     options.buildError,

@@ -171,32 +171,78 @@ function readLineCeiling(bag: Readonly<Record<string, unknown>>): number {
 type InvalidArgumentBuilder = (field: string, violation: string) => M3LError;
 
 /**
- * Reads the optional `onSealFailed` handler: rejects a truthy non-function,
- * degrades any falsy value to `undefined` — "no handler". Shared by every
- * owner of an `onSealFailed` option — `validateStreamOptions` below and
+ * Rejects a TRUTHY non-function handler, the one shape every optional
+ * handler on this module's option bags shares — `onSealFailed` on the
+ * constructor bag, `onTruncatedTail` and `onArchivedSegment` on the read
+ * bag. Written once here because a fourth handler would otherwise be a
+ * fourth verbatim copy of the same three lines and the same rationale.
+ *
+ * **Only a truthy non-function throws, and that polarity is load-bearing.**
+ * A falsy value (`null`, `0`, `""`, `false`) is deliberately refused the
+ * throw: it degrades to the same state as omitting the key entirely, which
+ * is each owner's safe direction. For `onTruncatedTail` and
+ * `onArchivedSegment` that absent-handler path is the THROWING one — the
+ * reader refuses a torn tail, and refuses a sealed segment that is no longer
+ * on disk — so a caller's slip escalates rather than hides. For
+ * `onSealFailed` it is "the seal failure goes unreported", exactly as if the
+ * option had never been supplied, while the entries themselves stay durable.
+ * Do NOT "tighten" this to `value !== undefined && !isFunction(value)`: that
+ * form would reject `null`, `0`, `""` and `false`, and — worse — accept
+ * `null` as a PRESENT handler at the `?.()` call sites that consume these,
+ * where an archived (or wholly deleted) date would then read back clean and
+ * silent.
+ *
+ * **Takes the already-read value, not the bag and a key.** Each owner's
+ * presence rule is its own (`Object.hasOwn` for `onSealFailed`, a direct
+ * property read for the read bag — see {@link readOnSealFailed} and
+ * {@link validateReadOptions}), and a caller that also needs the value reads
+ * the property exactly once and hands that local here; a helper reading the
+ * property itself would let an accessor answer the check and the use
+ * differently.
+ *
+ * @param value - The handler exactly as read out of the caller's bag, once.
+ * @param field - The option's name, reported as the error's `field`.
+ * @param invalidArgument - The owner's own boundary-error builder, so the
+ *   message and `context` still read as that owner's.
+ * @throws {@link M3LError} `ERR_INVALID_ARGUMENT` `"not-a-function"` when
+ *   `value` is truthy but not callable.
+ */
+function assertOptionalHandler(
+  value: unknown,
+  field: string,
+  invalidArgument: InvalidArgumentBuilder,
+): void {
+  if (value && !isFunction(value)) {
+    throw invalidArgument(field, "not-a-function");
+  }
+}
+
+/**
+ * Reads the optional `onSealFailed` handler: rejects a truthy non-function
+ * through {@link assertOptionalHandler}, degrades any falsy value to
+ * `undefined` — "no handler". Shared by every owner of an `onSealFailed`
+ * option — `validateStreamOptions` below and
  * `internal/agent/decision-log-writer.ts`'s
  * `validateAgentDecisionLogOptions` — each supplying its own
  * `invalidArgument` builder so the thrown error's message and `context`
  * still read as that owner's.
  *
- * `onSealFailed` is currently the ONLY channel a caller has for a best-effort
- * manifest seal that could not be written (a `verify()` surface ships in a
- * later slice); `options` is typed, but a JS caller — or one bypassing the
- * type — can still hand the constructor a truthy non-function there. Left
+ * `onSealFailed` is the only channel that tells a caller a best-effort
+ * manifest seal has just failed — `M3LAppendOnlyStream.verify()` can report
+ * on a directory after the fact, but nothing else reports the failure as it
+ * happens. `options` is typed, but a JS caller — or one bypassing the type —
+ * can still hand the constructor a truthy non-function there. Left
  * unchecked, that value would silently disable the reporting channel at the
  * one call site that would have used it, which is too close to the failure
  * it exists to report to fail any way but loudly and immediately at
- * construction. A FALSY value is deliberately refused the throw: it degrades
- * to the same "no handler" state as omitting the key entirely, which is the
- * safe direction — the seal failure is merely unreported, exactly as if the
- * caller had never supplied the option.
+ * construction. What a FALSY value degrades to, and why that is the safe
+ * direction, is {@link assertOptionalHandler}'s to state.
  *
- * Reads `bag["onSealFailed"]` into a local exactly once and validates that
- * local: re-reading the property to decide, then again to return, would let
- * an accessor answer the check and the use differently. Do not "tighten"
- * the guard to `onSealFailed !== undefined && !isFunction(onSealFailed)` —
- * that would reject `null`, `0`, `""` and `false` too, which the documented
- * polarity above forbids.
+ * Reads `bag["onSealFailed"]` into a local exactly once and hands THAT local
+ * to the guard: re-reading the property to decide, then again to return,
+ * would let an accessor answer the check and the use differently. Presence
+ * is `Object.hasOwn`, so a non-own `onSealFailed` resolves as absent — the
+ * read bag deliberately differs, see {@link validateReadOptions}.
  */
 export function readOnSealFailed(
   bag: Readonly<Record<string, unknown>>,
@@ -205,9 +251,7 @@ export function readOnSealFailed(
   const value = Object.hasOwn(bag, "onSealFailed")
     ? bag["onSealFailed"]
     : undefined;
-  if (value && !isFunction(value)) {
-    throw invalidArgument("onSealFailed", "not-a-function");
-  }
+  assertOptionalHandler(value, "onSealFailed", invalidArgument);
   return isFunction(value) ? value : undefined;
 }
 
@@ -260,15 +304,19 @@ export function validateStreamOptions(options: unknown): ResolvedStreamOptions {
  * exact call site meant to invoke it — `context.onTruncatedTail?.(tornTail)`
  * for a torn tail, the equivalent optional call for a sealed-but-absent
  * segment — which is too close to the invariant each feature exists to
- * enforce to fail any way but loudly and immediately. Only a TRUTHY
- * non-function throws: a falsy one (`null`, `0`) degrades to the
- * absent-callback path, which still throws on a torn tail or an archived
- * segment respectively and so cannot hide either. That polarity is why the
- * guard is `value && !isFunction(value)` rather than
- * `value !== undefined && !isFunction(value)`: the tighter form would accept
- * `null` as a PRESENT handler, and since the reader invokes it with `?.()`,
- * an archived — or wholly deleted — date would then read back clean and
- * silent.
+ * enforce to fail any way but loudly and immediately. Both run through
+ * {@link assertOptionalHandler}, which holds the polarity rationale for
+ * every optional handler here: only a TRUTHY non-function throws, and a
+ * falsy one degrades to the absent-handler path — which for BOTH of these is
+ * the throwing one, so a slip escalates instead of hiding.
+ *
+ * Each value is read straight off the bag rather than through
+ * `Object.hasOwn`, unlike {@link readOnSealFailed}: the read path's own
+ * `internal/storage/append-only-read-wiring.ts` reads
+ * `options?.onTruncatedTail` the same direct way, so an own-key-only check
+ * here would wave through a non-own handler the consumer will still see.
+ * Nothing is handed back either, so there is no second read for an accessor
+ * to answer differently.
  *
  * @param options - The read options bag exactly as the caller supplied it,
  *   `unknown` because a public method's own static parameter type is never a
@@ -286,12 +334,14 @@ export function validateReadOptions(options: unknown): void {
     throw invalidArgument("options", "not-an-object");
   }
   assertNoUnknownKeys(options, READ_OPTIONS_KEYS);
-  const onTruncatedTail = options["onTruncatedTail"];
-  if (onTruncatedTail && !isFunction(onTruncatedTail)) {
-    throw invalidArgument("onTruncatedTail", "not-a-function");
-  }
-  const onArchivedSegment = options["onArchivedSegment"];
-  if (onArchivedSegment && !isFunction(onArchivedSegment)) {
-    throw invalidArgument("onArchivedSegment", "not-a-function");
-  }
+  assertOptionalHandler(
+    options["onTruncatedTail"],
+    "onTruncatedTail",
+    invalidArgument,
+  );
+  assertOptionalHandler(
+    options["onArchivedSegment"],
+    "onArchivedSegment",
+    invalidArgument,
+  );
 }

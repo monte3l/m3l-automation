@@ -36,6 +36,8 @@ import type {
   ManifestContents,
   ManifestSealRecord,
 } from "./append-only-manifest-records.js";
+import type { AppendOnlySealedSegmentPayload } from "./append-only-sealed-payload.js";
+import { toSealedSegmentPayload } from "./append-only-sealed-payload.js";
 import type { ParsedSegmentName } from "./append-only-segments.js";
 import { parseSegmentName } from "./append-only-segments.js";
 import { segmentOrderKey } from "./append-only-sweep-policy.js";
@@ -58,74 +60,6 @@ const UNPARSABLE_SEAL_SEGMENT_MESSAGE =
   "append-only stream: the manifest claims a name that is not a segment file name";
 
 /**
- * One sealed segment the trail no longer holds, exactly as the manifest
- * stated it: which segment, when the seal was stamped, and the three numbers
- * it measured.
- *
- * **A structural mirror of the public
- * {@link "../../core/storage/append-only-verify-types.js".M3LAppendOnlySealedSegment},
- * and NOT an import of it — leave it that way.** The same deliberate
- * duplication `./append-only-reader.js`'s `AppendOnlyTruncatedSegment`
- * carries against `M3LAppendOnlyTruncatedSegment`, for the same reason: an
- * `internal/` module that never names a public type imposes nothing on a
- * second owner wanting the same payload shape, and the public type stays
- * free to gain documentation, deprecations or a semver-gated field without
- * that being a change to this read-path helper. The two are kept in step by
- * a type-level test (`storage-append-only-archival.test.ts`, C10) asserting
- * the two are exactly equal, which is what makes the mirror safe rather than
- * merely convenient — so a "simplification" into an import is a regression,
- * not a cleanup.
- */
-export interface AppendOnlyArchivedSegment {
-  /** The segment file name the seal measures, e.g. `2026-09-11-0001.jsonl`. */
-  readonly segment: string;
-  /** ISO-8601 instant the seal was stamped. */
-  readonly at: string;
-  /** Newline-terminated entries counted when the segment was sealed. */
-  readonly entryCount: number;
-  /** Raw bytes measured when the segment was sealed. */
-  readonly byteLength: number;
-  /** 64 lowercase hex characters: plain `sha256` of those raw bytes. */
-  readonly sha256: string;
-}
-
-/**
- * Projects an internal `ManifestSealRecord` down to the five fields a caller
- * is told about.
- *
- * **A fresh object literal naming all five fields, never the record itself.**
- * `ManifestSealRecord` is a structural superset — it also carries `kind` and
- * the manifest's own `formatVersion` — so assigning it straight into a
- * five-field slot type-checks and still hands every caller those extra
- * fields at runtime, including in `JSON.stringify` output. That exact
- * oversight shipped once in this wave; a literal is what makes the narrowing
- * true at runtime and not merely at the type level.
- *
- * Shared with `./append-only-verify.js`, which needs the same projection for
- * its `sealed` verdict payload: one definition, so the public shape and the
- * internal record can only drift apart in one place.
- *
- * @param record - The seal record as the manifest states it.
- * @returns Exactly the five fields, in a new object.
- * @example
- * ```ts
- * const payload = toArchivedSegment(record);
- * // => { segment, at, entryCount, byteLength, sha256 } — nothing else
- * ```
- */
-export function toArchivedSegment(
-  record: ManifestSealRecord,
-): AppendOnlyArchivedSegment {
-  return {
-    segment: record.segment,
-    at: record.at,
-    entryCount: record.entryCount,
-    byteLength: record.byteLength,
-    sha256: record.sha256,
-  };
-}
-
-/**
  * How one {@link resolveArchivedSegments} call reports what it finds: an
  * optional handler, and the owner's error vocabulary for when there is none.
  */
@@ -135,8 +69,23 @@ export interface AppendOnlyArchivalPolicy {
    * policy in its own right**, not a convenience default: a caller that
    * supplies no handler has said nothing may silently be missing from the
    * trail, and {@link resolveArchivedSegments} throws instead.
+   *
+   * **Called synchronously, and a thenable it returns is NOT observed here.**
+   * {@link resolveArchivedSegments} performs no I/O and is not `async` — the
+   * property that keeps every one of its branches reachable from an
+   * in-memory fixture — so it has no point at which it could wait for a
+   * handler's promise. A caller whose handler may return one must wrap it
+   * before passing it in and settle the outcome itself;
+   * `./append-only-read-plan.js`'s `createArchivalReporter` is the read
+   * path's one implementation of that, and it exists because a rejection
+   * nobody attends reaches the caller as neither a thrown error nor an
+   * attached one: it is reported to `process` from outside every caller
+   * frame, which under Node's default `--unhandled-rejections=throw` can end
+   * the process.
    */
-  readonly onArchivedSegment?: (segment: AppendOnlyArchivedSegment) => void;
+  readonly onArchivedSegment?: (
+    segment: AppendOnlySealedSegmentPayload,
+  ) => void;
   /** The owner's vocabulary for a manifest-level refusal. */
   readonly buildManifestError: AppendOnlyReadFailure;
 }
@@ -190,9 +139,12 @@ function collectArchived(
     }
     const parsed = parseSegmentName(name);
     if (parsed === undefined) {
-      // A segment name is the one value sanctioned to travel in `context`:
-      // it is rendered entirely from the writer's own clock and counter, so
-      // it carries no entry data and nothing a caller supplied.
+      // A segment name is the one caller-adjacent value sanctioned to travel
+      // in `context`: it is rendered entirely from the writer's own clock and
+      // counter, so it carries no entry data and nothing a caller supplied.
+      // (Library-computed facts travel too — see `resolveArchivedSegments`'s
+      // `archivedCount` — but there is no count to report about one
+      // unparsable name.)
       throw buildManifestError(UNPARSABLE_SEAL_SEGMENT_MESSAGE, {
         context: { segment: name },
       });
@@ -218,10 +170,19 @@ function collectArchived(
  *
  * **With no {@link AppendOnlyArchivalPolicy.onArchivedSegment}, throws** for
  * the FIRST archived segment in that order, through the owner's own
- * `buildManifestError`. The message is a constant and the segment name
- * travels in `context` instead — the one caller-adjacent value sanctioned
- * here, because a segment name is rendered from the writer's clock and
- * counter alone.
+ * `buildManifestError`. The message is a constant; `context` carries the
+ * segment name — the one caller-adjacent value sanctioned here, because a
+ * segment name is rendered from the writer's clock and counter alone — plus
+ * `archivedCount`, how many segments this call found archived in all.
+ *
+ * The count travels beside the name because the name alone is not
+ * actionable: one archived segment and a whole vanished date raise the
+ * identical error, and an operator handed a single file name cannot tell
+ * which of the two they are looking at. It is library-computed — the length
+ * of this call's own archived list, never a tally of `contents.seals`, since
+ * a seal still on disk is not a finding — so it carries no caller data and
+ * joins the name under the same rule. It is unconditional: a lone archival
+ * still reports `archivedCount: 1`.
  *
  * **A throwing handler propagates unchanged, aborting the walk**: not
  * swallowed, not wrapped, not re-routed through `buildManifestError`. This
@@ -230,6 +191,11 @@ function collectArchived(
  * never-throws append path. The read path owes no such contract, and
  * silently continuing past a reporting handler that just failed would mean
  * losing the very notifications the handler exists to receive.
+ *
+ * That covers a SYNCHRONOUS throw only. A promise the handler returns is
+ * neither awaited nor attached to here — see
+ * {@link AppendOnlyArchivalPolicy.onArchivedSegment} for why this function
+ * cannot, and which caller owns settling it instead.
  *
  * @param contents - The manifest's already-parsed contents; its `baseline`
  *   is deliberately ignored (see {@link collectArchived}).
@@ -268,13 +234,19 @@ export function resolveArchivedSegments(
   const { onArchivedSegment } = policy;
   for (const entry of archived) {
     if (onArchivedSegment === undefined) {
-      // See this function's TSDoc: constant message, segment name in
-      // `context`, and only ever for the first finding in read order.
+      // See this function's TSDoc: constant message, segment name and
+      // archived count in `context`, and only ever for the first finding in
+      // read order. The count is `archived.length`, NOT `contents.seals.size`
+      // — a seal still present on disk is not a finding, so a seal tally
+      // would report a number this error is not about.
       throw policy.buildManifestError(ARCHIVED_SEGMENT_MESSAGE, {
-        context: { segment: entry.record.segment },
+        context: {
+          segment: entry.record.segment,
+          archivedCount: archived.length,
+        },
       });
     }
-    onArchivedSegment(toArchivedSegment(entry.record));
+    onArchivedSegment(toSealedSegmentPayload(entry.record));
   }
   return archived.map((entry) => entry.parsed);
 }

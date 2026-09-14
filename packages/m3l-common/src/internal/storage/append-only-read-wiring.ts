@@ -9,8 +9,11 @@
  * **Why an adapter at all.** The two option bags describe the same read from
  * opposite sides. The public one is a caller's policy — which tolerances it is
  * willing to write down — and carries nothing else. The internal one is
- * everything the reader needs to run: the directory and the ceilings the
- * stream chose at construction, the tolerances, and the error vocabulary every
+ * everything the reader needs to run: the directory and the per-line ceiling
+ * the stream chose at construction, the manifest ceiling the sidecar is read
+ * under — the library-wide `DEFAULT_MAX_MANIFEST_BYTES`, NOT a construction
+ * -time choice, and deliberately the same constant `./append-only-sealer.js`
+ * writes the sidecar under — the tolerances, and the error vocabulary every
  * refusal is raised through. Translating between them is a real job with its
  * own rules (see {@link buildReaderOptions}), and holding it here keeps
  * `read()` down to a public-boundary check plus a delegation.
@@ -32,11 +35,47 @@
 
 import { isFunction } from "../../core/utils/guards.js";
 import type { M3LAppendOnlyReadOptions } from "../../core/storage/append-only-read-types.js";
-import type { AppendOnlyReaderOptions } from "./append-only-reader.js";
+import type { AppendOnlyReaderOptions } from "./append-only-reader-types.js";
 import {
   buildAppendOnlyStreamManifestError,
   buildAppendOnlyStreamReadError,
 } from "./append-only-stream-errors.js";
+
+/**
+ * What {@link buildReaderOptions} needs in order to wire one read: the
+ * stream's own configuration, plus the caller's validated read policy.
+ *
+ * A single bag rather than positional arguments, matching every other options
+ * type in this layer, because {@link AppendOnlyReadWiringRequest.maxLineBytes}
+ * and {@link AppendOnlyReadWiringRequest.maxManifestBytes} are adjacent
+ * `number`s: passed positionally they could be transposed with no type error,
+ * silently measuring a torn tail against the manifest ceiling and the sidecar
+ * against the per-line one. That is precisely the class of mis-wiring this
+ * module exists to make impossible, so it may not be reintroduced by its own
+ * signature. Named fields make the swap a visible mistake at the call site.
+ */
+export interface AppendOnlyReadWiringRequest {
+  /** The stream's directory, as chosen at construction. */
+  readonly directory: string;
+  /**
+   * The ceiling an unterminated trailing fragment is measured against, as
+   * chosen at construction.
+   */
+  readonly maxLineBytes: number;
+  /**
+   * The hard ceiling the directory's `manifest.jsonl` sidecar is read under —
+   * the library constant, not a per-stream setting (see this module's header).
+   */
+  readonly maxManifestBytes: number;
+  /**
+   * The caller's validated read policy, or `undefined` when `read()` was
+   * called with no argument at all. REQUIRED but nullable: under
+   * `exactOptionalPropertyTypes` an optional field could not carry the
+   * explicit `undefined` the no-argument call produces, and making the caller
+   * state the absent case beats letting a forgotten field read as one.
+   */
+  readonly readOptions: M3LAppendOnlyReadOptions | undefined;
+}
 
 /**
  * Builds the reader's options from the stream's own configuration plus the
@@ -60,31 +99,24 @@ import {
  *   opposite of what an absent handler means here — with no handler the reader
  *   THROWS rather than reading short in silence.
  *
- * @param directory - The stream's directory, as chosen at construction.
- * @param maxLineBytes - The ceiling an unterminated trailing fragment is
- *   measured against, as chosen at construction.
- * @param maxManifestBytes - The hard ceiling the directory's `manifest.jsonl`
- *   sidecar is read under.
- * @param options - The caller's validated read policy, or `undefined` when
- *   `read()` was called with no argument at all.
+ * @param request - The stream's directory and ceilings, plus the caller's
+ *   validated read policy.
  * @returns Options the reader can run from, with `onTruncatedTail` and
  *   `onArchivedSegment` present only when the caller supplied a callable one.
  */
 export function buildReaderOptions(
-  directory: string,
-  maxLineBytes: number,
-  maxManifestBytes: number,
-  options: M3LAppendOnlyReadOptions | undefined,
+  request: AppendOnlyReadWiringRequest,
 ): AppendOnlyReaderOptions {
+  const { readOptions } = request;
   return {
-    directory,
-    maxLineBytes,
-    maxManifestBytes,
-    ...(isFunction(options?.onTruncatedTail) && {
-      onTruncatedTail: options.onTruncatedTail,
+    directory: request.directory,
+    maxLineBytes: request.maxLineBytes,
+    maxManifestBytes: request.maxManifestBytes,
+    ...(isFunction(readOptions?.onTruncatedTail) && {
+      onTruncatedTail: readOptions.onTruncatedTail,
     }),
-    ...(isFunction(options?.onArchivedSegment) && {
-      onArchivedSegment: options.onArchivedSegment,
+    ...(isFunction(readOptions?.onArchivedSegment) && {
+      onArchivedSegment: readOptions.onArchivedSegment,
     }),
     buildError: buildAppendOnlyStreamReadError,
     buildManifestError: buildAppendOnlyStreamManifestError,

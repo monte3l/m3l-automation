@@ -20,10 +20,20 @@
  * manifest itself carries no in-memory state across processes either; it is
  * only ever appended to and re-read from disk by its own owner. Nor is the
  * manifest a segment: `manifest.jsonl` does not match
- * {@link SEGMENT_NAME_PATTERN}, so it is invisible to
- * {@link discoverActiveSegment}, the read plan's `discoverSegmentsInOrder`
- * (`./append-only-read-plan.js`) and {@link listSegmentFiles} — it never
- * raises their `skipped` count and never enters their byte total.
+ * {@link SEGMENT_NAME_PATTERN}, so it is invisible to every consumer of that
+ * pattern — but each of those consumers ignores it in its own terms, and only
+ * one of them has a `skipped` count or a byte total to speak of:
+ *
+ * - {@link listSegmentFiles} owns both fields, and the manifest enters
+ *   neither: it is dropped as "not a segment name" before `skipped` is
+ *   touched, and its bytes never join the listing's total.
+ * - {@link discoverActiveSegment} reports neither field. The manifest simply
+ *   never becomes a candidate for "the segment to append to", which is the
+ *   one question that function asks.
+ * - The read path ({@link "./append-only-read-plan.js".planSegmentsToRead})
+ *   reports neither field either — it silently drops any directory entry
+ *   whose name {@link parseSegmentName} rejects, so the manifest never
+ *   enters the ordered run it plans or the continuity check over it.
  *
  * A `stat` that fails is never read as "the file is absent" unless it says
  * `ENOENT`. Every other failure propagates, because a byte count silently
@@ -198,7 +208,7 @@ export function segmentFileName(datePrefix: string, sequence: number): string {
  *   segment in the first place, so, like a foreign extension or a stray
  *   file, it is silently excluded rather than counted as `skipped`. See that
  *   function's own doc for the exact three cases `skipped` does count.
- * - the read plan's `discoverSegmentsInOrder` (`./append-only-read-plan.js`)
+ * - the read path ({@link "./append-only-read-plan.js".planSegmentsToRead})
  *   builds its gap check only from names this function accepts, so a
  *   rejected name simply never enters that list — it is not removed from a
  *   run that otherwise contained it. For any trail this writer alone

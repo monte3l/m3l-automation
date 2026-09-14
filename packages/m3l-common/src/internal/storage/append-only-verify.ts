@@ -62,13 +62,13 @@ import type {
 } from "../../core/storage/append-only-verify-types.js";
 import type { M3LAppendOnlySegment } from "../../core/storage/append-only-read-types.js";
 import { isEnoentError } from "../../core/utils/guards.js";
-import { toArchivedSegment } from "./append-only-archival.js";
 import type { SegmentDigestResult } from "./append-only-digest.js";
 import { digestSegmentFile } from "./append-only-digest.js";
 import type { AppendOnlyReadFailure } from "./append-only-lines.js";
 import type { ManifestContents } from "./append-only-manifest.js";
 import { readManifest } from "./append-only-manifest.js";
 import type { ManifestSealRecord } from "./append-only-manifest-records.js";
+import { toSealedSegmentPayload } from "./append-only-sealed-payload.js";
 import { listSegmentFiles, parseSegmentName } from "./append-only-segments.js";
 import {
   baselineBoundaryKey,
@@ -234,7 +234,7 @@ function sealedOrMismatchedVerdict(
   return {
     segment,
     status: measurementsMatch(claim, observed) ? "sealed" : "mismatched",
-    sealed: toArchivedSegment(claim),
+    sealed: toSealedSegmentPayload(claim),
     observed,
   };
 }
@@ -244,7 +244,7 @@ function archivedVerdict(
   segment: string,
   claim: ManifestSealRecord,
 ): M3LAppendOnlySegmentVerdict {
-  return { segment, status: "archived", sealed: toArchivedSegment(claim) };
+  return { segment, status: "archived", sealed: toSealedSegmentPayload(claim) };
 }
 
 /** At or before the baseline, unclaimed: deliberately never digested. */

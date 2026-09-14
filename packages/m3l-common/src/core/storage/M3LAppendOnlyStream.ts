@@ -330,12 +330,12 @@ export class M3LAppendOnlyStream {
   read(options?: M3LAppendOnlyReadOptions): AsyncIterable<M3LAppendOnlyEntry> {
     validateReadOptions(options);
     return readAppendOnlySegments(
-      buildReaderOptions(
-        this.streamDirectory,
-        this.streamMaxLineBytes,
-        DEFAULT_MAX_MANIFEST_BYTES,
-        options,
-      ),
+      buildReaderOptions({
+        directory: this.streamDirectory,
+        maxLineBytes: this.streamMaxLineBytes,
+        maxManifestBytes: DEFAULT_MAX_MANIFEST_BYTES,
+        readOptions: options,
+      }),
     ) as AsyncIterable<M3LAppendOnlyEntry>;
   }
 

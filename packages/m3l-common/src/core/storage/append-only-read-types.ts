@@ -169,16 +169,24 @@ export interface M3LAppendOnlySegmentListing {
  * the read throws, and supplying it is how a caller writes down that an
  * archived segment is expected rather than alarming.
  *
+ * **Either handler may be `async`, and a rejected promise fails the read** —
+ * the read never continues past a notification the caller could not record.
+ * The two differ in what the caller then catches, because they fire at
+ * different points in the read; each field documents its own shape below.
+ *
  * @example
  * ```ts
+ * import { appendFile } from "node:fs/promises";
  * import type { M3LAppendOnlyReadOptions } from "@monte3l/m3l-common/core";
  *
  * const options: M3LAppendOnlyReadOptions = {
  *   onTruncatedTail: (segment) => {
  *     console.warn(`torn tail: ${String(segment.byteLength)} bytes dropped`);
  *   },
- *   onArchivedSegment: (segment) => {
- *     console.warn(`archived ${segment.segment}: sha256 ${segment.sha256}`);
+ *   // `async` is supported: the read waits for this promise, and a rejection
+ *   // fails the read rather than letting the finding go unrecorded.
+ *   onArchivedSegment: async (segment) => {
+ *     await appendFile("audit.log", `archived ${segment.segment}\n`);
  *   },
  * };
  * ```
@@ -188,6 +196,23 @@ export interface M3LAppendOnlyReadOptions {
    * Invoked once, with the trailing fragment's detail, when the stream's
    * last segment ends in an unterminated line. Left unset, the same
    * situation throws instead.
+   *
+   * **An `async` handler is supported, and its failure fails the read.** The
+   * signature says `void`, which TypeScript's void-return compatibility rule
+   * lets an `async` handler satisfy — so an `async` handler that awaits a log
+   * write is ordinary caller code here, not an abuse of the option. `read()`
+   * waits for the returned promise: it resolves and the read continues, or it
+   * rejects and the read fails with
+   * {@link "./M3LAppendOnlyStreamReadError.js".M3LAppendOnlyStreamReadError}
+   * carrying the rejection reason as `cause` — the same shape a synchronous
+   * throw from this handler produces. Nothing is silently swallowed, because
+   * this handler is the only notification saying a trailing record was
+   * dropped.
+   *
+   * **The corollary: a handler that never settles stalls the read.** `read()`
+   * applies no timeout — picking one would either abandon a slow-but-honest
+   * handler or hide a wedged one — so a handler awaiting something that may
+   * hang needs its own deadline before the promise it returns.
    */
   readonly onTruncatedTail?: (segment: M3LAppendOnlyTruncatedSegment) => void;
   /**
@@ -215,6 +240,18 @@ export interface M3LAppendOnlyReadOptions {
    * trail before learning it is incomplete — a consumer streaming this trail
    * into a rebuild wants that answer before it has committed the first entry,
    * not after.
+   *
+   * **An `async` handler is supported, and its failure fails the read** — on
+   * the same terms as `onTruncatedTail` above, with one difference in shape.
+   * `read()` waits for the returned promise before yielding anything, and a
+   * rejection surfaces the rejection reason ITSELF, unwrapped, rather than
+   * inside a library error: this handler runs ahead of the first entry, where
+   * no segment read is in flight to attribute a failure to. Nothing is
+   * swallowed — supplying this handler is what tolerates a sealed-but-absent
+   * segment, so a handler that could not record the finding must not leave
+   * the read looking complete. The same corollary applies: there is no
+   * timeout, so a handler that never settles stalls the read before the first
+   * entry.
    *
    * **A missing manifest is not a finding**, and that is a limitation rather
    * than a proof about the directory. From inside the directory, a sidecar

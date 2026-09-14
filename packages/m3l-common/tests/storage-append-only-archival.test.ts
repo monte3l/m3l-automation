@@ -5,6 +5,13 @@
  * disk, which sealed segments are gone, how each one is reported, and the
  * parsed names the reader's sequence-gap walk then treats as accounted for.
  *
+ * Two clauses reach past that module on purpose. The five-field projection
+ * and the mirror it must match (C6, C10) live in
+ * `internal/storage/append-only-sealed-payload`, beside the record they
+ * project, because archival is only one of their two consumers — so those
+ * clauses import `toSealedSegmentPayload` and
+ * `AppendOnlySealedSegmentPayload` from there directly.
+ *
  * A sibling of `storage-append-only-verify.test.ts` and grouped the same way
  * — one `describe` per contract clause — but with the opposite fixture
  * idiom, and deliberately so. That suite owns the classification built on
@@ -31,14 +38,8 @@ import { describe, expect, expectTypeOf, test } from "vitest";
 
 import { M3LError } from "../src/core/errors/index.js";
 import type { M3LAppendOnlySealedSegment } from "../src/core/storage/append-only-verify-types.js";
-import type {
-  AppendOnlyArchivalPolicy,
-  AppendOnlyArchivedSegment,
-} from "../src/internal/storage/append-only-archival.js";
-import {
-  resolveArchivedSegments,
-  toArchivedSegment,
-} from "../src/internal/storage/append-only-archival.js";
+import type { AppendOnlyArchivalPolicy } from "../src/internal/storage/append-only-archival.js";
+import { resolveArchivedSegments } from "../src/internal/storage/append-only-archival.js";
 import type { AppendOnlyReadFailure } from "../src/internal/storage/append-only-lines.js";
 import { MANIFEST_FORMAT_VERSION } from "../src/internal/storage/append-only-manifest.js";
 import type {
@@ -46,6 +47,8 @@ import type {
   ManifestContents,
   ManifestSealRecord,
 } from "../src/internal/storage/append-only-manifest-records.js";
+import type { AppendOnlySealedSegmentPayload } from "../src/internal/storage/append-only-sealed-payload.js";
+import { toSealedSegmentPayload } from "../src/internal/storage/append-only-sealed-payload.js";
 import type { ParsedSegmentName } from "../src/internal/storage/append-only-segments.js";
 
 // ---------------------------------------------------------------------------
@@ -115,17 +118,17 @@ const SEAL_WIDE_LOW = sealRecord(SEG_WIDE_LOW, AT_LOW, MEASUREMENT_LOW);
 const SEAL_WIDE_HIGH = sealRecord(SEG_WIDE_HIGH, AT_HIGH, MEASUREMENT_HIGH);
 
 /** The five-field projection each of the three seals above must yield. */
-const PROJECTED_EARLY: AppendOnlyArchivedSegment = {
+const PROJECTED_EARLY: AppendOnlySealedSegmentPayload = {
   segment: SEG_EARLY,
   at: AT_EARLY,
   ...MEASUREMENT_EARLY,
 };
-const PROJECTED_WIDE_LOW: AppendOnlyArchivedSegment = {
+const PROJECTED_WIDE_LOW: AppendOnlySealedSegmentPayload = {
   segment: SEG_WIDE_LOW,
   at: AT_LOW,
   ...MEASUREMENT_LOW,
 };
-const PROJECTED_WIDE_HIGH: AppendOnlyArchivedSegment = {
+const PROJECTED_WIDE_HIGH: AppendOnlySealedSegmentPayload = {
   segment: SEG_WIDE_HIGH,
   at: AT_HIGH,
   ...MEASUREMENT_HIGH,
@@ -201,7 +204,7 @@ interface ArchivalHarness {
   readonly policy: AppendOnlyArchivalPolicy;
   readonly port: RecordingFailurePort;
   /** Every projection the handler saw, in the order it saw them. */
-  readonly seen: AppendOnlyArchivedSegment[];
+  readonly seen: AppendOnlySealedSegmentPayload[];
 }
 
 /**
@@ -213,16 +216,16 @@ function harness(
   handler:
     | "record"
     | "none"
-    | ((segment: AppendOnlyArchivedSegment) => void) = "record",
+    | ((segment: AppendOnlySealedSegmentPayload) => void) = "record",
 ): ArchivalHarness {
   const port = createFailurePort();
-  const seen: AppendOnlyArchivedSegment[] = [];
+  const seen: AppendOnlySealedSegmentPayload[] = [];
   if (handler === "none") {
     return { policy: { buildManifestError: port.build }, port, seen };
   }
   const onArchivedSegment =
     handler === "record"
-      ? (segment: AppendOnlyArchivedSegment): void => {
+      ? (segment: AppendOnlySealedSegmentPayload): void => {
           seen.push(segment);
         }
       : handler;
@@ -372,10 +375,39 @@ describe("C4 no handler and something archived", () => {
       throw new Error("the port recorded no call");
     }
     expect(thrown).toBe(call.error);
-    expect(call.context).toEqual({ segment: SEG_EARLY });
+    // The count belongs beside the name because the name alone is not
+    // actionable: one archived segment and a whole deleted date produce the
+    // identical error, and an operator handed `2026-09-10-0001.jsonl` cannot
+    // tell which they are looking at. It is library-computed — the length of
+    // this call's own archived list — so it carries no caller data and joins
+    // the segment name under the same rule.
+    expect(call.context).toEqual({ segment: SEG_EARLY, archivedCount: 3 });
   });
 
-  test("carries a constant message with no caller data, and only the segment name as context", () => {
+  test("reports archivedCount 1 for a single archival, counting archived segments and not every seal", () => {
+    // The field is unconditional, never "only when there are several": a
+    // lone archival still reports a count. Two of the three seals are
+    // PRESENT here, so an implementation counting `contents.seals` — or the
+    // present set — reports 3 and fails, while one counting what it actually
+    // archived reports 1.
+    const { policy, port } = harness("none");
+
+    thrownBy(() =>
+      resolveArchivedSegments(
+        contents([SEAL_EARLY, SEAL_WIDE_LOW, SEAL_WIDE_HIGH]),
+        new Set([SEG_WIDE_LOW, SEG_WIDE_HIGH]),
+        policy,
+      ),
+    );
+
+    const [call] = port.calls;
+    if (call === undefined) {
+      throw new Error("the port recorded no call");
+    }
+    expect(call.context).toEqual({ segment: SEG_EARLY, archivedCount: 1 });
+  });
+
+  test("carries a constant message with no caller data, and only library-computed facts as context", () => {
     const first = harness("none");
     const second = harness("none");
 
@@ -400,11 +432,19 @@ describe("C4 no handler and something archived", () => {
       throw new Error("a port recorded no call");
     }
     // Constant across two runs whose only difference is the segment name,
-    // and the name reaches `context` rather than the message text.
+    // and the name reaches `context` rather than the message text. The key
+    // set is pinned exactly, so a later field cannot be added to `context`
+    // without this suite being made to say so.
     expect(secondCall.message).toBe(firstCall.message);
     expect(firstCall.message).not.toContain(SEG_EARLY);
-    expect(Object.keys(firstCall.context)).toEqual(["segment"]);
-    expect(secondCall.context).toEqual({ segment: SEG_WIDE_LOW });
+    expect(Object.keys(firstCall.context).sort()).toEqual([
+      "archivedCount",
+      "segment",
+    ]);
+    expect(secondCall.context).toEqual({
+      segment: SEG_WIDE_LOW,
+      archivedCount: 1,
+    });
   });
 });
 
@@ -453,15 +493,15 @@ describe("C5 nothing archived", () => {
 // ---------------------------------------------------------------------------
 
 describe("C6 the projection", () => {
-  test("toArchivedSegment yields exactly the five public fields", () => {
-    const payload = toArchivedSegment(SEAL_WIDE_LOW);
+  test("toSealedSegmentPayload yields exactly the five public fields", () => {
+    const payload = toSealedSegmentPayload(SEAL_WIDE_LOW);
 
     expect(Object.keys(payload).sort()).toEqual([...PROJECTION_KEYS]);
     expect(payload).toEqual(PROJECTED_WIDE_LOW);
   });
 
-  test("toArchivedSegment serializes without the record's internal fields", () => {
-    const serialized = JSON.stringify(toArchivedSegment(SEAL_WIDE_LOW));
+  test("toSealedSegmentPayload serializes without the record's internal fields", () => {
+    const serialized = JSON.stringify(toSealedSegmentPayload(SEAL_WIDE_LOW));
 
     expect(serialized).not.toContain("formatVersion");
     expect(serialized).not.toContain('"kind":"seal"');
@@ -594,7 +634,7 @@ describe("C9 a throwing handler", () => {
   });
 
   test("aborts the walk at the throwing segment, leaving later ones unreported", () => {
-    const seen: AppendOnlyArchivedSegment[] = [];
+    const seen: AppendOnlySealedSegmentPayload[] = [];
     const boom = new Error("handler exploded");
     const { policy } = harness((segment) => {
       seen.push(segment);
@@ -618,8 +658,8 @@ describe("C9 a throwing handler", () => {
 // ---------------------------------------------------------------------------
 
 describe("C10 type-level contract", () => {
-  test("AppendOnlyArchivedSegment mirrors M3LAppendOnlySealedSegment exactly", () => {
-    expectTypeOf<AppendOnlyArchivedSegment>().toEqualTypeOf<M3LAppendOnlySealedSegment>();
+  test("AppendOnlySealedSegmentPayload mirrors M3LAppendOnlySealedSegment exactly", () => {
+    expectTypeOf<AppendOnlySealedSegmentPayload>().toEqualTypeOf<M3LAppendOnlySealedSegment>();
   });
 
   test("resolveArchivedSegments returns parsed segment names", () => {
