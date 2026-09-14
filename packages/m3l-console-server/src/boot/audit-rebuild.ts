@@ -31,6 +31,16 @@
  * prefix of the trail. A partial index that looks complete is the one
  * outcome an audit index may never produce.
  *
+ * **ARCHIVAL is the one incompleteness this rebuild accepts.** ADR-0070
+ * sanctions archiving a whole date out of the trail, which leaves the
+ * directory's `manifest.jsonl` sealing segments that are no longer on disk.
+ * Refusing to rebuild over that would let the documented procedure disable
+ * the index permanently — nothing inserted, so every later boot re-enters
+ * the same path — so the survivors are indexed and every absent segment is
+ * reported at `error`, naming it. An unreadable manifest stays fatal: it is
+ * the record of what was sealed, and without it an archived segment and a
+ * silently deleted one are the same observation.
+ *
  * @packageDocumentation
  */
 
@@ -53,6 +63,63 @@ const REBUILT_MESSAGE = "human-action audit index rebuilt from the JSONL trail";
 /** Logged when the boot rebuild itself failed; see {@link rebuildHumanActionIndexOnBoot}. */
 const REBUILD_FAILED_MESSAGE =
   "human-action audit index rebuild failed; the JSONL trail is unaffected and queries against the index will under-report until the next boot";
+
+/**
+ * Logged instead of {@link REBUILD_FAILED_MESSAGE} when the rebuild failed
+ * because the trail's `manifest.jsonl` sidecar could not be READ.
+ *
+ * Both clauses of the general message would mislead for this cause, and in
+ * the same direction: the sidecar is part of the trail, so "the trail is
+ * unaffected" is not something this module can assert, and the damage is
+ * persistent — the next boot re-reads the same bad bytes and fails
+ * identically, so nothing "until the next boot" describes what an operator
+ * must do. What they must do is repair or restore the sidecar.
+ *
+ * The failure is also not the index's: the sidecar is what states which
+ * segments were sealed, so without it an archived segment and a deleted one
+ * are indistinguishable, and continuing would mean indexing a possibly
+ * incomplete trail as if it were whole.
+ */
+const MANIFEST_UNREADABLE_MESSAGE =
+  "human-action audit trail manifest could not be read, so which segments are sealed cannot be established and an archived segment cannot be told apart from a deleted one; nothing was indexed, and every boot will fail the same way until the sidecar is repaired or restored";
+
+/**
+ * Reports ONE segment the manifest seals and the directory no longer holds —
+ * a date archived by ADR-0070's own procedure, or one deleted outside it.
+ * This module cannot tell those apart and does not try: both mean the same
+ * thing to a rebuild, which is that entries the trail once held are not
+ * available to index.
+ *
+ * **At `error`, and that is part of the contract.** An audit segment leaving
+ * the trail is a compliance finding, not an operational detail, and
+ * `M3LLogLevelFloor` is configurable — a deployment that raised its floor
+ * must not be able to drop this. One event per segment rather than one
+ * summary, so each finding is separately attributable, greppable and
+ * alertable.
+ *
+ * The seal's `sha256` travels with it because it is what makes the tolerance
+ * provable rather than merely polite: an operator holding the archived copy
+ * can reproduce that digest against it with `sha256sum` and settle whether
+ * what left this directory is what they still have. The segment NAME is
+ * sanctioned data (a date prefix and a counter, both from the writer's own
+ * clock); the stream directory is caller input and is deliberately absent
+ * from both the message and the context.
+ */
+function reportArchivedSegment(
+  logger: Core.M3LLogger,
+  segment: Core.M3LAppendOnlySealedSegment,
+): void {
+  logger.error(
+    `human-action audit trail segment ${segment.segment} is sealed in the manifest but is no longer on disk (an archived or deleted date); the entries it held have left the trail, no rebuild can put them back now or on any later boot, and the index rebuild continues with the segments that remain`,
+    {
+      segment: segment.segment,
+      sealedAt: segment.at,
+      entryCount: segment.entryCount,
+      byteLength: segment.byteLength,
+      sha256: segment.sha256,
+    },
+  );
+}
 
 /**
  * Reads the ENTIRE trail under `directory` and returns the index rows it
@@ -87,6 +154,15 @@ const REBUILD_FAILED_MESSAGE =
  * died mid-append, and it is the one loss this rebuild accepts rather than
  * failing over. The same fragment mid-stream is data loss, not a torn tail,
  * and Core throws for it regardless of this callback.
+ *
+ * **An ARCHIVED segment is tolerated too, and reported at `error`** — see
+ * {@link reportArchivedSegment}. A segment the manifest sealed and the
+ * directory no longer holds is what ADR-0070's whole-date archival leaves
+ * behind, so refusing to rebuild over it would make the sanctioned procedure
+ * disable the index. An unreadable MANIFEST is the opposite case and stays
+ * fatal: that is the sidecar which states what was sealed at all, and
+ * without it this reader cannot tell an archived segment from a silently
+ * deleted one.
  */
 async function readTrailIndexRows(
   directory: string,
@@ -101,6 +177,16 @@ async function readTrailIndexRows(
         segmentIndex: segment.segmentIndex,
         segmentCount: segment.segmentCount,
       });
+    },
+    // Supplying this handler is the ONLY thing that tolerates a
+    // sealed-but-absent segment; left unset, `read()` throws
+    // `M3LAppendOnlyStreamManifestError` and — because the boot path never
+    // throws — a whole archived date would silently make the rebuild index
+    // nothing, permanently (nothing is inserted, so the next boot re-enters
+    // the same path). Tolerating it and saying loudly what is missing is
+    // strictly better than refusing to index the survivors.
+    onArchivedSegment: (segment) => {
+      reportArchivedSegment(logger, segment);
     },
   })) {
     const record = projectHumanActionRecord(
@@ -176,6 +262,11 @@ export interface RebuildHumanActionIndexOptions {
  * @throws {@link Core.M3LAppendOnlyStreamReadError} when a line is malformed,
  *   oversized, or a segment sequence is missing — surfaced rather than
  *   swallowed, so a corrupt trail is never quietly indexed as a prefix.
+ * @throws {@link Core.M3LAppendOnlyStreamManifestError} when the trail's
+ *   `manifest.jsonl` sidecar exists and cannot be read. A sealed segment
+ *   that is merely ABSENT no longer throws — it is tolerated and reported
+ *   through {@link reportArchivedSegment} — but an unreadable sidecar is
+ *   fatal, because it is the record of which segments were sealed.
  *
  * @example
  * ```ts
@@ -187,6 +278,21 @@ export async function rebuildHumanActionIndex(
 ): Promise<number> {
   const rows = await readTrailIndexRows(options.directory, options.logger);
   return truncateAndInsert(options.store, rows);
+}
+
+/**
+ * Picks the message the boot path reports a caught failure under.
+ *
+ * Only the cause's CLASS decides, never its message text: `instanceof` is the
+ * distinction Core's storage errors are designed to be told apart by (an
+ * unwritable trail, a corrupt trail, and a trail that can no longer be
+ * proven each get their own class and `code`), and matching on message
+ * strings would re-couple this module to wording it does not own.
+ */
+function describeRebuildFailure(cause: unknown): string {
+  return cause instanceof Core.M3LAppendOnlyStreamManifestError
+    ? MANIFEST_UNREADABLE_MESSAGE
+    : REBUILD_FAILED_MESSAGE;
 }
 
 /**
@@ -239,7 +345,7 @@ export async function rebuildHumanActionIndexOnBoot(
     // whole recursive cause chain (redacted) rather than flattening it to one
     // message string. It never throws, which matters on a path whose entire
     // contract is that it does not.
-    options.logger.errorFrom(cause, REBUILD_FAILED_MESSAGE);
+    options.logger.errorFrom(cause, describeRebuildFailure(cause));
     return 0;
   }
 }

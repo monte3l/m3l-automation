@@ -19,13 +19,13 @@
  * it back.
  */
 import { EventEmitter } from "node:events";
-import { appendFile, mkdtemp, rm } from "node:fs/promises";
+import { appendFile, mkdtemp, readFile, rm } from "node:fs/promises";
 import type { IncomingMessage, Server, ServerResponse } from "node:http";
 import { tmpdir } from "node:os";
 import * as path from "node:path";
 import type { AddressInfo } from "node:net";
 
-import { afterEach, beforeEach, describe, expect, test } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 import { Core } from "@monte3l/m3l-common";
 
@@ -554,5 +554,305 @@ describe("the dual store, end to end (issue #834)", () => {
     const shutdownTwo = runningTwo.shutdown();
     second.resolveClose();
     await shutdownTwo;
+  });
+});
+
+// =============================================================================
+// X8b4c regression — an ARCHIVED sealed segment must not defeat the rebuild.
+//
+// `Core.M3LAppendOnlyStream.read()` now escalates a segment the directory's
+// `manifest.jsonl` sealed and which is no longer on disk: without the
+// `onArchivedSegment` read option it throws
+// `M3LAppendOnlyStreamManifestError`. `readTrailIndexRows` supplies only
+// `onTruncatedTail`, so archiving a whole date — the procedure ADR-0070
+// sanctions — currently makes the boot rebuild index NOTHING, and
+// PERMANENTLY: `insertAll` never runs, the index stays empty, so every later
+// boot re-enters the same path.
+//
+// The console must TOLERATE archival instead: report each archived segment at
+// `error` (an audit segment is gone — a compliance finding, not a debug
+// detail) and index the segments that remain. A manifest that cannot be READ
+// stays fatal, as the library intends.
+// =============================================================================
+
+/**
+ * Midday UTC on two consecutive days: far enough from either UTC-day boundary
+ * that which date prefix the writer stamps is unambiguous, the same fake-clock
+ * shape `m3l-common`'s `storage-append-only-read-archival.test.ts` uses.
+ */
+const DAY_ONE_MS = Date.UTC(2026, 0, 1, 12, 0, 0);
+const DAY_TWO_MS = DAY_ONE_MS + 24 * 60 * 60 * 1000;
+const DAY_ONE = "2026-01-01";
+
+/** Correlation ids per day, so a surviving index row is attributable to a date. */
+const DAY_ONE_CORRELATION_IDS = ["corr-d1-a", "corr-d1-b"] as const;
+const DAY_TWO_CORRELATION_IDS = ["corr-d2-a", "corr-d2-b"] as const;
+
+/**
+ * The two clauses today's rebuild-failed message promises, both FALSE once a
+ * segment has actually left the trail: the trail has lost data, and an index
+ * that stayed empty means the next boot re-enters this path rather than
+ * clearing it. An operator reading them takes a permanent audit-integrity
+ * finding for transient index degradation.
+ */
+const STALE_DEGRADATION_PHRASES = [
+  "the JSONL trail is unaffected",
+  "until the next boot",
+] as const;
+
+/** Core's own code for a sidecar that exists and cannot be read. */
+const MANIFEST_ERROR_CODE = "ERR_APPEND_ONLY_STREAM_MANIFEST";
+
+/**
+ * A human-action entry as an anonymous object literal, deliberately NOT
+ * annotated {@link M3LHumanActionRecord}.
+ *
+ * `Core.M3LAppendOnlyStream.append` constrains its own type parameter to an
+ * object whose properties are all `M3LAppendOnlyValue`s, and an `interface`
+ * carries no implicit index signature — the inferred literal type is what
+ * satisfies that constraint without a cast. The shape is {@link buildRecord}'s.
+ * The console port is not usable for these fixtures: it exposes neither
+ * `maxSegmentBytes` (needed to force the rotations that SEAL a segment) nor
+ * `flush()`.
+ */
+function buildTrailEntry(correlationId: string) {
+  return {
+    atMs: 1_700_000_000_000,
+    operator: "ada",
+    operatorEmailDeclared: true,
+    correlationId,
+    action: "run.launch",
+    target: { kind: "script", id: "script-1", scriptName: "sqs-etl" },
+    parameterNames: ["queueUrl"],
+    parameterRefs: [],
+    posture: "confirmed",
+    outcome: "allowed",
+    detail: { attempt: 1 },
+  };
+}
+
+/** The segment a `manifest.jsonl` line seals, or `undefined` for any other record. */
+function sealedSegmentName(line: string): string | undefined {
+  const parsed: unknown = JSON.parse(line);
+  if (typeof parsed !== "object" || parsed === null) return undefined;
+  const record = parsed as Readonly<Record<string, unknown>>;
+  if (record["kind"] !== "seal") return undefined;
+  const segment = record["segment"];
+  return typeof segment === "string" ? segment : undefined;
+}
+
+/** Every segment name {@link auditDir}'s sidecar currently states a seal for. */
+async function sealedSegmentNames(): Promise<readonly string[]> {
+  const content = await readFile(
+    path.join(auditDir, Core.M3L_APPEND_ONLY_MANIFEST_NAME),
+    "utf8",
+  );
+  return content
+    .split("\n")
+    .filter((line) => line.length > 0)
+    .map((line) => sealedSegmentName(line))
+    .filter((name): name is string => name !== undefined);
+}
+
+/**
+ * Writes a trail spanning a UTC date rollover, with REAL seals.
+ *
+ * `maxSegmentBytes: 1` makes every append after the first rotate before
+ * writing, so N appends produce N segments and those rotations do the
+ * sealing. Day one's LAST segment is sealed by the cold-start sweep the
+ * day-two writer instance runs, which is why a second stream is constructed
+ * rather than the first reused.
+ *
+ * `flush()` after each day settles that writer's seal tail: the sealer runs on
+ * the writer's serialized tail AFTER `append()` resolves, so without it a
+ * later `rm` races a seal that would recreate `manifest.jsonl`.
+ */
+async function seedRolledOverTrail(): Promise<void> {
+  vi.useFakeTimers();
+  try {
+    vi.setSystemTime(DAY_ONE_MS);
+    const dayOne = new Core.M3LAppendOnlyStream({
+      directory: auditDir,
+      maxSegmentBytes: 1,
+    });
+    for (const correlationId of DAY_ONE_CORRELATION_IDS) {
+      await dayOne.append(buildTrailEntry(correlationId));
+    }
+    await dayOne.flush();
+
+    vi.setSystemTime(DAY_TWO_MS);
+    const dayTwo = new Core.M3LAppendOnlyStream({
+      directory: auditDir,
+      maxSegmentBytes: 1,
+    });
+    for (const correlationId of DAY_TWO_CORRELATION_IDS) {
+      await dayTwo.append(buildTrailEntry(correlationId));
+    }
+    await dayTwo.flush();
+  } finally {
+    // Unconditional: a failed append mid-fixture must not leak fake time into
+    // the next test.
+    vi.useRealTimers();
+  }
+}
+
+/**
+ * Archives day one exactly as ADR-0070's procedure does: every segment file
+ * for that date is deleted and `manifest.jsonl` is left behind.
+ *
+ * Asserts the PRECONDITION that the sidecar claims each deleted segment. From
+ * inside the directory a deleted sidecar and a trail that never sealed
+ * anything read identically, so without this check a fixture whose seals
+ * never landed would make every archival test below pass vacuously.
+ */
+async function archiveDayOne(): Promise<readonly string[]> {
+  const listing = await new Core.M3LAppendOnlyStream({
+    directory: auditDir,
+  }).listSegments();
+  const archived = listing.segments
+    .filter((segment) => segment.datePrefix === DAY_ONE)
+    .map((segment) => segment.name);
+  // Exact count first: `arrayContaining([])` is satisfied by ANY sidecar, so
+  // an empty `archived` would hand every caller below a no-op "archival" whose
+  // own assertions still pass. One append per segment (`maxSegmentBytes: 1`)
+  // makes day one's segment count its correlation-id count.
+  expect(archived).toHaveLength(DAY_ONE_CORRELATION_IDS.length);
+  expect(await sealedSegmentNames()).toEqual(
+    expect.arrayContaining([...archived]),
+  );
+  for (const name of archived) {
+    await rm(path.join(auditDir, name));
+  }
+  return archived;
+}
+
+/** Every `error`-category event a recording handler captured. */
+function errorEvents(handler: RecordingHandler): readonly Core.M3LLogEvent[] {
+  return handler.events.filter(
+    (event) => event.category === Core.M3LLogEventCategory.ERROR,
+  );
+}
+
+describe("rebuildHumanActionIndexOnBoot — an archived date is tolerated, not fatal", () => {
+  test("a whole archived date still rebuilds the segments that remain", async () => {
+    await seedRolledOverTrail();
+    await archiveDayOne();
+    const store = openStore();
+
+    const inserted = await rebuildHumanActionIndexOnBoot({
+      directory: auditDir,
+      store,
+      logger: new Core.M3LLogger([]),
+    });
+
+    expect(inserted).toBe(DAY_TWO_CORRELATION_IDS.length);
+    // The survivors are day TWO's rows specifically: the archived date's
+    // entries have left the trail, so they cannot be in the index either —
+    // a count alone would not say WHICH rows were indexed.
+    expect(
+      store.audit
+        .list({ limit: 10 })
+        .map((row) => row.correlationId)
+        .sort(),
+    ).toStrictEqual([...DAY_TWO_CORRELATION_IDS].sort());
+  });
+
+  test("each archived segment is reported at error level, naming that segment", async () => {
+    await seedRolledOverTrail();
+    const archived = await archiveDayOne();
+    const handler = new RecordingHandler();
+    const store = openStore();
+
+    await rebuildHumanActionIndexOnBoot({
+      directory: auditDir,
+      store,
+      logger: new Core.M3LLogger([handler]),
+    });
+
+    // One `error` event per archived segment, each naming a DIFFERENT one.
+    // Counting name MENTIONS would not discriminate: today's single
+    // "rebuild failed" event already serializes every segment name out of the
+    // manifest error's `context`, so it would satisfy a mention count.
+    // Matching one event to one name is what fails against it.
+    const named = errorEvents(handler).map((event) =>
+      archived.find((segment) => JSON.stringify(event).includes(segment)),
+    );
+    expect([...named].sort()).toStrictEqual([...archived].sort());
+  });
+
+  test("the archival report never claims the trail is unaffected nor that a reboot clears it", async () => {
+    await seedRolledOverTrail();
+    const archived = await archiveDayOne();
+    const handler = new RecordingHandler();
+    const store = openStore();
+
+    const inserted = await rebuildHumanActionIndexOnBoot({
+      directory: auditDir,
+      store,
+      logger: new Core.M3LLogger([handler]),
+    });
+
+    // One row per `error` event, PAIRED: what that event correctly says, and
+    // which stale clauses it carries. A bare negative string check is weak
+    // twice over — it passes when nothing is logged at all, and it passes when
+    // the wording merely changes to something else equally wrong. Shaping the
+    // expectation against `archived` closes the first hole (silence is not an
+    // empty list, it is a missing row) and the positive member closes the
+    // second (whatever replaces the clauses must still name the segment).
+    expect(
+      errorEvents(handler).map((event) => ({
+        namesAnArchivedSegment: archived.some((segment) =>
+          JSON.stringify(event).includes(segment),
+        ),
+        stalePhrases: STALE_DEGRADATION_PHRASES.filter((phrase) =>
+          JSON.stringify(event).includes(phrase),
+        ),
+      })),
+    ).toStrictEqual(
+      archived.map(() => ({ namesAnArchivedSegment: true, stalePhrases: [] })),
+    );
+    // And the run CONTINUED: the report describes what left the trail, it is
+    // not a refusal to index what remains. Without this, a message-only
+    // assertion would be satisfied by an implementation that logged the right
+    // words and still indexed nothing.
+    expect(inserted).toBe(DAY_TWO_CORRELATION_IDS.length);
+  });
+});
+
+describe("rebuildHumanActionIndexOnBoot — an unreadable manifest stays fatal", () => {
+  // REGRESSION LOCK, not a RED case: this already passes today, because the
+  // read throws the manifest error and the boot path catches it. It is here so
+  // that supplying `onArchivedSegment` cannot be implemented as tolerating the
+  // SIDECAR as well — a single bad byte must never disable archival detection
+  // for the whole trail, least of all at the moment someone wrote that byte on
+  // purpose. Re-confirm after the fix that it still discriminates.
+  test("a malformed manifest line indexes nothing and reports the manifest code", async () => {
+    await seedRolledOverTrail();
+    // Every segment is present and intact; only the sidecar is damaged. The
+    // bad line is newline-TERMINATED, so it can never be excused as the torn
+    // tail the manifest reader tolerates: a complete record that is not a
+    // record.
+    await appendFile(
+      path.join(auditDir, Core.M3L_APPEND_ONLY_MANIFEST_NAME),
+      "{ not valid json\n",
+      "utf8",
+    );
+    const handler = new RecordingHandler();
+    const store = openStore();
+
+    const inserted = await rebuildHumanActionIndexOnBoot({
+      directory: auditDir,
+      store,
+      logger: new Core.M3LLogger([handler]),
+    });
+
+    expect(inserted).toBe(0);
+    // Exactly one `error` event, and the manifest error's own code reaches the
+    // operator through the serialized cause chain.
+    expect(
+      errorEvents(handler).map((event) =>
+        JSON.stringify(event).includes(MANIFEST_ERROR_CODE),
+      ),
+    ).toStrictEqual([true]);
   });
 });
