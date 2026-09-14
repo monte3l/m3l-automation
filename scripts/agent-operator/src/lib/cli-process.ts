@@ -24,6 +24,8 @@
 import { spawn as nodeSpawn } from "node:child_process";
 import { StringDecoder } from "node:string_decoder";
 
+import { Core } from "@monte3l/m3l-common";
+
 /**
  * The subset of a real `ChildProcess` (and stdio stream) that
  * {@link runCliProcess} depends on. Kept narrow and structural so a test can
@@ -199,16 +201,13 @@ const ERROR_CODE_PATTERN = /^[A-Z][A-Z0-9_]{0,31}$/;
  * Extracts a spawn error's `code` only when it is a short, uppercase,
  * identifier-shaped string (e.g. `"ENOENT"`, `"EACCES"`). Deliberately never
  * reads `error.message` — a real Node spawn `ENOENT` message embeds the
- * resolved absolute entrypoint path.
+ * resolved absolute entrypoint path. Ownership and single-read enforcement
+ * are delegated to {@link Core.errnoCodeOf}; this function only layers the
+ * shape allow-list on top.
  */
 function readFailureCode(error: unknown): string | undefined {
-  if (typeof error !== "object" || error === null || !("code" in error)) {
-    return undefined;
-  }
-  const code: unknown = (error as { readonly code?: unknown }).code;
-  return typeof code === "string" && ERROR_CODE_PATTERN.test(code)
-    ? code
-    : undefined;
+  const code = Core.errnoCodeOf(error);
+  return code !== undefined && ERROR_CODE_PATTERN.test(code) ? code : undefined;
 }
 
 /**
