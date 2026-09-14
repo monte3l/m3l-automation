@@ -109,3 +109,70 @@ export function ownDigest(
     ? value
     : undefined;
 }
+
+/**
+ * The own `property` of `record` when it is an instant in exactly the shape
+ * `Date.prototype.toISOString` renders AND naming a real calendar moment,
+ * else `undefined`.
+ *
+ * **A sanitization boundary, not a correctness nicety — do not relax it back
+ * to {@link ownString} as a redundant type check.** An `at` is the one field
+ * of this format that reaches a CALLER verbatim: it travels in the payload
+ * {@link "../../core/storage/append-only-read-types.js".M3LAppendOnlyReadOptions}'s
+ * `onArchivedSegment` is handed, and that option's own `@example` tells
+ * callers to log the payload. Admitted on type alone, it carries bytes
+ * whoever wrote the manifest chose — terminal control sequences that erase
+ * the line they land on, and carriage returns and newlines that let the rest
+ * of the value pose as further lines this library wrote — straight into an
+ * operator's log, where they read as library-generated. The check has to live
+ * here, at the parse boundary: nothing downstream can still tell that the
+ * value came off disk rather than out of the writer's own clock. An `at`'s
+ * three siblings on a seal are all admitted on their SHAPE already —
+ * `segment` through this format's own segment parser, `sha256` through
+ * {@link ownDigest}, both counts through {@link ownMeasurement} — so an `at`
+ * admitted on type alone was the single gap left in an otherwise closed
+ * record.
+ *
+ * The shape is allowlisted by RE-RENDERING rather than by matching a lexical
+ * pattern: the value is admitted only when re-rendering the moment it parsed
+ * to reproduces the value byte for byte, so the admitted set is precisely the
+ * range of `toISOString` — which is precisely what a writer of this format
+ * stamps, since that call is the only thing that ever writes the field. That
+ * makes it an allowlist of the writer's own rendering, the house rule at a
+ * sanitization boundary, where a denylist over unbounded input never
+ * converges. The property the boundary actually needs follows from the range
+ * itself: every string `toISOString` can return is digits and the `+-:.TZ`
+ * delimiters, so no admitted value holds a control byte or a line break, and
+ * no length but its own.
+ *
+ * One check, not two, and deliberately this one. An anchored digit-group
+ * pattern over `YYYY-MM-DDTHH:mm:ss.sssZ` looks like the cheaper spelling of
+ * the same rule and is strictly weaker where it counts: it ACCEPTS
+ * `2026-13-45T99:99:99.999Z`, whose every counted group is satisfied and
+ * which names no moment at all, and it accepts an hour of `24`, a spelling
+ * this format never states. The re-render refuses both — `Date.parse` answers
+ * `NaN` for the first, and the second re-renders as the next day's midnight
+ * and so fails the identity — on the same reasoning that makes
+ * {@link ownDigest} refuse an uppercase digest instead of folding its case.
+ * Adding the pattern in front of it would buy nothing this boundary is for
+ * and leave two spellings of "the shape the writer stamps" to keep in step,
+ * the laxer of which reads as the authority.
+ *
+ * Checked on the local {@link ownString} already read, never by reading the
+ * property a second time: a getter may answer differently for the read that
+ * gets validated and the read that gets returned.
+ */
+export function ownInstant(
+  record: object,
+  property: string,
+): string | undefined {
+  const value = ownString(record, property);
+  if (value === undefined) {
+    return undefined;
+  }
+  const milliseconds = Date.parse(value);
+  return !Number.isNaN(milliseconds) &&
+    new Date(milliseconds).toISOString() === value
+    ? value
+    : undefined;
+}

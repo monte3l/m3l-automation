@@ -13,12 +13,12 @@
  * about (and exercised) without a filesystem in the picture at all.
  *
  * The record-agnostic untrusted-field readers (`ownProperty`, `ownString`,
- * `ownInteger`, `ownMeasurement`, `ownDigest`) live one file over, in
- * `./append-only-manifest-fields.js`, for the same file-budget reason. What
- * stays here is record-SPECIFIC: `ownSealSegment` and `ownBaselineUpTo`
- * reach for this format's own `parseSegmentName`/`currentDatePrefix` rules
- * and so belong with the shapes they validate, not with the generic
- * primitives.
+ * `ownInteger`, `ownMeasurement`, `ownDigest`, `ownInstant`) live one file
+ * over, in `./append-only-manifest-fields.js`, for the same file-budget
+ * reason. What stays here is record-SPECIFIC: `ownSealSegment` and
+ * `ownBaselineUpTo` reach for this format's own
+ * `parseSegmentName`/`currentDatePrefix` rules and so belong with the shapes
+ * they validate, not with the generic primitives.
  *
  * **The integrity rules are deliberately asymmetric, and the asymmetry is the
  * design.** A torn LAST line is ignored unconditionally (a half-written seal
@@ -54,6 +54,7 @@ import type { SegmentDigestResult } from "./append-only-digest.js";
 import type { AppendOnlyReadFailure } from "./append-only-lines.js";
 import {
   ownDigest,
+  ownInstant,
   ownInteger,
   ownMeasurement,
   ownProperty,
@@ -265,7 +266,17 @@ function ownSealSegment(record: object): string | undefined {
  * — 64 lowercase hex characters — and both counts must be non-negative
  * ({@link "./append-only-manifest-fields.js".ownMeasurement}). `segment`
  * is admitted only when {@link "./append-only-segments.js".parseSegmentName}
- * accepts it (see {@link ownSealSegment}). A value outside those shapes is
+ * accepts it (see {@link ownSealSegment}). `at` is admitted only in the
+ * instant shape
+ * {@link "./append-only-manifest-fields.js".ownInstant} accepts, and that one
+ * is a sanitization boundary rather than a shape nicety: `at` is the only
+ * field of this record handed to a caller verbatim, through an option
+ * documented with a logging example, so bytes admitted here land in an
+ * operator's log looking library-written. The full reasoning — and the
+ * warning against relaxing it back to a type check — lives on that reader.
+ * {@link parseBaselineRecord} applies the same reader to its own `at`;
+ * validating one kind and not the other is the asymmetry that produced this
+ * gap. A value outside those shapes is
  * reported through {@link MALFORMED_RECORD_MESSAGE}, the same fatal path a
  * missing field takes — exactly as {@link parseBaselineRecord} treats a
  * wrongly-shaped `upTo` (see {@link ownBaselineUpTo}), and on the same
@@ -279,7 +290,7 @@ function parseSealRecord(
   buildError: AppendOnlyReadFailure,
 ): ManifestSealRecord {
   const formatVersion = requireFormatVersion(record, buildError);
-  const at = ownString(record, "at");
+  const at = ownInstant(record, "at");
   const segment = ownSealSegment(record);
   const sha256 = ownDigest(record, "sha256");
   const entryCount = ownMeasurement(record, "entryCount");
@@ -371,13 +382,20 @@ function ownBaselineUpTo(record: object): string | null | undefined {
 /**
  * Parses one `baseline` record, or fails if it is incomplete, out of shape,
  * or too new.
+ *
+ * Its `at` goes through the same
+ * {@link "./append-only-manifest-fields.js".ownInstant} boundary
+ * {@link parseSealRecord} holds its own to, deliberately and not for
+ * symmetry's sake: a baseline is read off the same untrusted file by the same
+ * reader, so a shape check on one kind's instant and a bare type check on the
+ * other's would leave the identical leak open under one record name.
  */
 function parseBaselineRecord(
   record: object,
   buildError: AppendOnlyReadFailure,
 ): ManifestBaselineRecord {
   const formatVersion = requireFormatVersion(record, buildError);
-  const at = ownString(record, "at");
+  const at = ownInstant(record, "at");
   const upTo = ownBaselineUpTo(record);
   if (at === undefined || upTo === undefined) {
     // `upTo` is required and explicitly nullable: `null` is the positive
