@@ -106,6 +106,7 @@ every comment stating the assumption in prose too — not just the lines the
 diff directly touches. This is the same class of bug this session's own P3
 divergence #2 named (a comparison phrased in prose is a hidden dependency on
 the thing it's judging) recurring one PR later, in a different file.
+_(promoted → .claude/agents/code-reviewer.md)_
 
 ### 2. A genuine operational trade-off surfaced only by the post-push bot review, not the pre-push spokes
 
@@ -144,6 +145,7 @@ model caught something a single pre-push pass would have missed.
   prose was missed until an independent reviewer caught it — grep for the old
   cardinality's _natural-language_ description ("both run", "either", "the
   other"), not just its numeral or variable-name citations.
+  _(promoted → .claude/agents/code-reviewer.md)_
 - **The post-push bot review earning its keep is itself a durable signal,
   not just a one-off catch.** This session's Should-fix (main-run staleness
   keeping a tracking issue open past a fix) required synthesizing two

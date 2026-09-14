@@ -127,6 +127,7 @@ a manual shell `&` created a process the harness lost track of; the
 `&` in the command string. Pass the long-running command directly to
 `run_in_background` and let the tool manage backgrounding — it tracks the
 actual process and notifies on its real completion.
+_(promoted → .claude/hooks/guard-double-background.mjs)_
 
 ### 2. `pnpm lint:workspace` crashed with a V8 heap OOM, unrelated to the branch's own diff
 

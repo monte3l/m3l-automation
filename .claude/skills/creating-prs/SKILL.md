@@ -246,7 +246,13 @@ own fallback default makes the digest pattern accidental rather than
 deliberate.
 
 If the diff contains **only docs/automation changes** (no `src/**` files),
-dispatch `docs-consistency-reviewer` instead.
+dispatch `docs-consistency-reviewer` instead — **plus `code-reviewer`** when
+the diff also touches `bin/**`, `.claude/hooks/**`, or `.claude/workflows/**`.
+Those paths carry real executable logic even with no `src/**` file in sight,
+and `docs-consistency-reviewer` doesn't check logic — `claude-pr-review`
+caught genuine post-push logic bugs in a new `bin/**` gate this way twice
+(`docs/logs/2026-09-11-pnpm-pin-gate.md` D2,
+`2026-09-07-should-fix-ack-gate-wave.md` D2).
 
 After collecting spoke results: if any spoke reports a **Must-fix** finding,
 fix it and loop back through Steps 4, 5, and 7 before pushing. Do not push with

@@ -88,6 +88,7 @@ branch, pass `pnpm worktree:new <slug> --fix` on the first invocation rather
 than the bare form — check `bin/worktree-new.mjs --help`'s flag list before
 running it whenever the recommended prefix is `fix/` rather than the tool's
 `feat/` default.
+_(promoted → .claude/skills/starting-work/SKILL.md)_
 
 ## Lessons learned
 

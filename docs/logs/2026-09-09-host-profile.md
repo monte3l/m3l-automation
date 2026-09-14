@@ -122,6 +122,7 @@ completion via a `Monitor` until-loop watching the raw PID (`kill -0 $PID`)
 rather than the harness's own background-job tracking. This worked on the
 first retry and should be reached for immediately after any restart-adjacent
 empty-output failure, not after a second failed retry of the tracked form.
+_(promoted → .claude/hooks/guard-double-background.mjs)_
 
 ### 2. An unrelated, pre-existing `pnpm audit` failure blocked the first push's required `verify` check
 

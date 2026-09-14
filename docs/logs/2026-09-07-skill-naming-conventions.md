@@ -132,6 +132,7 @@ it. Before killing a process to free resources, walk its actual
 `ps aux` output alone. Design a polling `Monitor` loop to be quiet by
 default — track and diff the previous state, emit only on change or on the
 terminal condition — rather than echoing every poll tick.
+_(promoted → .claude/hooks/guard-double-background.mjs)_
 
 ### 4. Plan mode auto-exited unexpectedly mid-task on a later "Try again" turn
 

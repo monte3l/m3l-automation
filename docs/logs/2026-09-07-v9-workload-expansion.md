@@ -178,6 +178,7 @@ indeterminate entry was recorded" for ordinary dispositions — trivially true
 once the runner records nothing for any input, so they would have kept
 passing while proving nothing. Moving code out from under a test is a way to
 create a vacuous test that no gate detects.
+_(promoted → .claude/rules/refactoring.md)_
 
 Fixing the orphan itself means spawning `detached` and group-killing, which
 changes signal semantics in `cli-process` shared by all seven surface methods,

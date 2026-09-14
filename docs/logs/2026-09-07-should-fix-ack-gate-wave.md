@@ -237,3 +237,4 @@ Lessons below for why this one is left as a lesson rather than filed).
   catches a missing-test gap on this path class today, which is fine as a design (two-phase
   review is deliberate) but worth knowing going in rather than reading a live FAIL as a
   process surprise.
+  _(promoted → .claude/skills/creating-prs/SKILL.md)_

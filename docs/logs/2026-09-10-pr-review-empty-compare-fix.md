@@ -80,6 +80,7 @@ non-default kind), pass `--fix`/`--kind <kind>` to `worktree:new` on the
 first call — check `bin/worktree-new.mjs`'s header comment for the flag
 before invoking, rather than assuming the bare `<slug>` form infers the
 prefix from the slug's own wording.
+_(promoted → .claude/skills/starting-work/SKILL.md)_
 
 ### 2. `gh pr merge` was blocked by the auto-mode permission classifier
 

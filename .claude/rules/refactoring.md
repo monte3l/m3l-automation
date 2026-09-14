@@ -36,6 +36,14 @@ It is not feature, performance, or behavior work — those are separate commits.
   tests that no longer assert a contract, refactor a shared fixture once (not every
   caller), and update a mock target the moment the impl's I/O primitive changes (a
   stale mock silently intercepts nothing).
+- **Moving code out from under a test can leave it vacuous with no gate
+  catching it.** Extracting or relocating the behavior a test exercises,
+  without re-deriving what the test still actually reaches, can leave it
+  green while asserting nothing real — and a fixture edited to match the new
+  code is not automatically a test of the behavior that changed; confirm it
+  still fails when the new behavior is wrong, not just that it passes when
+  the code is right (`docs/logs/2026-09-07-v9-workload-expansion.md`,
+  `2026-09-09-adaptive-concurrency.md`).
 - **A full test-file rewrite must name what it must NOT touch.** A general
   instruction ("don't drop tests for unchanged functions") is easy to satisfy
   partially in a large rewrite without anyone noticing which specific cases got

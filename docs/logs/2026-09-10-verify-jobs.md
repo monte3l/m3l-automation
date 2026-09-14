@@ -259,6 +259,7 @@ the fix complete — here, that would have meant grep-ing `VERIFY_STEPS` for
 every other `turbo run build --filter=...`/`pnpm --filter ... build`-shaped
 `cmd` and checking each against `build`'s own coverage, rather than
 stopping once the one reported case was fixed.
+_(promoted → .claude/skills/resolving-pr-comments/SKILL.md)_
 
 ## Insights
 
@@ -307,3 +308,4 @@ stopping once the one reported case was fixed.
   instances of the same pattern before calling it done — grep the
   surrounding data structure for the same shape, don't just close the one
   ticket.
+  _(promoted → .claude/skills/resolving-pr-comments/SKILL.md)_

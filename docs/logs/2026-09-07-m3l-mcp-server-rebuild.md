@@ -211,6 +211,7 @@ lesson generalizes to every backgrounded command, not just pushes.
   misattribution, an over-coupled assertion, a vacuous test) worth fixing in
   a follow-up commit with an `Acknowledged-Should-Fix:` footer — none needed
   disputing.
+  _(promoted → .claude/skills/creating-prs/SKILL.md)_
 - **`SendMessage` vs `Agent` needs a conscious check before every spoke
   follow-up, not just at first dispatch.** Two separate near-misses this
   session (divergences #1 and #2) came from reaching for `Agent` when

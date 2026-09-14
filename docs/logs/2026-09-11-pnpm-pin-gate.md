@@ -129,6 +129,7 @@ new `bin/**` gate with exported logic functions (not just a doc/config edit)
 as warranting `code-reviewer`, not only `docs-consistency-reviewer`, even
 though it sits outside `packages/*/src` and `scripts/*/src`. This is a
 candidate rule promotion — see Insights.
+_(promoted → .claude/skills/creating-prs/SKILL.md)_
 
 ### 3. A follow-up edit to fix one Should-fix bug silently broke a different, already-correct code path
 

@@ -102,6 +102,7 @@ completion. When a "completed" notification looks premature (a partial log
 with an in-progress step, a suspiciously fast turnaround for a known
 multi-minute command), verify independently with `ps -p <pid>` before
 trusting it.
+_(promoted → .claude/hooks/guard-double-background.mjs)_
 
 ### 2. A `pnpm update <pkg>` (and even a filtered `pnpm --filter <pkg> update`) pulled in unrelated lockfile churn
 
@@ -175,6 +176,7 @@ work, always check the resulting branch name and rename before
 prefix already present in the passed slug) to remove this recurring manual
 step — filed as a candidate friction item rather than fixed here, since it's
 outside this task's scope.
+_(promoted → .claude/skills/starting-work/SKILL.md)_
 
 ## Lessons learned
 
