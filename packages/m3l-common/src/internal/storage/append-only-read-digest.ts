@@ -21,10 +21,12 @@
  * **The comparison itself is NOT re-implemented here.**
  * {@link "./append-only-digest.js".measurementsMatch} is the single
  * definition of "these three numbers agree", shared with
- * `./append-only-verify.js`, for exactly the reason that module's header
- * already gives for sharing one measurement implementation: a seal written by
- * one path and checked by another has to agree field for field, and two
- * copies of the comparison are two places for that agreement to rot.
+ * `./append-only-verify.js`, `./append-only-manifest-records.js` and
+ * `./append-only-seal-attempt.js`, for exactly the reason that module's
+ * header already gives for sharing one measurement implementation: a seal
+ * written by one path and checked by another has to agree field for field,
+ * and a second copy of the comparison is a second place for that agreement
+ * to rot.
  *
  * No I/O, no clock and no state beyond the running digest — every branch is
  * reachable by feeding chunks to an instance.
