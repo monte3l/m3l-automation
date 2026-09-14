@@ -78,7 +78,12 @@
         {
           "file": "packages/m3l-common/src/core/storage/M3LAppendOnlyStreamManifestError.ts",
           "symbol": "M3LAppendOnlyStreamManifestError",
-          "blob": "302c4aa74d6a13c2e9a94a99febfcc4ca91fdfeb"
+          "blob": "4c50d1e86897b716402230c9cb6fcd70b2bb6851"
+        },
+        {
+          "file": "packages/m3l-common/src/core/storage/M3LAppendOnlyStreamIntegrityError.ts",
+          "symbol": "M3LAppendOnlyStreamIntegrityError",
+          "blob": "8f569a5266240ddb8d0afb6efb50d773355d7e0a"
         },
         {
           "file": "packages/m3l-common/src/core/storage/append-only-manifest-types.ts",

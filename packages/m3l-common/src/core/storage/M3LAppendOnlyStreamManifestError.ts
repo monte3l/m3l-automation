@@ -39,8 +39,8 @@ interface M3LAppendOnlyStreamManifestErrorOptions {
  * seal itself succeeds. So this is not "my trail is unwritable" and not "my
  * trail is corrupt" either — it is a third, narrower incident: the trail can
  * no longer be **proven** over the segment(s) the failing proof covers.
- * `instanceof` is how a caller tells these three apart without parsing a
- * message string:
+ * `instanceof` is how a caller tells these apart without parsing a message
+ * string:
  *
  * - {@link M3LAppendOnlyStreamError} — "my trail is unwritable" (a 503,
  *   retry elsewhere).
@@ -48,6 +48,11 @@ interface M3LAppendOnlyStreamManifestErrorOptions {
  *   page).
  * - `M3LAppendOnlyStreamManifestError` (this class) — "my trail can no
  *   longer be proven" (a compliance escalation, not an outage).
+ * - {@link "./M3LAppendOnlyStreamIntegrityError.js".M3LAppendOnlyStreamIntegrityError}
+ *   — "these are not the bytes I sealed", for a sealed segment still on disk
+ *   whose re-digest disagrees with its seal. That class states its own
+ *   rationale; the distinction from this one is only that a missing proof
+ *   and a contradicted proof are not the same incident.
  *
  * Collapsing these into one shared `code` would force every caller back to
  * inspecting a message string to recover the distinction.

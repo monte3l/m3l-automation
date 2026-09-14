@@ -302,7 +302,7 @@
       },
       {
         "path": "docs/reference/catalog.json",
-        "blob": "69d0fcdfdf98463a8d7077de36bf46e0f60868c4"
+        "blob": "9723d916ce8db819fbf4ddcb5b4754bc20151bf1"
       },
       {
         "path": "docs/reference/README.md",
@@ -310,7 +310,7 @@
       },
       {
         "path": "docs/reference/symbol-map.json",
-        "blob": "7f51db8919be5963b60bf1545d91a975202b43c1"
+        "blob": "1db9f84ddc3318ee9346bce751dae6066f48f1a9"
       }
     ],
     "verifiedAt": "2026-09-14"
@@ -609,11 +609,11 @@
       },
       {
         "path": "docs/reference/catalog.json",
-        "blob": "69d0fcdfdf98463a8d7077de36bf46e0f60868c4"
+        "blob": "9723d916ce8db819fbf4ddcb5b4754bc20151bf1"
       },
       {
         "path": "docs/reference/symbol-map.json",
-        "blob": "7f51db8919be5963b60bf1545d91a975202b43c1"
+        "blob": "1db9f84ddc3318ee9346bce751dae6066f48f1a9"
       }
     ],
     "verifiedAt": "2026-09-14"
@@ -674,7 +674,7 @@
       },
       {
         "path": "docs/reference/catalog.json",
-        "blob": "69d0fcdfdf98463a8d7077de36bf46e0f60868c4"
+        "blob": "9723d916ce8db819fbf4ddcb5b4754bc20151bf1"
       },
       {
         "path": "docs/reference/provenance.schema.json",
@@ -686,7 +686,7 @@
       },
       {
         "path": "docs/reference/symbol-map.json",
-        "blob": "7f51db8919be5963b60bf1545d91a975202b43c1"
+        "blob": "1db9f84ddc3318ee9346bce751dae6066f48f1a9"
       },
       {
         "path": "docs/ROADMAP.md",
@@ -1806,7 +1806,7 @@
       },
       {
         "path": "docs/reference/catalog.json",
-        "blob": "69d0fcdfdf98463a8d7077de36bf46e0f60868c4"
+        "blob": "9723d916ce8db819fbf4ddcb5b4754bc20151bf1"
       },
       {
         "path": "docs/reference/core/procedure.md",
