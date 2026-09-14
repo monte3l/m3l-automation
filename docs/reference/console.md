@@ -1400,7 +1400,10 @@ rebuild never throws by design, so a console whose trail has been pruned that
 way starts and serves normally while having quietly lost the ability to
 rebuild its own record of truth. Archiving whole dates out of band is the
 supported way to reclaim space; the sequence check tolerates that, and only
-that. See the ADR-0070 Update of 2026-09-05.
+that. See the ADR-0070 Update of 2026-09-05, and **Archiving the audit trail**
+below for the procedure — since ADR-0102 the writer seals each rotated-away-from
+segment into a `manifest.jsonl` sidecar, so a whole-date archival is now
+provable rather than merely tolerated.
 
 **A listing failure does not abort the sweep.** The audit section is wrapped
 exactly like the three pruning drivers: if listing the trail fails, the
@@ -1410,6 +1413,176 @@ raised at the end.
 
 **Not audited.** A cleanup run records no human action in the audit trail in
 this release — it does not appear in `POST /api/v1/audit` or any audit query.
+
+## Archiving the audit trail
+
+The human-action trail is the one artifact class nothing in this console ever
+deletes, so it is also the one whose growth an operator has to act on by hand.
+`m3l-console-server cleanup`'s `auditTrail` section reports the footprint; this
+section is what to do about it.
+
+**Archival is a manual procedure and there is deliberately no command for
+it.** ADR-0102 records the decision: what makes archival safe is a sidecar the
+writer maintains, not a tool that moves files, and the digest that sidecar
+records is a plain `sha256` of the segment's raw bytes precisely so an archive
+can be re-verified years later with `sha256sum` and nothing else installed —
+not this console, not Node, not this library. A command wrapping `cp` and `rm`
+would add a dependency to the one operation that most needs to have none.
+
+**What makes it provable.** Since ADR-0102 the append-only writer seals every
+segment it rotates away from into one directory-wide `manifest.jsonl` beside
+the segments, recording that segment's entry count, byte length and `sha256`.
+The sidecar is deliberately not date-named, so the `rm 2026-09-*` that
+archives a date cannot delete the proof along with the segments. Before it
+existed, an archived date, a never-written date and a deleted date were
+indistinguishable; now the manifest states what left, and the digest says
+whether the copy you hold is those bytes.
+
+The trail's manifest lives at `<M3L_CONSOLE_AUDIT_ROOT>/manifest.jsonl` and
+holds one JSON object per line:
+
+```text
+{"kind":"baseline","formatVersion":1,"at":"2026-09-14T18:09:57.479Z","upTo":null}
+{"kind":"seal","formatVersion":1,"at":"2026-09-14T18:09:57.484Z","segment":"2026-09-14-0001.jsonl","entryCount":5,"byteLength":200,"sha256":"3a6a13a081083b6e62d3acfc06f2ae4901940017b1d86e0d4bf6f8f16a99a976"}
+```
+
+### The two rules
+
+- **Whole dates only, and only sealed segments.** Deleting one segment out of
+  the middle of a date does not reclaim space so much as make every later read
+  of the trail throw, permanently — the append-only reader rejects a gap in a
+  date's sequence numbers, and that check is what ADR-0070's
+  segment-and-retain class rests on. A date's segments are
+  `YYYY-MM-DD-NNNN.jsonl`, where the counter is four digits or more (it is
+  zero-padded to four and grows past that rather than wrapping); take all of
+  them or none.
+- **Never delete `manifest.jsonl`.** Removing it silently downgrades a sealed
+  trail back to unproven on the next writer's cold start, and from inside the
+  directory that is indistinguishable from a trail that never sealed anything.
+  Nothing detects it at the time; the only after-the-fact signal is
+  `verify()`'s `unprovenBefore` reading `undefined` where it used to read a
+  segment name or `null`.
+
+The segment the console is currently appending to is **not** sealed — sealing
+happens on rotation, so the newest segment has nothing to seal yet. It is
+never a candidate for archival, and `verify()` reports it as `unsealed`
+rather than as a finding.
+
+### The procedure
+
+Sealed segments are never written again, so removing them does not race a
+running console and it does not have to be stopped. `manifest.jsonl` may gain
+lines while you work, which is why it is copied as a point-in-time snapshot,
+and why a copy that catches a half-written last line still reads correctly —
+the reader ignores a torn final line by design.
+
+1. **Do not wait for a quiet moment — check for one.** `M3LAppendOnlyStream`
+   exposes `flush()`, which waits for every append and every manifest seal
+   already in flight to settle, but **this console never calls it**, including
+   on shutdown. A stop that lands mid-seal therefore loses that one seal, and
+   nothing recovers it until the _next_ boot's cold-start sweep — which runs
+   on the first `append()` after boot, not at boot, so a console that comes
+   back up and records no human action never runs it. The practical
+   consequence is narrow and step 2 catches it: a segment that should be
+   sealed may read `unsealed` for a while, and an `unsealed` segment is never
+   archivable. If the segment you expected to archive reads `unsealed`, that
+   is what you are looking at; let the console record another human action and
+   re-check rather than archiving it.
+2. **Take a verdict before touching anything.** `M3LAppendOnlyStream`'s
+   `verify()` re-digests every segment the sidecar claims, never throws, and
+   returns a verdict per segment. **This console exposes no command for it** —
+   consistent with the no-new-CLI decision above, the step is a few lines
+   against the library, pointed at the same environment variable the console
+   itself reads so the two cannot disagree about which directory is the trail:
+
+   ```js
+   import { Core } from "@monte3l/m3l-common";
+
+   const stream = new Core.M3LAppendOnlyStream({
+     directory: process.env.M3L_CONSOLE_AUDIT_ROOT,
+   });
+   console.log(JSON.stringify(await stream.verify(), undefined, 2));
+   ```
+
+   `sealed` is the proof you are looking for and the only status safe to
+   archive. `unsealed` is the active segment. `mismatched` means stop: the
+   bytes on disk are not the bytes that were sealed, which is an incident, not
+   a housekeeping matter. Weigh `unprovenBefore` and `skipped` alongside the
+   totals — no single field on that report is a clean bill of health, for
+   reasons [`docs/reference/core/storage.md`](core/storage.md) sets out in
+   full.
+
+3. **Copy the date's sealed segments out, plus the manifest.** Copy, do not
+   move: nothing should be deleted until the copy has been verified where it
+   now lives. Including `manifest.jsonl` makes the archive self-verifying
+   later, with no reference back to the live directory.
+4. **Verify the copies where they now are**, before deleting anything. Run
+   this in the archive directory, with the date being archived substituted in:
+
+   ```sh
+   jq -r 'select(.kind == "seal" and (.segment | startswith("2026-09-14")))
+          | "\(.sha256)  \(.segment)"' manifest.jsonl | sha256sum -c -
+   ```
+
+   Every line must print `OK` and the exit status must be `0`. The date filter
+   is load-bearing: without it the check also lists every other date's
+   segments, which are not in this directory and report as failures.
+
+5. **Delete the live copies of exactly those segments** — and nothing else in
+   the directory.
+6. **Re-run step 2 against the live trail.** The archived segments now report
+   `archived` rather than `sealed`, and the totals should account for every
+   segment archived and no others.
+
+**Do not reach for `sha256sum -c --ignore-missing` in step 4.** It exits `0`
+when a listed file is absent, which turns "the archive copy is not there" into
+a silent pass — the precise conflation this whole mechanism exists to remove.
+Without the flag a missing copy reports `FAILED open or read` and the exit
+status is `1`.
+
+### What the console does afterwards
+
+A trail with archived dates keeps working, and says so at every boot.
+
+- **The boot index rebuild logs one `error` per archived segment and
+  continues.** The message names the segment and states that the entries it
+  held have left the trail and that no rebuild can put them back on this or
+  any later boot; the structured payload carries the seal's `at`,
+  `entryCount`, `byteLength` and `sha256`, so the line an operator greps is
+  also the line that lets them check the archive copy. The level is part of
+  the contract rather than a default: `M3LLogLevelFloor` is configurable, and
+  an audit segment leaving the trail is a compliance finding a raised floor
+  must not be able to drop. One event per segment, not one summary, so each
+  finding is separately attributable.
+- **The rebuilt index permanently lacks those entries.** The trail is the
+  record of truth and the index is a projection of it, so archiving removes
+  rows from what any later rebuild can produce. That is the cost of
+  reclaiming the space, and it is why step 3 copies before step 5 deletes.
+- **A library caller reading the trail has to opt in.** `read()` throws
+  `M3LAppendOnlyStreamManifestError` (`ERR_APPEND_ONLY_STREAM_MANIFEST`) for a
+  sealed segment that is no longer on disk, unless an `onArchivedSegment`
+  handler is supplied — in which case the handler receives the manifest's full
+  claim and iteration continues over the segments that remain. This console's
+  boot rebuild supplies that handler; anything else reading the same directory
+  decides for itself. The throw's `context` names the first such segment and
+  carries an `archivedCount`, so one segment name in a log line does not imply
+  only one segment is missing.
+- **`auditTrail.skipped` can rise while you work.** An entry vanishing
+  mid-listing is one of that count's two causes, and an archival racing a
+  cleanup run is the benign one — see the cleanup section above for why the
+  count is a prompt to look rather than a verdict.
+
+### What this does not prove
+
+The manifest proves that the bytes archived are the bytes that were sealed. It
+cannot prove the archival was authorised, and nothing here tries to. Anyone
+able to write the audit directory can delete evidence as cheaply as alter it:
+tamper with a sealed segment and `verify()` reports `mismatched`, then delete
+that same segment and the identical trail reports `archived`,
+indistinguishable from an honest archival. An `archived` verdict is only as
+good as your own record of which dates you actually archived. Keeping that
+record, and custody of the copies, is outside what this directory can hold —
+ADR-0102 records it as a deliberate limit rather than a gap to engineer away.
 
 ## Known limits
 
@@ -1446,7 +1619,9 @@ Stated plainly rather than left to be discovered:
   feature, not a missing one. The consequence is that the trail grows without
   bound for the console's whole lifetime, and the `auditTrail` section of
   `m3l-console-server cleanup` is the **only** signal an operator gets about
-  that footprint. Reclaiming space means archiving whole dates out of band.
+  that footprint. Reclaiming space means archiving whole dates out of band —
+  provable since ADR-0102's manifest sidecar, and documented step by step
+  under **Archiving the audit trail** above.
 - **An in-process run has no report to serve.** `GET /api/v1/runs/:id/report`
   404s for every ADR-0054 command-module run — see that route's own section
   for why the output directory cannot be pinned per run on that path.
@@ -1540,6 +1715,9 @@ unreachable:
   Deployment posture: [ADR-0071](../adr/0071-console-containerization-deployment.md).
 - Persistence: [ADR-0069](../adr/0069-console-embedded-persistence.md).
   Payload governance: [ADR-0070](../adr/0070-console-audit-and-observability.md).
+  Sealed-segment manifest, and why archival is provable:
+  [ADR-0102](../adr/0102-sealed-segment-manifest.md); the append-only
+  primitive's own contract: [`core/storage.md`](core/storage.md).
 - Workbench sessions: [ADR-0068](../adr/0068-workbench-sessions.md).
 - Execution paths:
   [ADR-0054](../adr/0054-command-module-contract-and-hybrid-execution.md).
