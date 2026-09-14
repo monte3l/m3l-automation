@@ -12,12 +12,11 @@
  * manifest read and the directory listing both stay with the reader that
  * already does them, so this module is a pure computation over values its
  * caller already holds. That is what makes every branch below reachable from
- * an in-memory fixture, including the malformed-name refusal in
- * {@link resolveArchivedSegments} that the real manifest parser
- * (`ownSealSegment`, `./append-only-manifest-records.js`) already rules out
- * long before a record could reach here. A branch only a corrupted
- * filesystem could reach is a branch nobody can test; keeping the I/O out
- * moves that line.
+ * an in-memory fixture, including the malformed-name refusal raised inside
+ * {@link collectArchived}, which no manifest the real parser admits can
+ * reach — see that function for why. A branch only a corrupted filesystem
+ * could reach is a branch nobody can test; keeping the I/O out moves that
+ * line.
  *
  * **Ordering is `./append-only-sweep-policy.js`'s to state**, not this
  * module's: `segmentOrderKey` is reused verbatim, exactly as
@@ -39,7 +38,7 @@ import type {
 import type { AppendOnlySealedSegmentPayload } from "./append-only-sealed-payload.js";
 import { toSealedSegmentPayload } from "./append-only-sealed-payload.js";
 import type { ParsedSegmentName } from "./append-only-segments.js";
-import { parseSegmentName } from "./append-only-segments.js";
+import { parseSegmentName, segmentFileName } from "./append-only-segments.js";
 import { segmentOrderKey } from "./append-only-sweep-policy.js";
 
 /**
@@ -109,8 +108,9 @@ function byOrderKey(a: OrderedArchival, b: OrderedArchival): number {
 }
 
 /**
- * Every seal whose segment is absent from `presentSegments`, in the writer's
- * own order.
+ * Every seal whose segment is absent from `presentSegments`, RETURNED in the
+ * writer's own order — which is not the order this function refuses in; see
+ * {@link resolveArchivedSegments} for both asymmetries that gap creates.
  *
  * **The baseline is not consulted, and that is the point.** A seal outranks
  * the baseline: a manifest stating a boundary at some LATER segment must not
@@ -123,9 +123,11 @@ function byOrderKey(a: OrderedArchival, b: OrderedArchival): number {
  * manifest could otherwise switch the whole detector off.
  *
  * A seal whose name does not parse is refused rather than skipped. It is
- * defence in depth — `ownSealSegment` already declines such a record when
- * the manifest is parsed — but skipping one would drop a claimed segment out
- * of the caller's gap walk without anybody being told.
+ * defence in depth — `ownSealSegment` already declines such a record when the
+ * manifest is parsed, and it keys `contents.seals` by the very field it
+ * checked, so no manifest that parser admits can reach here holding one — but
+ * skipping it would drop a claimed segment out of the caller's gap walk
+ * without anybody being told.
  */
 function collectArchived(
   contents: ManifestContents,
@@ -139,12 +141,19 @@ function collectArchived(
     }
     const parsed = parseSegmentName(name);
     if (parsed === undefined) {
-      // A segment name is the one caller-adjacent value sanctioned to travel
-      // in `context`: it is rendered entirely from the writer's own clock and
-      // counter, so it carries no entry data and nothing a caller supplied.
+      // The sanction that lets a segment name travel in `context` is that a
+      // name can be re-rendered from its own parse and so carries no chosen
+      // bytes — and this is the one value here that cannot claim it, being
+      // precisely a name `parseSegmentName` declined (contrast
+      // `resolveArchivedSegments`'s no-handler refusal, which reports its
+      // parse re-rendered for exactly that reason). What bounds this one
+      // instead is that `ownSealSegment` keys `contents.seals` by a field it
+      // has already made `parseSegmentName` accept, so only an in-memory
+      // fixture can put arbitrary bytes on this line.
       // (Library-computed facts travel too — see `resolveArchivedSegments`'s
-      // `archivedCount` — but there is no count to report about one
-      // unparsable name.)
+      // `archivedCount` — but no count exists at this point: `archived` is
+      // still being built, so this refusal precedes the total that call would
+      // have reported.)
       throw buildManifestError(UNPARSABLE_SEAL_SEGMENT_MESSAGE, {
         context: { segment: name },
       });
@@ -168,12 +177,60 @@ function collectArchived(
  * numerically — see this module's header for why a file-name sort is the
  * wrong answer above four sequence digits.
  *
+ * **The archived set is collected in full before the first report, so a
+ * malformed seal name pre-empts both refusals below.** A seal whose name
+ * {@link "./append-only-segments.js".parseSegmentName} declines is refused
+ * inside {@link collectArchived}, and that call runs to completion before the
+ * reporting loop starts — so one unparsable name costs every archival report
+ * for this read, including reports for segments that sort EARLIER than the
+ * offending one. The caller hears that manifest refusal and nothing else.
+ *
+ * Two asymmetries follow from where that refusal is raised. It is reached
+ * only for a seal ALSO absent from `presentSegments`, because
+ * {@link collectArchived} tests presence and skips before it parses: a
+ * malformed name whose segment is still on disk passes in silence, not being
+ * an archival finding at all, and this function has nothing to say about a
+ * segment the reader can still read for itself. And it is raised in
+ * `contents.seals` iteration order — the order the manifest's own lines
+ * FIRST named each segment, an agreeing duplicate seal updating its key in
+ * place rather than moving it — not the `(datePrefix, sequence)` order the
+ * rest of this contract promises. That ordering is guidance for a fixture
+ * author rather than for a caller:
+ * {@link "./append-only-manifest-records.js".collectRecords} keys `seals`
+ * through its own `ownSealSegment`, which has already required
+ * `parseSegmentName` to accept the very field it keys by, and the only other
+ * `seals` map this library builds is the empty one
+ * `./append-only-manifest.js` returns for an absent manifest — so every map
+ * reaching here is keyed that way or empty, and only a hand-built
+ * `ReadonlyMap` can hold a name that fails.
+ *
+ * **Collecting before reporting is the right shape even so.** The reporting
+ * loop cannot begin until the set it will report is known to be well-formed:
+ * interleaving the two would hand a caller some findings and then refuse, and
+ * a caller already told about two archived segments has no way to learn that
+ * a third was never computed. A refusal that reports nothing at all is
+ * unambiguous; a partial report followed by a refusal is a trail the caller
+ * would have to reconstruct to know what it was not told.
+ *
  * **With no {@link AppendOnlyArchivalPolicy.onArchivedSegment}, throws** for
  * the FIRST archived segment in that order, through the owner's own
  * `buildManifestError`. The message is a constant; `context` carries the
- * segment name — the one caller-adjacent value sanctioned here, because a
- * segment name is rendered from the writer's clock and counter alone — plus
- * `archivedCount`, how many segments this call found archived in all.
+ * segment name plus `archivedCount`, how many segments this call found
+ * archived in all.
+ *
+ * **The name reported is
+ * {@link "./append-only-segments.js".segmentFileName} re-rendering this
+ * entry's own parse, never the seal record's `segment` field** — the two
+ * agree on every manifest the real parser produces, and re-rendering is what
+ * makes a segment name's sanction in `context` a property of this code
+ * rather than a promise about another module's strictness.
+ * {@link "./append-only-segments.js".parseSegmentName} returns only once
+ * `segmentFileName` rebuilds its input byte for byte, so the value reported
+ * is constructed from a calendar-checked date prefix of ASCII digits and
+ * hyphens plus a `parseInt` integer: it can carry no bytes a caller or a
+ * manifest chose. Nothing in this module validates the record's own field;
+ * `ownSealSegment` checks it upstream, and `admitSeal`'s comment there states
+ * what that check does, and does not, prove about a name's provenance.
  *
  * The count travels beside the name because the name alone is not
  * actionable: one archived segment and a whole vanished date raise the
@@ -234,14 +291,19 @@ export function resolveArchivedSegments(
   const { onArchivedSegment } = policy;
   for (const entry of archived) {
     if (onArchivedSegment === undefined) {
-      // See this function's TSDoc: constant message, segment name and
-      // archived count in `context`, and only ever for the first finding in
-      // read order. The count is `archived.length`, NOT `contents.seals.size`
-      // — a seal still present on disk is not a finding, so a seal tally
-      // would report a number this error is not about.
+      // See this function's TSDoc. The name is `entry.parsed` re-rendered,
+      // NOT `entry.record.segment`: the parse is the only one of the two this
+      // module validated, and re-rendering it is what keeps the reported
+      // value incapable of carrying chosen bytes. The count is
+      // `archived.length`, NOT `contents.seals.size` — a seal still present
+      // on disk is not a finding, so a seal tally would report a number this
+      // error is not about.
       throw policy.buildManifestError(ARCHIVED_SEGMENT_MESSAGE, {
         context: {
-          segment: entry.record.segment,
+          segment: segmentFileName(
+            entry.parsed.datePrefix,
+            entry.parsed.sequence,
+          ),
           archivedCount: archived.length,
         },
       });

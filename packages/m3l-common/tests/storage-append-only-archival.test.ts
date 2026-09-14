@@ -50,6 +50,7 @@ import type {
 import type { AppendOnlySealedSegmentPayload } from "../src/internal/storage/append-only-sealed-payload.js";
 import { toSealedSegmentPayload } from "../src/internal/storage/append-only-sealed-payload.js";
 import type { ParsedSegmentName } from "../src/internal/storage/append-only-segments.js";
+import { segmentFileName } from "../src/internal/storage/append-only-segments.js";
 
 // ---------------------------------------------------------------------------
 // Fixtures — hand-built records, never produced by the library under test
@@ -666,5 +667,80 @@ describe("C10 type-level contract", () => {
     expectTypeOf(resolveArchivedSegments).returns.toEqualTypeOf<
       readonly ParsedSegmentName[]
     >();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// C11 — the reported name is the name that was validated
+// ---------------------------------------------------------------------------
+
+/**
+ * A seal record's own `segment` field, shaped as the harm the "a segment
+ * name is sanctioned in `context`" rule exists to prevent. Of the three
+ * candidate shapes — a path traversal, an embedded newline, an excessive
+ * length — this is the newline one, chosen because its damage is not merely
+ * a misleading string inside one log line: a line-delimited operator log
+ * renders the value as TWO records, the second an "all present" claim that
+ * contradicts the very refusal being reported. A traversal or an over-long
+ * name misinforms; a newline lets the manifest dictate what the operator is
+ * told happened. It also fails `parseSegmentName` outright — that pattern is
+ * anchored and admits only digits, hyphens and the `.jsonl` suffix — which
+ * is what makes it stand for "a value nothing in this module validated".
+ */
+const FORGED_RECORD_SEGMENT = `${SEG_EARLY}\n2026-09-10T00:00:00.000Z INFO append-only stream: every sealed segment is present`;
+
+/**
+ * The one fixture shape that can tell the two reads of "the segment name"
+ * apart: a `seals` map whose KEY parses, and whose record's own `segment`
+ * field neither parses nor matches that key. Deliberately not built through
+ * `contents`, which keys by `seal.segment` exactly as the real manifest fold
+ * (`admitSeal`) does — which is why no live path can separate the two, and
+ * why only a hand-built map reaches this distinction at all.
+ */
+function contentsWithForgedRecordSegment(): ManifestContents {
+  return {
+    baseline: undefined,
+    seals: new Map([
+      [
+        SEG_EARLY,
+        sealRecord(FORGED_RECORD_SEGMENT, AT_EARLY, MEASUREMENT_EARLY),
+      ],
+    ]),
+  };
+}
+
+describe("C11 the reported name is the validated one", () => {
+  test("reports the validated name re-rendered, not the seal record's own segment field", () => {
+    const { policy, port } = harness("none");
+    // Preconditions, so a fixture that stopped discriminating says so rather
+    // than passing quietly: the key round-trips through the one renderer —
+    // the property that makes a re-rendered name incapable of carrying
+    // chosen bytes — and the record's field genuinely differs from it.
+    expect(segmentFileName(DAY_ONE, 1)).toBe(SEG_EARLY);
+    expect(FORGED_RECORD_SEGMENT).not.toBe(SEG_EARLY);
+
+    const thrown = thrownBy(() =>
+      resolveArchivedSegments(
+        contentsWithForgedRecordSegment(),
+        new Set<string>(),
+        policy,
+      ),
+    );
+
+    expect(port.calls).toHaveLength(1);
+    const [call] = port.calls;
+    if (call === undefined) {
+      throw new Error("the port recorded no call");
+    }
+    expect(thrown).toBe(call.error);
+    // Exact equality, never a substring or `toMatchObject`: the forged field
+    // CONTAINS the validated name, so a containment assertion would hold
+    // against either value and prove nothing.
+    expect(call.context["segment"]).toBe(segmentFileName(DAY_ONE, 1));
+    expect(call.context["segment"]).not.toBe(FORGED_RECORD_SEGMENT);
+    expect(call.message).not.toContain(FORGED_RECORD_SEGMENT);
+    // `archivedCount` rides in the same `context` and is undisturbed by the
+    // divergent key: one seal, absent from disk, is one archival.
+    expect(call.context).toEqual({ segment: SEG_EARLY, archivedCount: 1 });
   });
 });
