@@ -101,13 +101,22 @@ with slice V10d.
 The first is in force now; the other two are decided (ADR-0062's 2026-09-14
 Update) and bind the slice that implements them.
 
-- **A tool cannot be registered without passing the gate — structurally, and
-  already true.** `GatedToolRegistration` is keyed off a `unique symbol` that
+- **A `GatedToolRegistration` cannot be constructed outside its module —
+  structurally, and already true.** Be precise about what that does and does
+  not buy. What it buys: the type is keyed off a `unique symbol` that
   `src/tools/registry.ts` never exports, so no code outside that module can
-  name the brand and therefore no object literal can satisfy the type, no
+  name the brand, and therefore no object literal can satisfy the type no
   matter how exactly it copies the field shape. Slice V10c's `gateTool` mints
   entries from inside that module, which is what makes it the only possible
-  producer. The brand deliberately is **not** exported: exporting it would let
+  producer of a registry entry. What it does **not** buy: it is not a
+  guarantee that no ungated tool can ever reach the SDK. The SDK's
+  `McpServer#registerTool` is public, so a caller holding a server object can
+  still register something that never passed the gate — the returned
+  `M3LMcpServerHandle` narrows that method away from the _type_, which stops
+  it happening by accident, but a JavaScript caller or a cast still reaches
+  it. The brand governs what can be put **in the registry**; enforcing the
+  boundary at registration time needs the runtime check recorded for V10c.
+  The brand deliberately is **not** exported: exporting it would let
   any caller hand-build a "gated" entry and would reduce this guarantee to a
   naming convention.
 - **A refusal must be returned, never thrown** (binds slice V10c).

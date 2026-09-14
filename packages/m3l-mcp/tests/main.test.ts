@@ -75,6 +75,12 @@ describe("createM3LMcpServer", () => {
   });
 
   test("registers every entry of an injected registry", () => {
+    // `as unknown as GatedToolRegistration[]` forges the brand
+    // `src/tools/registry.ts` deliberately makes unforgeable (the brand
+    // symbol is unexported, and no producer exists yet — `gateTool` ships
+    // in slice V10c). Unavoidable here: this test needs a registry shaped
+    // like the real thing without going through a producer that doesn't
+    // exist yet. Goes away the moment `gateTool` lands.
     const fakeRegistry = [
       {
         name: "tool_one",
@@ -111,6 +117,48 @@ describe("createM3LMcpServer", () => {
     expect(h.StdioServerTransportCtor).not.toHaveBeenCalled();
     expect(h.connect).not.toHaveBeenCalled();
   });
+
+  test("propagates a registerTool failure for one entry as the same error instance, and does not register later entries or connect anything", () => {
+    const boom = new Error("registerTool boom");
+    // `mockImplementationOnce` — consumed by the first `registerTool` call
+    // only, so the second registry entry (which must never be reached) would
+    // hit the default stub implementation if the loop kept going.
+    h.registerTool.mockImplementationOnce(() => {
+      throw boom;
+    });
+    const fakeRegistry = [
+      {
+        name: "tool_one",
+        config: {
+          title: "Tool One",
+          description: "does the first thing",
+          annotations: { readOnlyHint: true },
+        },
+        handler: (): Promise<unknown> => Promise.resolve({ ok: true }),
+      },
+      {
+        name: "tool_two",
+        config: {
+          title: "Tool Two",
+          description: "does the second thing",
+          annotations: { readOnlyHint: false },
+        },
+        handler: (): Promise<unknown> => Promise.resolve({ ok: true }),
+      },
+    ] as unknown as GatedToolRegistration[];
+
+    let thrown: unknown;
+    try {
+      createM3LMcpServer({ registry: fakeRegistry });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBe(boom);
+    expect(h.registerTool).toHaveBeenCalledTimes(1);
+    expect(h.StdioServerTransportCtor).not.toHaveBeenCalled();
+    expect(h.connect).not.toHaveBeenCalled();
+  });
 });
 
 describe("startM3LMcpServer", () => {
@@ -136,6 +184,9 @@ describe("startM3LMcpServer", () => {
   });
 
   test("registers an injected registry's tools before connecting", async () => {
+    // Same forged-brand rationale as the `createM3LMcpServer` cast above —
+    // unavoidable until `gateTool` (slice V10c) exists to produce a real
+    // `GatedToolRegistration`.
     const fakeRegistry = [
       {
         name: "only_tool",
@@ -152,6 +203,25 @@ describe("startM3LMcpServer", () => {
 
     expect(h.registerTool).toHaveBeenCalledTimes(1);
     expect(h.connect).toHaveBeenCalledTimes(1);
+  });
+
+  test("propagates a connect rejection as the same error instance, unwrapped and unswallowed", async () => {
+    const boom = new Error("connect boom");
+    // `mockRejectedValueOnce` — a single-shot override consumed by the next
+    // `connect` call only. That self-consuming behavior is exactly what
+    // this test needs: `beforeEach`'s `vi.clearAllMocks()` drops call
+    // history but keeps a mock's *persistent* implementation, so a
+    // `mockRejectedValue` (no "Once") would silently poison every later
+    // test's `connect` call in this file. Proven, not assumed, below: the
+    // very next `startM3LMcpServer()` call in this same test resolves
+    // normally again.
+    h.connect.mockRejectedValueOnce(boom);
+
+    await expect(startM3LMcpServer()).rejects.toBe(boom);
+
+    await expect(startM3LMcpServer()).resolves.toMatchObject({
+      connect: h.connect,
+    });
   });
 });
 

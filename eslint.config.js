@@ -161,8 +161,16 @@ export default tseslint.config(
       // above. The dev-time server hits exactly the same specifiers and never
       // reported it only because `bin/**/*.mjs` turns this rule `off`
       // wholesale further down; `packages/m3l-mcp/src` is the first TypeScript
-      // consumer of the SDK, so the gap surfaced here first. Bounded to the
-      // one package for the same reason as above.
+      // consumer of the SDK, so the gap surfaced here first.
+      //
+      // Note what "bounded" means for both entries: this block is
+      // repo-wide (`files: ["**/*.ts", "**/*.tsx"]`), so the bound is on the
+      // SPECIFIER PREFIX, not on a directory. Any `.ts` file anywhere may
+      // import these two packages unresolved — which is precisely what let
+      // the two per-line disables in `bin/tests/mcp-server.e2e.test.ts` go
+      // away. It is emphatically NOT "relaxed only inside
+      // packages/m3l-mcp"; an unresolved import of any OTHER specifier still
+      // errors everywhere, which is the property the narrow prefixes buy.
       "import-x/no-unresolved": [
         "error",
         { ignore: ["^@monte3l/m3l-common", "^@modelcontextprotocol/sdk"] },

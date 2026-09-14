@@ -49,14 +49,19 @@ export interface M3LMcpServerDeps {
 
 /**
  * The handle {@link createM3LMcpServer} and {@link startM3LMcpServer} hand
- * back: a `McpServer` narrowed to just `connect`. The SDK's own
- * `McpServer#registerTool` is public, so returning the raw `McpServer`
- * would let any caller register a completely ungated tool — no cast, no
- * `any`, no brand needed — defeating the {@link GatedToolRegistration}
- * invariant this package's README asserts. `Pick<McpServer, "connect">`
- * (rather than a hand-declared interface) keeps this handle's `connect`
- * signature tied to the SDK's own, so an SDK upgrade that changes it is
- * caught here rather than silently drifting.
+ * back: a `McpServer` narrowed to just `connect`. This narrowing is
+ * type-only — the returned object is still the real `McpServer` at runtime,
+ * so `registerTool` is still reachable from JavaScript, or from TypeScript
+ * via a cast. What it removes is the *typed* path: a TypeScript caller
+ * referencing `.registerTool` on a `M3LMcpServerHandle` gets `TS2339`, so
+ * the SDK's own public `registerTool` cannot be reached by accident and used
+ * to register a completely ungated tool — no cast, no `any`, no brand
+ * needed — defeating the {@link GatedToolRegistration} invariant this
+ * package's README asserts. It is a speed bump against accidental misuse,
+ * not a capability restriction. `Pick<McpServer, "connect">` (rather than a
+ * hand-declared interface) keeps this handle's `connect` signature tied to
+ * the SDK's own, so an SDK upgrade that changes it is caught here rather
+ * than silently drifting.
  */
 export type M3LMcpServerHandle = Pick<McpServer, "connect">;
 
