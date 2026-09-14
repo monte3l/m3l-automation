@@ -16,6 +16,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.30.0",
+    "@monte3l/m3l-common": "workspace:*",
     "zod": "4.5.4"
   }
 }

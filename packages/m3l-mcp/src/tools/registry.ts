@@ -10,24 +10,34 @@
  *
  * @packageDocumentation
  */
+import type { ToolCallback } from "@modelcontextprotocol/sdk/server/mcp.js";
 
 /**
  * The brand key that marks a {@link GatedToolRegistration} as having been
  * produced through the (slice V10c) policy gate, rather than assembled as a
  * plain object literal. Deliberately **not exported**: a `unique symbol`
  * that leaves this module can be imported and used to hand-build a fake
- * branded value, which defeats the whole point of the brand. Kept as an
- * ambient `declare const` rather than a `Symbol()` value — it needs no
- * runtime identity, only a type-level name only this module can write, and
- * that form still satisfies `isolatedDeclarations` (the emitted `.d.ts`
- * carries the same `declare const` unexported).
+ * branded value, which defeats the whole point of the brand.
+ *
+ * Given a real, module-local `Symbol()` value (not an ambient `declare const`)
+ * so that this module's own future producer — `gateTool`, slice V10c — can
+ * mint a branded value with a plain object literal
+ * (`{ [gatedBrand]: true, ... }`) and no `as` cast. An ambient `declare const`
+ * has no runtime identity: it type-checks as a computed property key but
+ * emits that same unresolved identifier to JS, so constructing one throws a
+ * `ReferenceError` at the moment anything tries — which would force
+ * `gateTool` into a cast, permanently reopening the hole this brand exists to
+ * close. The explicit `: unique symbol` annotation (not the `declare`
+ * keyword) is what keeps `isolatedDeclarations` happy: the emitted `.d.ts` is
+ * still `declare const gatedBrand: unique symbol;`, unexported, so outside
+ * forgeries are rejected exactly as before.
  *
  * Slice V10c's `gateTool` mints real branded entries from *inside* this
  * module's own boundary (i.e. it lives in this file, or is added to it) —
  * that is legitimate precisely because only code inside this module can name
  * `gatedBrand`. A producer outside this file still cannot forge one.
  */
-declare const gatedBrand: unique symbol;
+const gatedBrand: unique symbol = Symbol("m3l.mcp.gated");
 
 /**
  * A tool registration that has passed through the ADR-0060 policy gate.
@@ -59,8 +69,19 @@ export interface GatedToolRegistration {
     readonly description: string;
     readonly annotations: { readonly readOnlyHint: boolean };
   };
-  /** The tool's call handler. */
-  readonly handler: (args: unknown) => Promise<unknown>;
+  /**
+   * The tool's call handler, typed as the SDK's own default `ToolCallback`
+   * (no generic argument) so `main.ts` can pass it straight to
+   * `McpServer#registerTool` with no cast: that overload's `cb` parameter is
+   * exactly this shape, a callback taking only the request's `extra` and
+   * returning a `CallToolResult`, precisely because `config` above carries
+   * no `inputSchema`. This is the no-argument-schema case only; slice V10c
+   * widens `config` to add `inputSchema` for the tools that take arguments
+   * (`fleet_run`, `fleet_flow`, `fleet_describe`), and `handler`'s type
+   * parameterizes on that schema at the same time, taking the parsed
+   * arguments as well as `extra`.
+   */
+  readonly handler: ToolCallback;
 }
 
 /**

@@ -10,6 +10,8 @@
  * @packageDocumentation
  */
 
+import { Core } from "@monte3l/m3l-common";
+
 /**
  * The closed set of subsystems an {@link M3LMcpError} can be raised from:
  * the ADR-0060 policy gate, the ADR-0061 decision log, this package's own
@@ -17,6 +19,11 @@
  * deliberately — a `switch` over this union stays exhaustive as the
  * codebase grows, catching an unhandled subsystem at compile time rather
  * than at a client's stderr log.
+ *
+ * Deliberately never registered in m3l-common's own `M3L_ERROR_CODES` tuple
+ * — that tuple is the library's own emitted-code catalog, not a registry for
+ * every consumer package. A consequence: `Core.classifyErrorCode` returns
+ * `undefined` for every one of these codes.
  */
 export type M3LMcpErrorCode =
   | "ERR_MCP_POLICY"
@@ -25,37 +32,54 @@ export type M3LMcpErrorCode =
   | "ERR_MCP_IDENTITY";
 
 /**
- * This package's sole error type. `message` is stored verbatim — never
- * prefixed or decorated with `code` — because a caller that already
- * branches on `code` would otherwise see it duplicated in the rendered
- * text.
+ * Constructor options for {@link M3LMcpError}.
+ */
+interface M3LMcpErrorOptions {
+  /** The underlying failure that caused this error, if any. */
+  readonly cause?: unknown;
+  /** Structured diagnostic detail. Defaults to `{}` when omitted. */
+  readonly context?: Record<string, unknown>;
+}
+
+/**
+ * This package's sole error type, discriminated by {@link M3LMcpErrorCode}.
+ * Extends `Core.M3LError`, so callers can still narrow via
+ * `instanceof Core.M3LError`. `message` is stored verbatim — never prefixed
+ * or decorated with `code` — because a caller that already branches on
+ * `code` would otherwise see it duplicated in the rendered text.
  *
  * @example
  * ```ts
  * import { M3LMcpError } from "./mcp-error.js";
  *
- * throw new M3LMcpError("agent-policy.json is missing", "ERR_MCP_CONFIG");
+ * // extends Core.M3LError, so `instanceof Core.M3LError` still narrows it
+ * throw new M3LMcpError("ERR_MCP_CONFIG", "agent-policy.json is missing");
  * ```
  */
-export class M3LMcpError extends Error {
+export class M3LMcpError extends Core.M3LError {
   /** Which subsystem raised this error. See {@link M3LMcpErrorCode}. */
-  readonly code: M3LMcpErrorCode;
+  override readonly code: M3LMcpErrorCode;
 
   /**
-   * @param message - Human-readable detail, stored verbatim as `Error#message`.
+   * Creates a new `M3LMcpError`.
+   *
    * @param code - See {@link M3LMcpErrorCode}.
-   * @param options - Optional `cause`, chained onto `Error#cause` when
-   *   supplied. May be any `unknown` value, not only an `Error` — a caught
-   *   value from an untyped boundary (e.g. a rejected promise) is never
-   *   guaranteed to be an `Error` instance.
+   * @param message - Human-readable detail, stored verbatim as `Error#message`.
+   * @param options - Optional `cause` and `context`. `cause` may be any
+   *   `unknown` value, not only an `Error` — a caught value from an untyped
+   *   boundary (e.g. a rejected promise) is never guaranteed to be an `Error`
+   *   instance.
    */
   constructor(
-    message: string,
     code: M3LMcpErrorCode,
-    options?: { readonly cause?: unknown },
+    message: string,
+    options: M3LMcpErrorOptions = {},
   ) {
-    super(message, options);
-    this.name = "M3LMcpError";
+    super(message, {
+      code,
+      ...(options.cause !== undefined && { cause: options.cause }),
+      ...(options.context !== undefined && { context: options.context }),
+    });
     this.code = code;
   }
 }

@@ -1,5 +1,6 @@
 // Tests for src/errors/mcp-error.ts (V10b, ADR-0062), defining the
 // contract for M3LMcpError and isM3LMcpError.
+import { Core } from "@monte3l/m3l-common";
 import { describe, expect, expectTypeOf, test } from "vitest";
 
 import {
@@ -17,28 +18,29 @@ const ALL_CODES: readonly M3LMcpErrorCode[] = [
 
 describe("M3LMcpError", () => {
   test.each(ALL_CODES)("carries the exact code %s and message", (code) => {
-    const error = new M3LMcpError("something failed", code);
+    const error = new M3LMcpError(code, "something failed");
 
     expect(error.message).toBe("something failed");
     expect(error.code).toBe(code);
   });
 
   test("name is M3LMcpError", () => {
-    const error = new M3LMcpError("boom", "ERR_MCP_POLICY");
+    const error = new M3LMcpError("ERR_MCP_POLICY", "boom");
 
     expect(error.name).toBe("M3LMcpError");
   });
 
-  test("is an instanceof both Error and M3LMcpError", () => {
-    const error = new M3LMcpError("boom", "ERR_MCP_CONFIG");
+  test("is an instanceof Error, Core.M3LError, and M3LMcpError", () => {
+    const error = new M3LMcpError("ERR_MCP_CONFIG", "boom");
 
     expect(error).toBeInstanceOf(Error);
+    expect(error).toBeInstanceOf(Core.M3LError);
     expect(error).toBeInstanceOf(M3LMcpError);
   });
 
   test("chains cause when supplied", () => {
     const cause = new Error("root cause");
-    const error = new M3LMcpError("wrapper", "ERR_MCP_DECISION_LOG", {
+    const error = new M3LMcpError("ERR_MCP_DECISION_LOG", "wrapper", {
       cause,
     });
 
@@ -46,21 +48,35 @@ describe("M3LMcpError", () => {
   });
 
   test("cause is undefined when not supplied", () => {
-    const error = new M3LMcpError("no cause here", "ERR_MCP_IDENTITY");
+    const error = new M3LMcpError("ERR_MCP_IDENTITY", "no cause here");
 
     expect(error.cause).toBeUndefined();
   });
 
   test("cause may be any unknown value, not just an Error", () => {
-    const error = new M3LMcpError("wrapper", "ERR_MCP_POLICY", {
+    const error = new M3LMcpError("ERR_MCP_POLICY", "wrapper", {
       cause: "a string cause",
     });
 
     expect(error.cause).toBe("a string cause");
   });
 
+  test("carries context when supplied", () => {
+    const error = new M3LMcpError("ERR_MCP_CONFIG", "wrapper", {
+      context: { field: "agentPolicyPath" },
+    });
+
+    expect(error.context).toStrictEqual({ field: "agentPolicyPath" });
+  });
+
+  test("context defaults to an empty object when not supplied", () => {
+    const error = new M3LMcpError("ERR_MCP_CONFIG", "no context here");
+
+    expect(error.context).toStrictEqual({});
+  });
+
   test("message is never decorated with the code or a prefix", () => {
-    const error = new M3LMcpError("plain text only", "ERR_MCP_CONFIG");
+    const error = new M3LMcpError("ERR_MCP_CONFIG", "plain text only");
 
     // Exact equality, not a substring match — proves nothing was prepended
     // or appended (e.g. no "[ERR_MCP_CONFIG] " prefix).
@@ -81,7 +97,7 @@ describe("isM3LMcpError", () => {
   test.each(ALL_CODES)(
     "returns true for a real M3LMcpError instance (code %s)",
     (code) => {
-      const error = new M3LMcpError("boom", code);
+      const error = new M3LMcpError(code, "boom");
 
       expect(isM3LMcpError(error)).toBe(true);
     },

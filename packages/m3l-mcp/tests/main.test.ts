@@ -12,7 +12,6 @@
 import { beforeEach, describe, expect, expectTypeOf, test, vi } from "vitest";
 
 import type { GatedToolRegistration } from "../src/tools/registry.js";
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
 const h = vi.hoisted(() => {
   const registerTool = vi.fn();
@@ -41,6 +40,7 @@ import {
   INSTRUCTIONS,
   startM3LMcpServer,
   type M3LMcpServerDeps,
+  type M3LMcpServerHandle,
 } from "../src/main.js";
 import { TOOL_REGISTRY } from "../src/tools/registry.js";
 
@@ -164,8 +164,12 @@ describe("M3LMcpServerDeps (type level)", () => {
 });
 
 describe("createM3LMcpServer / startM3LMcpServer return types", () => {
-  test("both resolve to the SDK's McpServer type", () => {
-    expectTypeOf(createM3LMcpServer).returns.toEqualTypeOf<McpServer>();
-    expectTypeOf(startM3LMcpServer).returns.toEqualTypeOf<Promise<McpServer>>();
+  test("both resolve to the narrowed M3LMcpServerHandle, not the raw McpServer", () => {
+    expectTypeOf(
+      createM3LMcpServer,
+    ).returns.toEqualTypeOf<M3LMcpServerHandle>();
+    expectTypeOf(startM3LMcpServer).returns.toEqualTypeOf<
+      Promise<M3LMcpServerHandle>
+    >();
   });
 });

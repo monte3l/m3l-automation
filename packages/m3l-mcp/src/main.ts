@@ -9,10 +9,7 @@
  *
  * @packageDocumentation
  */
-import {
-  McpServer,
-  type ToolCallback,
-} from "@modelcontextprotocol/sdk/server/mcp.js";
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 
 import { TOOL_REGISTRY, type GatedToolRegistration } from "./tools/registry.js";
@@ -51,13 +48,27 @@ export interface M3LMcpServerDeps {
 }
 
 /**
+ * The handle {@link createM3LMcpServer} and {@link startM3LMcpServer} hand
+ * back: a `McpServer` narrowed to just `connect`. The SDK's own
+ * `McpServer#registerTool` is public, so returning the raw `McpServer`
+ * would let any caller register a completely ungated tool — no cast, no
+ * `any`, no brand needed — defeating the {@link GatedToolRegistration}
+ * invariant this package's README asserts. `Pick<McpServer, "connect">`
+ * (rather than a hand-declared interface) keeps this handle's `connect`
+ * signature tied to the SDK's own, so an SDK upgrade that changes it is
+ * caught here rather than silently drifting.
+ */
+export type M3LMcpServerHandle = Pick<McpServer, "connect">;
+
+/**
  * Builds an `McpServer` and registers every entry of
  * `deps?.registry ?? TOOL_REGISTRY` against it. Connects **no** transport —
  * that is {@link startM3LMcpServer}'s job — so construction alone is safe
  * to call from a test without touching stdio.
  *
  * @param deps - See {@link M3LMcpServerDeps}.
- * @returns The constructed, not-yet-connected `McpServer`.
+ * @returns The constructed, not-yet-connected server, narrowed to
+ * {@link M3LMcpServerHandle} so callers cannot reach `registerTool`.
  *
  * @example
  * ```ts
@@ -66,7 +77,9 @@ export interface M3LMcpServerDeps {
  * const server = createM3LMcpServer();
  * ```
  */
-export function createM3LMcpServer(deps?: M3LMcpServerDeps): McpServer {
+export function createM3LMcpServer(
+  deps?: M3LMcpServerDeps,
+): M3LMcpServerHandle {
   // "1.0.0" is this server's own protocol identity (surfaced to MCP clients
   // during `initialize`), independent of the workspace's frozen
   // package.json "version" (0.0.0, ADR-0020) — manually bumped, same
@@ -77,17 +90,10 @@ export function createM3LMcpServer(deps?: M3LMcpServerDeps): McpServer {
   );
   const registry = deps?.registry ?? TOOL_REGISTRY;
   for (const entry of registry) {
-    // `entry.handler` is deliberately typed `(args: unknown) =>
-    // Promise<unknown>` at this module's own boundary (see
-    // `tools/registry.ts`) — the SDK's `ToolCallback` return shape
-    // (`CallToolResult`) is a slice-V10c concern, produced by `gateTool`,
-    // not by this composition root. The cast below crosses that boundary
-    // at the single point the SDK requires it.
-    server.registerTool(
-      entry.name,
-      entry.config,
-      entry.handler as unknown as ToolCallback,
-    );
+    // `entry.handler` is typed as the SDK's own `ToolCallback` at
+    // `tools/registry.ts`'s boundary — no cast needed here, or ever, for
+    // this no-`inputSchema` shape.
+    server.registerTool(entry.name, entry.config, entry.handler);
   }
   return server;
 }
@@ -97,7 +103,7 @@ export function createM3LMcpServer(deps?: M3LMcpServerDeps): McpServer {
  * stdio. Connects exactly once.
  *
  * @param deps - See {@link M3LMcpServerDeps}.
- * @returns The connected `McpServer`.
+ * @returns The connected server, narrowed to {@link M3LMcpServerHandle}.
  *
  * @example
  * ```ts
@@ -108,7 +114,7 @@ export function createM3LMcpServer(deps?: M3LMcpServerDeps): McpServer {
  */
 export async function startM3LMcpServer(
   deps?: M3LMcpServerDeps,
-): Promise<McpServer> {
+): Promise<M3LMcpServerHandle> {
   const server = createM3LMcpServer(deps);
   await server.connect(new StdioServerTransport());
   return server;

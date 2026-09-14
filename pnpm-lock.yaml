@@ -486,6 +486,9 @@ importers:
       '@modelcontextprotocol/sdk':
         specifier: 1.30.0
         version: 1.30.0(supports-color@7.2.0)(zod@4.5.4)
+      '@monte3l/m3l-common':
+        specifier: workspace:*
+        version: link:../m3l-common
       zod:
         specifier: 4.5.4
         version: 4.5.4
