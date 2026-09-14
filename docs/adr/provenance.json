@@ -290,7 +290,7 @@
     "sourceFiles": [
       {
         "path": ".claude/settings.json",
-        "blob": "6dad00b55562b5d1a60a913209662f16d7b7644a"
+        "blob": "3a229ff2c2d37b47d5162463a2fbeb86850b569c"
       },
       {
         "path": "bin/check-reference-index.mjs",
@@ -313,7 +313,7 @@
         "blob": "f2fc5c07aa3b140054a90750615712ab58b12bd4"
       }
     ],
-    "verifiedAt": "2026-09-13"
+    "verifiedAt": "2026-09-14"
   },
   "0013": {
     "sourceFiles": [
@@ -438,11 +438,11 @@
       },
       {
         "path": ".claude/settings.json",
-        "blob": "6dad00b55562b5d1a60a913209662f16d7b7644a"
+        "blob": "3a229ff2c2d37b47d5162463a2fbeb86850b569c"
       },
       {
         "path": ".claude/skills/starting-work/SKILL.md",
-        "blob": "3c7246581c103ecf42ca39306aac144e6c028467"
+        "blob": "a8cb19fa4f0a07c0edf3a21cd6f934139aa8c834"
       },
       {
         "path": "bin/check-hooks.mjs",
@@ -469,7 +469,7 @@
         "blob": "6198c75526c1d14fffd18d7835768d02d25712fe"
       }
     ],
-    "verifiedAt": "2026-09-12"
+    "verifiedAt": "2026-09-14"
   },
   "0017": {
     "sourceFiles": [
@@ -601,7 +601,7 @@
     "sourceFiles": [
       {
         "path": ".claude/settings.json",
-        "blob": "6dad00b55562b5d1a60a913209662f16d7b7644a"
+        "blob": "3a229ff2c2d37b47d5162463a2fbeb86850b569c"
       },
       {
         "path": "docs/plans/IMPLEMENTATION.md",
@@ -832,7 +832,7 @@
     "sourceFiles": [
       {
         "path": ".claude/skills/resolving-pr-comments/SKILL.md",
-        "blob": "ab886352a116785275c03f27779e5dabf54c6e47"
+        "blob": "475369db7c85f9b3dba48b98b3fb42ac897dbb5c"
       },
       {
         "path": ".claude/skills/triaging-ci/SKILL.md",
@@ -1056,7 +1056,7 @@
     "sourceFiles": [
       {
         "path": ".claude/rules/refactoring.md",
-        "blob": "1f1e3916ea6b3699f43d9163f8313bbe45c095fa"
+        "blob": "27f3463b44d1dc754e6e1c9c1ea0f271e7b1f501"
       },
       {
         "path": ".github/workflows/ci.yml",
@@ -1525,15 +1525,6 @@
     ],
     "verifiedAt": "2026-09-14"
   },
-  "0057": {
-    "sourceFiles": [
-      {
-        "path": "bin/check-publish-version.mjs",
-        "blob": "75aaf8b292562c289f7bfa8d928686d34a8b1d92"
-      }
-    ],
-    "verifiedAt": "2026-09-14"
-  },
   "0058": {
     "sourceFiles": [
       {
@@ -1595,13 +1586,9 @@
       {
         "path": "docs/research/agent-cli-integration.md",
         "blob": "b11e9abc25e2106e8ceaf2099c9d65d55b1c2cd4"
-      },
-      {
-        "path": "packages/m3l-cli/package.json",
-        "blob": "340a64bd0dd01c512428706b4c77cfce54d719b3"
       }
     ],
-    "verifiedAt": "2026-09-14"
+    "verifiedAt": "2026-09-07"
   },
   "0063": {
     "sourceFiles": [
@@ -1920,7 +1907,7 @@
       },
       {
         "path": ".claude/settings.json",
-        "blob": "6dad00b55562b5d1a60a913209662f16d7b7644a"
+        "blob": "3a229ff2c2d37b47d5162463a2fbeb86850b569c"
       },
       {
         "path": "bin/check-agents.mjs",
@@ -1967,7 +1954,7 @@
         "blob": "b0bebce5ab3010955e4cc10d2cef34c3903f591a"
       }
     ],
-    "verifiedAt": "2026-09-13"
+    "verifiedAt": "2026-09-14"
   },
   "0079": {
     "sourceFiles": [
@@ -2006,7 +1993,7 @@
       },
       {
         "path": ".claude/settings.json",
-        "blob": "6dad00b55562b5d1a60a913209662f16d7b7644a"
+        "blob": "3a229ff2c2d37b47d5162463a2fbeb86850b569c"
       },
       {
         "path": "bin/check-host-resources.mjs",
@@ -2053,7 +2040,7 @@
         "blob": "d2b88dbb4423408a33153335c055b088c6fd628a"
       }
     ],
-    "verifiedAt": "2026-09-13"
+    "verifiedAt": "2026-09-14"
   },
   "0081": {
     "sourceFiles": [
@@ -2097,7 +2084,7 @@
     "sourceFiles": [
       {
         "path": ".claude/settings.json",
-        "blob": "6dad00b55562b5d1a60a913209662f16d7b7644a"
+        "blob": "3a229ff2c2d37b47d5162463a2fbeb86850b569c"
       },
       {
         "path": "docs/contributing/branch-protection.md",
@@ -2105,16 +2092,16 @@
       },
       {
         "path": "docs/contributing/hooks-reference.md",
-        "blob": "d43814fdd47c705983c349fc6d817957956a3b64"
+        "blob": "f1f04403ec66dde2d0f2e8dba20b7a232675a670"
       }
     ],
-    "verifiedAt": "2026-09-12"
+    "verifiedAt": "2026-09-14"
   },
   "0084": {
     "sourceFiles": [
       {
         "path": ".claude/settings.json",
-        "blob": "6dad00b55562b5d1a60a913209662f16d7b7644a"
+        "blob": "3a229ff2c2d37b47d5162463a2fbeb86850b569c"
       },
       {
         "path": "bin/check-control-chars.mjs",
@@ -2137,7 +2124,7 @@
         "blob": "203ed8da7f6cd8a9335c865a0ab33647f32505c2"
       }
     ],
-    "verifiedAt": "2026-09-13"
+    "verifiedAt": "2026-09-14"
   },
   "0085": {
     "sourceFiles": [
@@ -2280,7 +2267,7 @@
       },
       {
         "path": ".claude/settings.json",
-        "blob": "6dad00b55562b5d1a60a913209662f16d7b7644a"
+        "blob": "3a229ff2c2d37b47d5162463a2fbeb86850b569c"
       },
       {
         "path": "bin/check-hooks.mjs",
@@ -2307,7 +2294,7 @@
         "blob": "6ce2a708c1e7515608c976e89a2ef6733cd2cb68"
       }
     ],
-    "verifiedAt": "2026-09-08"
+    "verifiedAt": "2026-09-14"
   },
   "0091": {
     "sourceFiles": [
@@ -2326,7 +2313,7 @@
       },
       {
         "path": ".claude/settings.json",
-        "blob": "6dad00b55562b5d1a60a913209662f16d7b7644a"
+        "blob": "3a229ff2c2d37b47d5162463a2fbeb86850b569c"
       },
       {
         "path": "bin/check-hooks.mjs",
@@ -2341,13 +2328,13 @@
         "blob": "cda18ac5f07b86cf7b65a2bb5b8298fe640c5d22"
       }
     ],
-    "verifiedAt": "2026-09-08"
+    "verifiedAt": "2026-09-14"
   },
   "0093": {
     "sourceFiles": [
       {
         "path": ".claude/settings.json",
-        "blob": "6dad00b55562b5d1a60a913209662f16d7b7644a"
+        "blob": "3a229ff2c2d37b47d5162463a2fbeb86850b569c"
       },
       {
         "path": ".claude/skills/typescript-configuration/references/typescript-configuration.md",
@@ -2390,7 +2377,7 @@
         "blob": "40caafa3178dd40f2b22aa430eed9bfc0562df25"
       }
     ],
-    "verifiedAt": "2026-09-09"
+    "verifiedAt": "2026-09-14"
   },
   "0094": {
     "sourceFiles": [
@@ -2458,7 +2445,7 @@
     "sourceFiles": [
       {
         "path": ".claude/settings.json",
-        "blob": "6dad00b55562b5d1a60a913209662f16d7b7644a"
+        "blob": "3a229ff2c2d37b47d5162463a2fbeb86850b569c"
       },
       {
         "path": ".mcp.json",
@@ -2497,7 +2484,7 @@
         "blob": "b8783951f68fb653a4235dd99daefa6c39653a41"
       }
     ],
-    "verifiedAt": "2026-09-13"
+    "verifiedAt": "2026-09-14"
   },
   "0097": {
     "sourceFiles": [
@@ -2528,7 +2515,7 @@
     "sourceFiles": [
       {
         "path": ".claude/settings.json",
-        "blob": "6dad00b55562b5d1a60a913209662f16d7b7644a"
+        "blob": "3a229ff2c2d37b47d5162463a2fbeb86850b569c"
       },
       {
         "path": ".claude/skills/refreshing-typescript-guidance/SKILL.md",
@@ -2547,7 +2534,7 @@
         "blob": "03b36f49c0e68f7c8b9baae69657944939e10849"
       }
     ],
-    "verifiedAt": "2026-09-13"
+    "verifiedAt": "2026-09-14"
   },
   "0099": {
     "sourceFiles": [
