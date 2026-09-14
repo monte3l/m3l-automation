@@ -16,12 +16,39 @@
  * `run-output-retention.ts`, `session-artifact-retention.ts`), this is the
  * one section of the cleanup sweep that does not sweep — it only
  * inventories. ADR-0070 declares the audit-trail class as segment-and-retain,
- * and `internal/storage/append-only-read-plan.ts`'s `assertNoSequenceGap`
- * makes intra-date deletion destroy the trail's readability rather than
- * reclaim space — while `boot/audit-rebuild.ts`'s rebuild never throws, so
- * that damage would be invisible at boot. Do not "harmonise" this driver
- * with its siblings by adding deletion; that would reintroduce exactly the
- * damage this module exists to avoid.
+ * and a delete added here would break two different rules for two different
+ * reasons — the same two forces `docs/reference/console.md`'s "The two
+ * rules" section names for the manual archival procedure, and worth keeping
+ * straight rather than conflating. **Mechanically**,
+ * `internal/storage/append-only-read-plan.ts`'s `assertNoSequenceGap` rejects
+ * a gap in a date's sequence numbers — but since ADR-0102 the reader walks
+ * the union of the segments on disk and the ones the manifest seals, so a
+ * hole the manifest accounts for is not a gap at all, wherever in the date it
+ * falls. A hole nothing accounts for still throws exactly as it always did,
+ * and permanently — there is no claim left to weigh the absence against.
+ * This driver could never tell which case a delete of its own would land in:
+ * it only calls `listSegments()`, never `verify()` or the manifest itself.
+ * **By policy**, ADR-0070 sanctions whole-date archival and nothing
+ * narrower, and ADR-0102 kept that boundary deliberately even though sealing
+ * makes the narrower operation mechanically safe — what the manifest
+ * establishes is that the bytes are the sealed bytes, not that anyone was
+ * entitled to move them. `boot/audit-rebuild.ts`'s rebuild still never
+ * throws — a console whose trail it can no longer rebuild from still starts
+ * and serves normally — but that is no longer the same as silent: the boot
+ * path reports the cause at `error`, choosing a manifest-specific message
+ * over the general one when a `Core.M3LAppendOnlyStreamManifestError`
+ * appears anywhere in the cause chain, and it logs one `error` per segment
+ * the manifest seals but the trail no longer holds. Do not "harmonise" this
+ * driver with its siblings by adding deletion; that would reintroduce
+ * exactly the damage this module exists to avoid.
+ *
+ * **This report is the signal that archival is due.** A growing `totalBytes`
+ * is not itself actionable from inside this module — the procedure it
+ * triggers is `docs/reference/console.md`'s "Archiving the audit trail"
+ * section, including what ADR-0102 changed about it being provable. This
+ * driver's own posture is unaffected either way: it neither reads nor writes
+ * `manifest.jsonl`, and it stays inventory-only — it only counts the segment
+ * files `listSegments()` hands back.
  *
  * **A non-zero `skipped` count is worth investigating, but is not proof of
  * tampering by itself — it has two possible causes.** The first is a symlink
@@ -60,7 +87,21 @@ import { M3LConsoleError } from "./errors/console-error.js";
 export interface M3LAuditTrailUsageOutcome {
   /** The number of audit-stream segment files found on disk. */
   readonly segments: number;
-  /** The combined byte size of every segment file. */
+  /**
+   * The combined byte size of every segment file — and ONLY segment files.
+   * `listSegments()` does not treat `manifest.jsonl` as a segment (it never
+   * appears in `segments`, never raises `skipped`), so its bytes never enter
+   * this total. An operator comparing this number against `du` on the audit
+   * root will therefore see a difference once the writer has sealed at least
+   * one segment, and the sidecar is that difference: it gains roughly one
+   * line per sealed segment plus one fixed baseline line, on the order of a
+   * couple hundred bytes per line for the manifest's current record shape
+   * (observed, not a guaranteed size), and it is itself never
+   * rotated — so the gap grows with the *segment count*, not with the
+   * trail's byte size. That is negligible against the default 8 MiB segment
+   * ceiling, but it is not zero, and a caller reconciling this field against
+   * on-disk usage should expect it.
+   */
   readonly totalBytes: number;
   /**
    * Directory entries carrying a valid segment name that could not be
@@ -102,6 +143,10 @@ export interface ReportAuditTrailUsageOptions {
  * distinguish here since this driver has no `rootExisted`-style flag: unlike
  * the retention drivers, an absent audit root is not an operator
  * misconfiguration signal this report needs to surface.
+ *
+ * `totalBytes` counts segment files only — see
+ * {@link M3LAuditTrailUsageOutcome.totalBytes} for why it reads lower than
+ * `du` on the same directory.
  *
  * @param options - See {@link ReportAuditTrailUsageOptions}.
  * @returns The {@link M3LAuditTrailUsageOutcome}.
