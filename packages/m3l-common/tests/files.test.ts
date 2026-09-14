@@ -21,6 +21,7 @@
  * the real `M3LPrompt`.
  */
 
+import * as fsPromises from "node:fs/promises";
 import {
   mkdir,
   mkdtemp,
@@ -39,6 +40,7 @@ import {
   expect,
   expectTypeOf,
   test,
+  vi,
 } from "vitest";
 
 import { M3LError } from "../src/core/errors/index.js";
@@ -56,6 +58,19 @@ import type {
   M3LFileCopySkipReason,
 } from "../src/core/files/index.js";
 import type { M3LPathType } from "../src/core/utils/index.js";
+
+// Configurable-namespace mock (matches script.test.ts's established pattern)
+// so the "errnoCodeOf boundary" cases below can `vi.spyOn(fsPromises, "stat")`
+// to inject a plain-object (non-`Error`) rejection — real `stat()` failures
+// are always genuine `Error` instances, so that shape is unreachable through
+// real filesystem calls and can only be produced via a mock. Every other
+// test in this file is unaffected: the factory spreads the real
+// implementation through, so `stat`/`mkdir`/`copyFile`/etc. behave exactly
+// as before unless a test installs its own `vi.spyOn` override.
+vi.mock("node:fs/promises", async () => {
+  const actual = await vi.importActual<typeof fsPromises>("node:fs/promises");
+  return { ...actual };
+});
 
 // ---------------------------------------------------------------------------
 // Fixture helpers
@@ -105,6 +120,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  vi.restoreAllMocks();
   await rm(sourceDir, { recursive: true, force: true });
   await rm(outDir, { recursive: true, force: true });
 });
@@ -925,5 +941,63 @@ describe("batch-fatal I/O failures", () => {
     expect(thrown).toBeInstanceOf(M3LFileCopyError);
     expect(thrown).toBeInstanceOf(M3LError);
     expect((thrown as M3LFileCopyError).cause).toBeDefined();
+  });
+
+  // errnoCodeOf boundary (PR #1252): tryStatSize's tolerate/rethrow decision
+  // now requires the caught value to be an actual `Error` instance carrying
+  // its OWN `code` (core/utils/guards.ts errnoCodeOf). A plain object with a
+  // string `code` — unreachable through a real `stat()` failure, only
+  // producible via a mock — no longer satisfies that and is rethrown as
+  // M3LFileCopyError instead of being tolerated as a "source-unreadable"
+  // skip, even though its `code` ("EACCES") is one of
+  // UNREADABLE_SOURCE_CODES.
+  test("tryStatSize: a plain-object (non-Error) EACCES rejection from stat() now rethrows M3LFileCopyError instead of being tolerated as a skip", async () => {
+    const source = path.join(sourceDir, "protected.txt");
+    const rejection = { code: "EACCES" };
+    vi.spyOn(fsPromises, "stat").mockRejectedValue(rejection);
+
+    const copier = new M3LFileCopier({ paths: fakePaths(outDir) });
+    copier.registerFile(source, { subdir: "inputs" });
+
+    let thrown: unknown;
+    try {
+      await copier.finalizeRegisteredFiles();
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toBeInstanceOf(M3LFileCopyError);
+    expect(thrown).toBeInstanceOf(M3LError);
+    expect((thrown as M3LFileCopyError).cause).toBe(rejection);
+  });
+
+  // Same boundary as above, for pathExists: isEnoentError also requires an
+  // actual `Error` instance carrying its OWN `code`. A plain-object ENOENT
+  // rejection from stat() no longer resolves pathExists to `false` ("does
+  // not exist, safe to write") — it now rethrows M3LFileCopyError.
+  test("pathExists: a plain-object (non-Error) ENOENT rejection from stat() now rethrows M3LFileCopyError instead of resolving to 'does not exist'", async () => {
+    const source = path.join(sourceDir, "exists-check.txt");
+    await writeFile(source, Buffer.from("data"));
+    const rejection = { code: "ENOENT" };
+
+    // First stat() call is tryStatSize sizing the SOURCE (must succeed so
+    // resolveSkipReason reaches pathExists on the destination); second call
+    // is pathExists checking the DESTINATION, which is where the
+    // plain-object rejection is injected.
+    vi.spyOn(fsPromises, "stat")
+      .mockResolvedValueOnce({ size: 4 } as Awaited<ReturnType<typeof stat>>)
+      .mockRejectedValueOnce(rejection);
+
+    const copier = new M3LFileCopier({ paths: fakePaths(outDir) });
+    copier.registerFile(source, { subdir: "inputs" });
+
+    let thrown: unknown;
+    try {
+      await copier.finalizeRegisteredFiles();
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toBeInstanceOf(M3LFileCopyError);
+    expect(thrown).toBeInstanceOf(M3LError);
+    expect((thrown as M3LFileCopyError).cause).toBe(rejection);
   });
 });

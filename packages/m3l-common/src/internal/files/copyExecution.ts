@@ -13,6 +13,7 @@ import { copyFile, mkdir, stat } from "node:fs/promises";
 import * as path from "node:path";
 
 import { M3LFileCopyError } from "../../core/files/M3LFileCopyError.js";
+import { errnoCodeOf, isEnoentError } from "../../core/utils/guards.js";
 
 import type { FileCopyOutcome, FileCopySkipReason } from "./types.js";
 
@@ -47,22 +48,6 @@ const UNREADABLE_SOURCE_CODES = new Set([
 ]);
 
 /**
- * Narrows a caught `stat`/`copyFile` failure to its Node.js error `code`,
- * when present.
- */
-function errnoCode(cause: unknown): string | undefined {
-  if (
-    cause !== null &&
-    typeof cause === "object" &&
-    "code" in cause &&
-    typeof cause.code === "string"
-  ) {
-    return cause.code;
-  }
-  return undefined;
-}
-
-/**
  * Returns the file size in bytes when `filePath` is a readable, statable
  * file, or `undefined` when `stat` fails with an error code that genuinely
  * means "missing or unreadable" ({@link UNREADABLE_SOURCE_CODES}) — the
@@ -77,7 +62,11 @@ async function tryStatSize(filePath: string): Promise<number | undefined> {
     const stats = await stat(filePath);
     return stats.size;
   } catch (cause) {
-    const code = errnoCode(cause);
+    // The tolerate/rethrow decision below is driven entirely by this code,
+    // so it must come from an OWN property, read exactly once (errnoCodeOf,
+    // core/utils/guards.ts) — an inherited `code` must not be able to force
+    // the tolerate branch.
+    const code = errnoCodeOf(cause);
     if (code !== undefined && UNREADABLE_SOURCE_CODES.has(code)) {
       return undefined;
     }
@@ -101,7 +90,7 @@ async function pathExists(filePath: string): Promise<boolean> {
     await stat(filePath);
     return true;
   } catch (cause) {
-    if (errnoCode(cause) === "ENOENT") return false;
+    if (isEnoentError(cause)) return false;
     throw new M3LFileCopyError(
       `unexpected error checking destination "${filePath}"`,
       { cause, context: { destination: filePath } },

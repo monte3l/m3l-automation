@@ -13,7 +13,7 @@ Exported from `@monte3l/m3l-common/core` (and the `Core` namespace):
 - Paths and concurrency: `M3LPaths`, `M3LPathType`, `M3LPathEnvironmentVariables`, `M3LPathResolutionError`, `M3LConcurrencyPool`, `M3LSingleFlight`
 - Serialization and formatting: `safeJsonStringify`, `valueToString`, `M3LDateTokens`, `formatBytes`, `smartTruncate`, `truncatePath`, `truncateText`, `isPath`, `formatConfigValueDisplay`, `formatConfigSourceDisplay`
 - Numeric parsing: `parseLocaleNumber`
-- Type guards: `isNullish`, `isPrimitive`, `isError`, `isNodeError`, `isEnoentError`, `isPlainObject`, `isObject`, `isArray`, `isString`, `isNumber`, `isBoolean`, `isFunction`, `isDate`, `isValidDate`, `isBuffer`, `isMap`, `isSet`, `isRegExp`, `isSymbol`, `isBigInt`, `isPromise`, `isNonEmptyString`, `isNonEmptyArray`, `hasProperty`, `hasMessage`
+- Type guards: `isNullish`, `isPrimitive`, `isError`, `isNodeError`, `isEnoentError`, `errnoCodeOf`, `isPlainObject`, `isObject`, `isArray`, `isString`, `isNumber`, `isBoolean`, `isFunction`, `isDate`, `isValidDate`, `isBuffer`, `isMap`, `isSet`, `isRegExp`, `isSymbol`, `isBigInt`, `isPromise`, `isNonEmptyString`, `isNonEmptyArray`, `hasProperty`, `hasMessage`
 
 ## Path resolution with `M3LPaths`
 
@@ -159,6 +159,26 @@ function describe(value: unknown): string {
 }
 ```
 
+`errnoCodeOf` is not a `v is T` guard — it returns the errno `code` string
+itself (or `undefined`), rather than a boolean, for callers that need the
+code — to switch on it, or to test it against a set of tolerated codes —
+rather than narrow against one fixed value. `isNodeError` and `isEnoentError`
+are the narrowing boolean forms built on top of it:
+
+```typescript
+import { Core } from "@monte3l/m3l-common";
+
+const UNREADABLE = new Set(["ENOENT", "EACCES", "EPERM", "ELOOP", "ENOTDIR"]);
+
+try {
+  await stat(filePath);
+} catch (cause) {
+  const code = Core.errnoCodeOf(cause);
+  if (code !== undefined && UNREADABLE.has(code)) return undefined;
+  throw cause;
+}
+```
+
 ## Notes and behavior
 
 - `M3LPaths` reads deployment mode from `M3LExecutionEnvironment`; the `M3L_*` overrides take precedence over detection.
@@ -174,6 +194,11 @@ function describe(value: unknown): string {
   where an inherited `code` could make an unrelated failure present as a
   tolerated one. Contrast `hasProperty`/`hasMessage`, which stay `in`-based
   by design — they answer "can this be read", not "did this value carry it".
+- `isNodeError`/`isEnoentError` are the narrowing boolean forms of
+  `errnoCodeOf`, which they both delegate to — `errnoCodeOf` is the form to
+  reach for when a caller needs the code itself (to switch on it, or to test
+  it against a set of tolerated codes) rather than a single fixed comparison.
+  It carries the same own-property, single-read guarantee as the pair above.
 
 ## See also
 

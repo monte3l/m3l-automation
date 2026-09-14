@@ -69,9 +69,11 @@ export function isError(v: unknown): v is Error {
 }
 
 /**
- * The `errno` code an `Error` carries as its OWN property, or `undefined`
- * for anything else. Module-private: {@link isNodeError} and
- * {@link isEnoentError} are the exported surface built on it.
+ * Returns the `errno` code an `Error` carries as its OWN property, or
+ * `undefined` for anything else. {@link isNodeError} and
+ * {@link isEnoentError} are the narrowing boolean forms built on top of
+ * this — call them when you only need a `v is T` guard, and call this
+ * directly when you need the code string itself (e.g. to switch on it).
  *
  * OWNERSHIP IS PART OF THE CHECK. A caller's tolerate/rethrow decision is
  * driven by this code, so honouring an INHERITED `code` would make that
@@ -87,12 +89,25 @@ export function isError(v: unknown): v is Error {
  * one of them checked. `Object.hasOwn` tests for the property without
  * reading it, so the ownership guard adds no second read.
  *
- * Mirrors `errnoCodeOf`
- * (`packages/m3l-console-server/src/errors/errno.ts`) — same order, same
- * single read. That copy stays where it is: it lives in the one zone every
- * console zone may import, and this is a separate, unpublished need.
+ * `packages/m3l-console-server/src/errors/errno.ts` currently carries an
+ * independent, byte-for-byte mirror of this same algorithm under the same
+ * name (`errnoCodeOf`) — it predates this export and cannot yet depend on it
+ * without crossing the console's own zone-import boundary in a way not yet
+ * wired up. A follow-up collapses that copy into a re-export of this symbol.
+ *
+ * @param v - The value to inspect.
+ * @returns The own `code` string, or `undefined` when `v` is not an `Error`
+ * or carries no own string `code`.
+ * @example
+ * ```typescript
+ * import { errnoCodeOf } from "@monte3l/m3l-common/core";
+ * const code = errnoCodeOf(caught);
+ * if (code === "ENOENT") {
+ *   // file not found
+ * }
+ * ```
  */
-function readErrnoCode(v: unknown): string | undefined {
+export function errnoCodeOf(v: unknown): string | undefined {
   if (!isError(v) || !Object.hasOwn(v, "code")) {
     return undefined;
   }
@@ -135,7 +150,7 @@ function readErrnoCode(v: unknown): string | undefined {
  * ```
  */
 export function isNodeError(v: unknown): v is NodeJS.ErrnoException {
-  return readErrnoCode(v) !== undefined;
+  return errnoCodeOf(v) !== undefined;
 }
 
 /**
@@ -158,7 +173,7 @@ export function isNodeError(v: unknown): v is NodeJS.ErrnoException {
 export function isEnoentError(
   v: unknown,
 ): v is NodeJS.ErrnoException & { code: "ENOENT" } {
-  return readErrnoCode(v) === "ENOENT";
+  return errnoCodeOf(v) === "ENOENT";
 }
 
 /**

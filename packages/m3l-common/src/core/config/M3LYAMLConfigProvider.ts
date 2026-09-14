@@ -10,7 +10,7 @@ import * as fs from "fs";
 import { parse } from "yaml";
 
 import { buildSafeValueMap } from "../../internal/config/buildSafeValueMap.js";
-import { isNodeError } from "../utils/index.js";
+import { isEnoentError } from "../utils/guards.js";
 import { M3LConfigParseError } from "./M3LConfigParseError.js";
 import { M3LConfigProvider } from "./M3LConfigProvider.js";
 
@@ -27,7 +27,7 @@ function readYamlFile(filePath: string): Map<string, unknown> {
   try {
     content = fs.readFileSync(filePath, "utf8");
   } catch (cause) {
-    if (isNodeError(cause) && cause.code === "ENOENT") {
+    if (isEnoentError(cause)) {
       return new Map();
     }
     throw cause;
