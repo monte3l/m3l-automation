@@ -156,30 +156,31 @@ target was renamed is repaired via `RENAMED_TARGETS` in
 
 ## m3l console wave (X-series)
 
-| Date       | Change                                                         | Log                                                                                                      |
-| ---------- | -------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
-| 2026-08-27 | X3 — console persistence foundation (`node:sqlite`, ADR-0069)  | [x3-console-persistence](./2026-08-27-x3-console-persistence.md)                                         |
-| 2026-08-28 | X9 — `m3l-console-web` skeleton (Vite/React 19, ADR-0067)      | [x9-console-web-skeleton](./2026-08-28-x9-console-web-skeleton.md)                                       |
-| 2026-08-29 | X4 — run orchestration (registry, governor, REST + SSE)        | [x4-console-run-orchestration](./2026-08-29-x4-console-run-orchestration.md)                             |
-| 2026-08-30 | X6 — workbench sessions close-out (bindings, resume, ADR-0068) | [x6-workbench-sessions](./2026-08-30-x6-workbench-sessions.md)                                           |
-| 2026-08-30 | X10 run-launcher UI MVP                                        | [x10-run-launcher-ui](./2026-08-30-x10-run-launcher-ui.md)                                               |
-| 2026-09-01 | X7 — human-action audit close-out (stream, index, read path)   | [x7-human-action-audit](./2026-09-01-x7-human-action-audit.md)                                           |
-| 2026-09-01 | X7b — audit wiring, view actions & correlation threading       | [x7b-audit-wiring](./2026-09-01-x7b-audit-wiring.md)                                                     |
-| 2026-09-02 | X7c — audit index writer & the `options.routes` boundary       | [x7c-audit-index-writer](./2026-09-02-x7c-audit-index-writer.md)                                         |
-| 2026-09-02 | X7d — the last four human-action kinds & their routes          | [x7d-remaining-action-kinds](./2026-09-02-x7d-remaining-action-kinds.md)                                 |
-| 2026-09-03 | X8 slice 1 — telemetry rollup store (v9, ADR-0070)             | [x8-telemetry-store](./2026-09-03-x8-telemetry-store.md)                                                 |
-| 2026-09-03 | X8 — telemetry guard follow-ups (validation, naming tail)      | [x8-telemetry-guard-followups](./2026-09-03-x8-telemetry-guard-followups.md)                             |
-| 2026-09-03 | X8 — slice-1 open items (test isolation, re-plan, v11 CHECK)   | [x8-open-items](./2026-09-03-x8-open-items.md)                                                           |
-| 2026-09-03 | x11a2-session-steps-decisions                                  | [x11a2-session-steps-decisions](./2026-09-03-x11a2-session-steps-decisions.md)                           |
-| 2026-09-03 | `x11b-console-session-views`                                   | [x11b-console-session-views](./2026-09-03-x11b-console-session-views.md)                                 |
-| 2026-09-03 | `x11c-json-tree-viewer`                                        | [x11c-json-tree-viewer](./2026-09-03-x11c-json-tree-viewer.md)                                           |
-| 2026-09-03 | x12-container-stance-and-loopback-refactor                     | [x12-container-stance-and-loopback-refactor](./2026-09-03-x12-container-stance-and-loopback-refactor.md) |
-| 2026-09-03 | X12 console containerization, PR3                              | [x12-containerization-images-and-scanning](./2026-09-03-x12-containerization-images-and-scanning.md)     |
-| 2026-09-04 | `x11e-sqs-drilldown-acceptance`                                | [x11e-sqs-drilldown-acceptance](./2026-09-04-x11e-sqs-drilldown-acceptance.md)                           |
-| 2026-09-05 | X8 — self-telemetry + retention, wave close-out (issue #556)   | [x8-close-out](./2026-09-05-x8-close-out.md)                                                             |
-| 2026-09-11 | X8a — reconcile human-action specs against routes (PR #1183)   | [x8a-human-action-reconciliation](./2026-09-11-x8a-human-action-reconciliation.md)                       |
-| 2026-09-12 | X13 — session → flow export, 7-PR sequence (issue #561)        | [x13-session-flow-export](./2026-09-12-x13-session-flow-export.md)                                       |
-| 2026-09-13 | X8c — cleanup failure context reports the errno (PR #1236)     | [x8c-cleanup-errno](./2026-09-13-x8c-cleanup-errno.md)                                                   |
+| Date       | Change                                                          | Log                                                                                                      |
+| ---------- | --------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| 2026-08-27 | X3 — console persistence foundation (`node:sqlite`, ADR-0069)   | [x3-console-persistence](./2026-08-27-x3-console-persistence.md)                                         |
+| 2026-08-28 | X9 — `m3l-console-web` skeleton (Vite/React 19, ADR-0067)       | [x9-console-web-skeleton](./2026-08-28-x9-console-web-skeleton.md)                                       |
+| 2026-08-29 | X4 — run orchestration (registry, governor, REST + SSE)         | [x4-console-run-orchestration](./2026-08-29-x4-console-run-orchestration.md)                             |
+| 2026-08-30 | X6 — workbench sessions close-out (bindings, resume, ADR-0068)  | [x6-workbench-sessions](./2026-08-30-x6-workbench-sessions.md)                                           |
+| 2026-08-30 | X10 run-launcher UI MVP                                         | [x10-run-launcher-ui](./2026-08-30-x10-run-launcher-ui.md)                                               |
+| 2026-09-01 | X7 — human-action audit close-out (stream, index, read path)    | [x7-human-action-audit](./2026-09-01-x7-human-action-audit.md)                                           |
+| 2026-09-01 | X7b — audit wiring, view actions & correlation threading        | [x7b-audit-wiring](./2026-09-01-x7b-audit-wiring.md)                                                     |
+| 2026-09-02 | X7c — audit index writer & the `options.routes` boundary        | [x7c-audit-index-writer](./2026-09-02-x7c-audit-index-writer.md)                                         |
+| 2026-09-02 | X7d — the last four human-action kinds & their routes           | [x7d-remaining-action-kinds](./2026-09-02-x7d-remaining-action-kinds.md)                                 |
+| 2026-09-03 | X8 slice 1 — telemetry rollup store (v9, ADR-0070)              | [x8-telemetry-store](./2026-09-03-x8-telemetry-store.md)                                                 |
+| 2026-09-03 | X8 — telemetry guard follow-ups (validation, naming tail)       | [x8-telemetry-guard-followups](./2026-09-03-x8-telemetry-guard-followups.md)                             |
+| 2026-09-03 | X8 — slice-1 open items (test isolation, re-plan, v11 CHECK)    | [x8-open-items](./2026-09-03-x8-open-items.md)                                                           |
+| 2026-09-03 | x11a2-session-steps-decisions                                   | [x11a2-session-steps-decisions](./2026-09-03-x11a2-session-steps-decisions.md)                           |
+| 2026-09-03 | `x11b-console-session-views`                                    | [x11b-console-session-views](./2026-09-03-x11b-console-session-views.md)                                 |
+| 2026-09-03 | `x11c-json-tree-viewer`                                         | [x11c-json-tree-viewer](./2026-09-03-x11c-json-tree-viewer.md)                                           |
+| 2026-09-03 | x12-container-stance-and-loopback-refactor                      | [x12-container-stance-and-loopback-refactor](./2026-09-03-x12-container-stance-and-loopback-refactor.md) |
+| 2026-09-03 | X12 console containerization, PR3                               | [x12-containerization-images-and-scanning](./2026-09-03-x12-containerization-images-and-scanning.md)     |
+| 2026-09-04 | `x11e-sqs-drilldown-acceptance`                                 | [x11e-sqs-drilldown-acceptance](./2026-09-04-x11e-sqs-drilldown-acceptance.md)                           |
+| 2026-09-05 | X8 — self-telemetry + retention, wave close-out (issue #556)    | [x8-close-out](./2026-09-05-x8-close-out.md)                                                             |
+| 2026-09-11 | X8a — reconcile human-action specs against routes (PR #1183)    | [x8a-human-action-reconciliation](./2026-09-11-x8a-human-action-reconciliation.md)                       |
+| 2026-09-12 | X13 — session → flow export, 7-PR sequence (issue #561)         | [x13-session-flow-export](./2026-09-12-x13-session-flow-export.md)                                       |
+| 2026-09-13 | X8c — cleanup failure context reports the errno (PR #1236)      | [x8c-cleanup-errno](./2026-09-13-x8c-cleanup-errno.md)                                                   |
+| 2026-09-14 | X8e slice 1 — `errnoCodeOf` export, m3l-common sites (PR #1252) | [x8e-errno-codeof-slice1](./2026-09-14-x8e-errno-codeof-slice1.md)                                       |
 
 > X1 (governance docs) and X2 (`m3l-console-server` skeleton) shipped without
 > logs; X3 is the first entry in this wave.
