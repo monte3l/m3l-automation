@@ -654,6 +654,14 @@ export default tseslint.config(
       // relative escape is the actual reachable hole, and this package is the
       // one with a motive to use it, so the path-based rule closes it here.
       //
+      // Two relative escapes are closed, not one. The second is
+      // `../../m3l-common/src/internal/...`: ADR-0004's internal/-sealing zone
+      // is scoped `target: "./packages/m3l-common/src"` with `files` limited to
+      // that package's three barrels, so it stops the library re-exporting its
+      // own internals and says nothing about a consumer reaching in from
+      // outside. The non-relative regex above cannot cover it either — it
+      // admits `@monte3l/m3l-common($|/)` wholesale, subpaths included.
+      //
       // Scoped to this package rather than all of `packages/*/src` on
       // purpose: flat config keeps only the LAST block that matches a file
       // for a given rule, so a `packages/*/src/**` block setting
@@ -680,6 +688,12 @@ export default tseslint.config(
               from: "./packages/m3l-mcp/tests",
               message:
                 "Production source must not import from tests/ — move shared fixtures/helpers into src/ if they're needed at runtime.",
+            },
+            {
+              target: "./packages/m3l-mcp/src",
+              from: "./packages/m3l-common/src/internal",
+              message:
+                "internal/ is private to @monte3l/m3l-common and may change without a semver event (ADR-0004) — reach it only through the Core/AWS barrels. A relative path into another package's src is not a shortcut, it is an unversioned dependency.",
             },
           ],
         },

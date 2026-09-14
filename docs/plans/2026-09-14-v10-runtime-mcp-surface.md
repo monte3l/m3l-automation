@@ -198,6 +198,32 @@ stands:
   decision-log preflight add steps that can open a handle _before_ they can
   throw, which would leave the process alive with a dangling handle.
 
+PR #1258's second CI review round added three more. Two were taken in that
+same PR — the missing `coversMcp` term in `bin/check-eslint-zones.mjs`'s
+no-cycle conjunction (which made the guard decorative for exactly the package
+the PR added) and the unguarded relative import into
+`packages/m3l-common/src/internal` (ADR-0004's own sealing zone is scoped
+`target: "./packages/m3l-common/src"` and is therefore blind to a consumer
+reaching in from outside). The remaining three land in V10c:
+
+- **Spawn-test the bin entry's two stderr branches.** `bin/m3l-mcp.mjs`
+  separates a missing `dist/` from a failed boot, and neither branch has a
+  regression test — `vitest.config.ts` scopes coverage to
+  `packages/*/src/**/*.ts`, so `bin/**/*.mjs` is outside the gate entirely
+  and its 100% figure says nothing about the entry. Both branches were
+  verified by hand before V10b's push (exit 1, one stderr line, zero
+  host-path occurrences), which is a one-off check, not a guard. A real test
+  spawns the entry as a child process.
+- **Directory-bound the SDK's `import-x/no-unresolved` ignore.** The entry is
+  `"^@modelcontextprotocol/sdk"`, which is repo-wide — it silences the rule
+  for every file, not just this package's. Narrowing it needs a second
+  block, so it belongs with a slice already editing that region.
+- **Annotate the empty registry's freeze.**
+  `Object.freeze<readonly GatedToolRegistration[]>([])` states the intended
+  type at the call site instead of relying on the declaration's annotation to
+  widen `never[]`. Cosmetic while the array is empty; worth doing in the
+  slice that first puts an entry in it.
+
 ## Definition of done for this wave
 
 `pnpm verify` green on each slice; `check:review-size` measured **before**

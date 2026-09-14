@@ -41,6 +41,15 @@
 //                            may reach only errors; http may reach errors, auth
 //                            and lifecycle but NOT config), its prod-not-to-test
 //                            zone, and no-cycle coverage.
+//  10. m3l-mcp boundary   — packages/m3l-mcp/src may import only
+//                            @monte3l/m3l-common, node: builtins,
+//                            @modelcontextprotocol/sdk and zod (ADR-0062 — the
+//                            SDK is named explicitly, since holding it is this
+//                            package's reason to exist), plus its
+//                            prod-not-to-test zone, the reverse ADR-0029 ban on
+//                            reaching a script's src, the ADR-0004 ban on
+//                            reaching the library's internal/, and no-cycle
+//                            coverage.
 //
 // Usage:
 //   node bin/check-eslint-zones.mjs   # exits 0 on success, 1 on any violation
@@ -153,6 +162,9 @@ const hasNoCycleGuard = config.some((block) => {
   const coversConsoleServer = files.some((f) =>
     norm(f).endsWith("packages/m3l-console-server/src/**/*.ts"),
   );
+  const coversMcp = files.some((f) =>
+    norm(f).endsWith("packages/m3l-mcp/src/**/*.ts"),
+  );
   // console-web (ADR-0067) ships both .ts (e.g. api/client.ts) and .tsx
   // (components) under src/ — the guard requires both globs so neither
   // extension can silently lose cycle protection.
@@ -173,13 +185,14 @@ const hasNoCycleGuard = config.some((block) => {
     coversCli &&
     coversConsoleServer &&
     coversConsoleWeb &&
+    coversMcp &&
     isError &&
     isInfiniteDepth
   );
 });
 if (!hasNoCycleGuard) {
   reporter.error(
-    "missing or malformed ADR-0035 guard: import-x/no-cycle over packages/m3l-common/src/**/*.ts, scripts/*/src/**/*.ts, packages/m3l-cli/src/**/*.ts, packages/m3l-console-server/src/**/*.ts, and packages/m3l-console-web/src/**/*.{ts,tsx} (maxDepth: Infinity)",
+    "missing or malformed ADR-0035 guard: import-x/no-cycle over packages/m3l-common/src/**/*.ts, scripts/*/src/**/*.ts, packages/m3l-cli/src/**/*.ts, packages/m3l-console-server/src/**/*.ts, packages/m3l-console-web/src/**/*.{ts,tsx}, and packages/m3l-mcp/src/**/*.ts (maxDepth: Infinity)",
     { file: "eslint.config.js" },
   );
   errors++;
@@ -347,6 +360,20 @@ requireZone(
   (zone) =>
     norm(zone.target).endsWith("packages/m3l-mcp/src") &&
     norm(zone.from).endsWith("packages/m3l-mcp/tests"),
+);
+
+// ADR-0004, in the direction the internal-sealing zone above cannot reach.
+// That zone's `target` is `./packages/m3l-common/src` and its block's `files`
+// are only the library's three barrels, so it stops the library re-exporting
+// its own internals and is blind to a consumer reaching in from outside. The
+// import boundary can't cover it either: its regex admits
+// `@monte3l/m3l-common($|/)` wholesale, so it matches neither
+// `@monte3l/m3l-common/internal/...` nor any relative path.
+requireZone(
+  "packages/m3l-mcp/src must not import @monte3l/m3l-common internals (ADR-0004, from outside the library)",
+  (zone) =>
+    norm(zone.target).endsWith("packages/m3l-mcp/src") &&
+    norm(zone.from).endsWith("packages/m3l-common/src/internal"),
 );
 
 // ADR-0065 modular-monolith layering. One zone per module, asserted with an
