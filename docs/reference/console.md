@@ -1393,14 +1393,17 @@ a cleanup run. Treat a non-zero count as a prompt to look at the directory,
 not as a verdict. ADR-0070 declares the audit class as
 _segment + retain_ while telemetry and session artifacts get age-based
 pruning, and that declaration became load-bearing once the append-only read
-path started rejecting a gap in a date's segment sequence: deleting one
-segment out of the middle of a date does not reclaim space so much as make
-every later read of that stream throw, permanently. The boot-time index
-rebuild never throws by design, so a console whose trail has been pruned that
-way starts and serves normally while having quietly lost the ability to
-rebuild its own record of truth. Archiving whole dates out of band is the
-supported way to reclaim space; the sequence check tolerates that, and only
-that. See the ADR-0070 Update of 2026-09-05, and **Archiving the audit trail**
+path started rejecting a gap in a date's segment sequence: deleting a segment
+nothing accounts for does not reclaim space so much as make every later read
+of that stream throw, permanently. The boot-time index rebuild never throws by
+design, so a console whose trail has been pruned that way starts and serves
+normally while having quietly lost the ability to rebuild its own record of
+truth. Archiving whole dates out of band is the
+supported way to reclaim space. Note the sequence check's tolerance is keyed
+on the manifest, not on position: since ADR-0102 it accepts any hole a seal
+accounts for, and refuses any hole nothing accounts for — see **Archiving the
+audit trail** below for why the whole-date rule survives that as a policy
+anyway. See the ADR-0070 Update of 2026-09-05, and **Archiving the audit trail**
 below for the procedure — since ADR-0102 the writer seals each rotated-away-from
 segment into a `manifest.jsonl` sidecar, so a whole-date archival is now
 provable rather than merely tolerated.
@@ -1448,20 +1451,46 @@ holds one JSON object per line:
 
 ### The two rules
 
-- **Whole dates only, and only sealed segments.** Deleting one segment out of
-  the middle of a date does not reclaim space so much as make every later read
-  of the trail throw, permanently — the append-only reader rejects a gap in a
-  date's sequence numbers, and that check is what ADR-0070's
-  segment-and-retain class rests on. A date's segments are
-  `YYYY-MM-DD-NNNN.jsonl`, where the counter is four digits or more (it is
-  zero-padded to four and grows past that rather than wrapping); take all of
+- **Only sealed segments — and by policy, whole dates.** These are two rules
+  with two different forces behind them, and conflating them is easy.
+  **Sealed-versus-unsealed is the mechanical one.** The append-only reader
+  rejects a gap in a date's sequence numbers, but since ADR-0102 it walks the
+  union of the segments on disk and the ones the manifest seals, so a hole the
+  manifest accounts for is not a gap at all — **wherever in the date it
+  falls.** A hole nothing accounts for still throws exactly as it always did,
+  and it is permanent: delete an _unsealed_ segment and every later read of
+  that trail raises `ERR_APPEND_ONLY_STREAM_READ` (`a segment sequence number
+is missing`), which no handler suppresses, because there is no claim to
+  weigh the absence against. So the mechanical rule is "never delete a segment
+  the manifest does not seal", not "never leave a hole mid-date".
+  **Whole-dates-only is the policy one.** ADR-0070 sanctions whole-date
+  archival and nothing narrower, and ADR-0102 kept that boundary deliberately
+  even though sealing makes the narrower operation technically safe: what the
+  manifest establishes is that the bytes you hold are the sealed bytes, not
+  that anyone was entitled to move them, and retention of the archive is not
+  something this directory can enforce. Take a date's segments — the
+  `YYYY-MM-DD-NNNN.jsonl` family, where the counter is four digits or more (it
+  is zero-padded to four and grows past that rather than wrapping) — all of
   them or none.
 - **Never delete `manifest.jsonl`.** Removing it silently downgrades a sealed
-  trail back to unproven on the next writer's cold start, and from inside the
-  directory that is indistinguishable from a trail that never sealed anything.
-  Nothing detects it at the time; the only after-the-fact signal is
-  `verify()`'s `unprovenBefore` reading `undefined` where it used to read a
-  segment name or `null`.
+  trail back to unproven, and from inside the directory that is
+  indistinguishable from a trail that never sealed anything. Nothing detects
+  it at the time, and **which after-the-fact signal is left depends on whether
+  a writer has appended since** — on a running console, one soon has:
+  - **Before any further append**, every segment reads `unsealed` and
+    `unprovenBefore` reads `undefined`.
+  - **After one**, the writer finds no manifest and writes a fresh baseline
+    naming the newest segment on disk. Every previously sealed segment flips
+    to `legacy`, segments written after that point seal normally, and
+    `unprovenBefore` reads that segment's name. So `totals.sealed` climbs back
+    above zero within a rotation or two and a check on the totals alone reads
+    clean again — which is why step 2 below says to weigh `unprovenBefore`
+    rather than the totals.
+  - **What survives as the alarm is `unprovenBefore` moving at all.** `null`
+    is not "no boundary"; it is the positive assertion that sealing has been
+    in force since this trail's very first segment. On a trail that once read
+    `null`, any segment name there means the record of what was sealed was
+    lost and re-established around it.
 
 The segment the console is currently appending to is **not** sealed — sealing
 happens on rotation, so the newest segment has nothing to seal yet. It is
@@ -1614,9 +1643,12 @@ Stated plainly rather than left to be discovered:
 - **The human-action audit trail is retained forever, by design.** No
   setting, command, or timer deletes an audit segment. ADR-0070 declares the
   audit class as _segment + retain_, and the append-only reader's
-  sequence-gap check turns intra-date pruning into permanent unreadability
-  rather than reclaimed space — so the absence of a sweep here is the
-  feature, not a missing one. The consequence is that the trail grows without
+  sequence-gap check turns the deletion of any segment the manifest does not
+  seal into permanent unreadability rather than reclaimed space — so the
+  absence of a sweep here is the feature, not a missing one. A sweep could
+  not be made safe by teaching it to seal first, either: a seal is a claim
+  about bytes, and deleting the bytes it claims is what an archival is, which
+  is an operator decision about custody rather than a retention window. The consequence is that the trail grows without
   bound for the console's whole lifetime, and the `auditTrail` section of
   `m3l-console-server cleanup` is the **only** signal an operator gets about
   that footprint. Reclaiming space means archiving whole dates out of band —

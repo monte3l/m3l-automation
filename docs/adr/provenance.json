@@ -1014,7 +1014,7 @@
       },
       {
         "path": "docs/logs/README.md",
-        "blob": "764448bc687b32e1027f185fbf8818fe19ecf6dc"
+        "blob": "74f979410d48bca022e5b7c743dff4baa80e1df6"
       },
       {
         "path": "docs/plans/IMPLEMENTATION.md",
@@ -1516,7 +1516,7 @@
       },
       {
         "path": "docs/plans/2026-08-20-m3l-console.md",
-        "blob": "1f0511776dae4f258e8be01b77c507558220418c"
+        "blob": "0de86e061e5f540d9ee26bdf5d390a6d59293cc7"
       },
       {
         "path": "docs/plans/IMPLEMENTATION.md",
@@ -1616,7 +1616,7 @@
     "sourceFiles": [
       {
         "path": "docs/plans/2026-08-20-m3l-console.md",
-        "blob": "1f0511776dae4f258e8be01b77c507558220418c"
+        "blob": "0de86e061e5f540d9ee26bdf5d390a6d59293cc7"
       },
       {
         "path": "docs/plans/IMPLEMENTATION.md",
@@ -1629,10 +1629,10 @@
     "sourceFiles": [
       {
         "path": "docs/reference/console.md",
-        "blob": "788f4fa84f572f3d2f7879505223f3269a64bf9b"
+        "blob": "771267af5f12b0a1679ff02a89f179acc0103075"
       }
     ],
-    "verifiedAt": "2026-09-13"
+    "verifiedAt": "2026-09-14"
   },
   "0067": {
     "sourceFiles": [
@@ -1655,7 +1655,7 @@
     "sourceFiles": [
       {
         "path": "docs/plans/2026-08-20-m3l-console.md",
-        "blob": "1f0511776dae4f258e8be01b77c507558220418c"
+        "blob": "0de86e061e5f540d9ee26bdf5d390a6d59293cc7"
       },
       {
         "path": "docs/plans/IMPLEMENTATION.md",
@@ -1663,7 +1663,7 @@
       },
       {
         "path": "docs/reference/console.md",
-        "blob": "788f4fa84f572f3d2f7879505223f3269a64bf9b"
+        "blob": "771267af5f12b0a1679ff02a89f179acc0103075"
       },
       {
         "path": "packages/m3l-cli/src/flow/types.ts",
@@ -1696,7 +1696,7 @@
       },
       {
         "path": "docs/reference/console.md",
-        "blob": "788f4fa84f572f3d2f7879505223f3269a64bf9b"
+        "blob": "771267af5f12b0a1679ff02a89f179acc0103075"
       },
       {
         "path": "docs/ROADMAP.md",
@@ -2577,7 +2577,7 @@
       },
       {
         "path": "docs/logs/README.md",
-        "blob": "764448bc687b32e1027f185fbf8818fe19ecf6dc"
+        "blob": "74f979410d48bca022e5b7c743dff4baa80e1df6"
       }
     ],
     "verifiedAt": "2026-09-14"
@@ -2672,11 +2672,11 @@
       },
       {
         "path": "docs/plans/2026-08-20-m3l-console.md",
-        "blob": "1f0511776dae4f258e8be01b77c507558220418c"
+        "blob": "0de86e061e5f540d9ee26bdf5d390a6d59293cc7"
       },
       {
         "path": "docs/reference/core/storage.md",
-        "blob": "55bb452260a737b7e773b930df3d0f9bdfb8e53d"
+        "blob": "32155a75ea2312ba5bd16145ec8b45e2d4c8e31c"
       },
       {
         "path": "packages/m3l-console-server/src/boot/audit-rebuild.ts",
