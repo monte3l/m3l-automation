@@ -41,10 +41,12 @@ import { fileURLToPath } from "node:url";
  * Does `command` contain a shell-level detach construct: `nohup`, `disown`,
  * or a trailing background `&`?
  *
- * The `&` check excludes `&&` (logical AND) and `2>&1`-style fd-duplication
- * redirects (a `&` immediately preceded by `>`) — both are extremely common
- * in ordinary non-backgrounding commands and would otherwise make this
- * check fire on nearly everything.
+ * The `&` check excludes `&&` (logical AND) and both fd-duplication redirect
+ * spellings — `2>&1` (a `&` immediately preceded by `>`) and `&>`/`&>>` (a
+ * `&` immediately FOLLOWED by `>`, bash's combined-redirect shorthand for
+ * `> file 2>&1`) — all extremely common in ordinary non-backgrounding
+ * commands and would otherwise make this check fire on nearly everything,
+ * including a plain `run_in_background: true` call using `&>`.
  *
  * @param {string} command
  * @returns {boolean}
@@ -53,8 +55,8 @@ export function hasShellDetach(command) {
   if (/\bnohup\b/.test(command)) return true;
   if (/\bdisown\b/.test(command)) return true;
   // A bare backgrounding `&`: not part of `&&`, and not part of a `>&`/`2>&1`
-  // fd-duplication redirect.
-  return /(?<![&>])&(?!&)/.test(command);
+  // or `&>`/`&>>` fd-duplication redirect on either side.
+  return /(?<![&>])&(?![&>])/.test(command);
 }
 
 /**

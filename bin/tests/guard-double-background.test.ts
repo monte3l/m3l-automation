@@ -29,6 +29,10 @@ describe("hasShellDetach: trailing background &", () => {
   ])("detects a bare backgrounding & in %s", (command) => {
     expect(hasShellDetach(command)).toBe(true);
   });
+
+  test("detects a real trailing & even after a &> redirect earlier in the command", () => {
+    expect(hasShellDetach("cmd &>/dev/null &")).toBe(true);
+  });
 });
 
 describe("hasShellDetach: false positives it must NOT flag", () => {
@@ -39,6 +43,9 @@ describe("hasShellDetach: false positives it must NOT flag", () => {
     "pnpm verify > log.txt 2>&1",
     "echo hello",
     "",
+    "pnpm build &> build.log",
+    "cmd &>/dev/null",
+    "cmd &>> log.txt",
   ])("does not flag %s", (command) => {
     expect(hasShellDetach(command)).toBe(false);
   });

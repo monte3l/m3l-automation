@@ -1525,6 +1525,15 @@
     ],
     "verifiedAt": "2026-09-14"
   },
+  "0057": {
+    "sourceFiles": [
+      {
+        "path": "bin/check-publish-version.mjs",
+        "blob": "75aaf8b292562c289f7bfa8d928686d34a8b1d92"
+      }
+    ],
+    "verifiedAt": "2026-09-14"
+  },
   "0058": {
     "sourceFiles": [
       {
@@ -1586,9 +1595,13 @@
       {
         "path": "docs/research/agent-cli-integration.md",
         "blob": "b11e9abc25e2106e8ceaf2099c9d65d55b1c2cd4"
+      },
+      {
+        "path": "packages/m3l-cli/package.json",
+        "blob": "340a64bd0dd01c512428706b4c77cfce54d719b3"
       }
     ],
-    "verifiedAt": "2026-09-07"
+    "verifiedAt": "2026-09-14"
   },
   "0063": {
     "sourceFiles": [
