@@ -342,6 +342,36 @@ function integrityContext(error: M3LAppendOnlyStreamIntegrityError): {
   return { sealed: context["sealed"], observed: context["observed"] };
 }
 
+/**
+ * The OWN-enumerable keys of one `context` payload, sorted — the shape
+ * statement neither `toMatchObject` nor a property-presence check can make.
+ *
+ * The direction that matters is that nothing EXTRA appears, and only an exact
+ * key set fails when a field is ADDED. `Object.keys` is the right tool twice
+ * over: it sees a present-but-`undefined` key that a values-only `toEqual`
+ * treats as absent, and it never falls back to `in` the way
+ * `not.toHaveProperty` does — that fallback walks the prototype chain, so a
+ * `not.toHaveProperty("sha256")` guard here could pass vacuously.
+ */
+function ownKeysOf(payload: unknown, label: string): readonly string[] {
+  if (typeof payload !== "object" || payload === null) {
+    throw new Error(`expected ${label} to be an object`);
+  }
+  return Object.keys(payload).sort();
+}
+
+/** One own numeric field of a `context` payload, or a test failure. */
+function ownNumberOf(payload: unknown, key: string, label: string): number {
+  if (typeof payload !== "object" || payload === null) {
+    throw new Error(`expected ${label} to be an object`);
+  }
+  const value = (payload as Record<string, unknown>)[key];
+  if (typeof value !== "number") {
+    throw new Error(`expected ${label} to carry a numeric own ${key}`);
+  }
+  return value;
+}
+
 // ---------------------------------------------------------------------------
 // P1 — verification is not optional: there is no opt-out to find
 // ---------------------------------------------------------------------------
@@ -515,16 +545,25 @@ describe("P2 — a grown segment is refused before its appended entries reach th
     // THE POINT OF THIS TEST. Exceeding the seal's byte length is already
     // proof, so the refusal must land before the appended entries are handed
     // over — not at the segment's end like every P1 case. A late refusal
-    // would have yielded all four entries; the bound below is stated as
-    // "no more than the sealed entry count" rather than an exact figure
-    // because whether the honest prefix is yielded depends on the chunk the
-    // overrun is detected in, and either way it satisfies the contract.
+    // would have yielded all four entries, so these two marker assertions
+    // carry the contract.
     expect(outcome.entries).not.toContainEqual(
       expect.objectContaining({ x: 1 }),
     );
     expect(outcome.entries).not.toContainEqual(
       expect.objectContaining({ x: 2 }),
     );
+
+    // Not filler, and deliberately not an exact count: this is the only
+    // statement bounding how much of the tampered segment leaked before the
+    // refusal, and the markers above cannot make it — they speak only about
+    // the two APPENDED entries, so an implementation that refused this
+    // segment yet carried on into the trail's later segments would satisfy
+    // both of them and fail only this line. It stays `<=` because
+    // whether the honest prefix is yielded at all depends on which read
+    // chunk the overrun is caught in (P6 drives the same trail at a lower
+    // chunk ceiling), and BOTH outcomes satisfy the contract — so an exact
+    // figure here would pin this suite's chunking rather than the contract.
     expect(outcome.entries.length).toBeLessThanOrEqual(CLEAN_SEGMENT_ENTRIES);
   });
 });
@@ -954,5 +993,123 @@ describe("P8 — a zero-byte file at a claimed, non-last segment name is an inte
     );
     expect(integrityContext(error).observed).toEqual(observed);
     expect(outcome.entries).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// P9 — each refusal's `context` payload carries EXACTLY what it promises
+// ---------------------------------------------------------------------------
+
+/**
+ * `read()` has TWO refusal points and they carry deliberately DIFFERENT
+ * payloads — at a segment's end the full `observed` triple, mid-read the
+ * `byteLength` alone. Every case above asserts the payload's VALUES; these
+ * two assert its KEY SET, which is the only direction in which a leaked field
+ * can fail a test. The distinction matters because the fields absent from the
+ * mid-read payload are absent on purpose: `M3LAppendOnlyStreamIntegrityError`
+ * argues in its own TSDoc that stating a `sha256` the digest never finished,
+ * under the segment's name, inside an audit error, is worse than stating
+ * less.
+ */
+describe("P9 — a refusal states no number the library did not compute", () => {
+  test("the mid-read overrun reports byteLength ALONE, as a lower bound", async () => {
+    const dir = path.join(workDir, "audit");
+    const names = await buildSealedTrail(dir);
+    const grown = definedOrThrow(names[0], "the first sealed segment");
+    const seal = await sealedClaim(dir, grown);
+
+    // The same tamper P2 uses — the segment's own sealed bytes plus two
+    // marker entries the writer never wrote. Load-bearing here because it is
+    // what makes the refusal the MID-READ one: the cumulative count passes
+    // the claim before the segment's last byte, so the digest is abandoned
+    // and `finish()` is never reached.
+    await tamperSegment(dir, grown, '{"seq":0}\n{"seq":1}\n{"x":1}\n{"x":2}\n');
+    const onDisk = await measureOnDisk(dir, grown);
+    expect(onDisk.byteLength).toBeGreaterThan(seal.byteLength);
+
+    const outcome = await readTrail(dir);
+    const error = asIntegrityError(outcome.thrown);
+    // Confirms the refusal really was the mid-read one and not the
+    // end-of-segment comparison, without pinning message text.
+    expect(outcome.entries).not.toContainEqual(
+      expect.objectContaining({ x: 1 }),
+    );
+
+    const observed = integrityContext(error).observed;
+
+    // THE POINT OF THIS TEST, and an EXACT key set on purpose. This payload
+    // is deliberately NARROWER than the end-of-segment one every P1/P3/P6/P7
+    // case pins: the digest was abandoned mid-segment, so no `sha256` over
+    // this segment was ever finished and the entries counted so far are a
+    // prefix's, not the segment's. A future reader must therefore NOT
+    // "complete" this payload — an added `sha256` or `entryCount` would put a
+    // figure the library never computed inside an audit error under the
+    // segment's name, which is the exact leak the error class's TSDoc argues
+    // against, and this line is what fails when one appears.
+    expect(ownKeysOf(observed, "the overrun `observed` payload")).toEqual([
+      "byteLength",
+    ]);
+    // The pair itself, for the same reason: the claim and the partial
+    // measurement, and no third field.
+    expect(
+      ownKeysOf(
+        definedOrThrow(error.context, "the integrity error context"),
+        "the overrun `context`",
+      ),
+    ).toEqual(["observed", "sealed"]);
+
+    // A LOWER BOUND, stated as a relationship rather than a magic number so
+    // a chunking change cannot invalidate it: the figure must EXCEED the
+    // seal's claim, since crossing the claim is the whole reason the refusal
+    // fired; and it need not REACH the file's real size, since the read
+    // stopped on the crossing chunk. A `>=` against the claim would also
+    // pass for a figure that had not yet crossed it.
+    const reported = ownNumberOf(
+      observed,
+      "byteLength",
+      "the overrun `observed` payload",
+    );
+    expect(Number.isInteger(reported)).toBe(true);
+    expect(reported).toBeGreaterThan(seal.byteLength);
+    expect(reported).toBeLessThanOrEqual(onDisk.byteLength);
+  });
+
+  test("the end-of-segment mismatch reports exactly the three sealed numbers", async () => {
+    const dir = path.join(workDir, "audit");
+    const names = await buildSealedTrail(dir);
+    const tampered = definedOrThrow(names[0], "the first sealed segment");
+    const seal = await sealedClaim(dir, tampered);
+
+    // A same-length, same-entry-count rewrite, so only the `sha256` moves
+    // and the mid-read overrun check cannot be what fires: this refusal is
+    // reached at the segment's END, where the full triple exists.
+    await tamperSegment(dir, tampered, '{"seq":4}\n{"seq":5}\n');
+    const onDisk = await measureOnDisk(dir, tampered);
+    expect(onDisk.byteLength).toBe(seal.byteLength);
+    expect(onDisk.entryCount).toBe(seal.entryCount);
+    expect(onDisk.sha256).not.toBe(seal.sha256);
+
+    const outcome = await readTrail(dir);
+    const error = asIntegrityError(outcome.thrown);
+
+    // The companion to the case above, and not a duplicate of P1's
+    // `toEqual(observed)`: that compares VALUES, so it fails on an added
+    // field only when the field carries a defined value — `toEqual` treats a
+    // present-but-`undefined` key as absent. This states the key set itself,
+    // which an added field fails either way. Exactly the three numbers a
+    // seal records, because at this refusal point all three really have been
+    // measured.
+    expect(
+      ownKeysOf(
+        integrityContext(error).observed,
+        "the end-of-segment `observed` payload",
+      ),
+    ).toEqual(["byteLength", "entryCount", "sha256"]);
+    expect(
+      ownKeysOf(
+        definedOrThrow(error.context, "the integrity error context"),
+        "the end-of-segment `context`",
+      ),
+    ).toEqual(["observed", "sealed"]);
   });
 });
