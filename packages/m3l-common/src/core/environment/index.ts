@@ -24,7 +24,7 @@ import { M3LError } from "../errors/index.js";
 // re-exports M3LPaths, which imports M3LExecutionEnvironment from this file,
 // closing an `environment -> utils -> environment` cycle (A8). Same technique
 // core/diagnostics uses for `../logging/redact.js`.
-import { isNodeError, isNonEmptyString } from "../utils/guards.js";
+import { errnoCodeOf, isNonEmptyString } from "../utils/guards.js";
 
 // ---------------------------------------------------------------------------
 // Const-object enums (no runtime enum overhead; full literal inference)
@@ -491,10 +491,8 @@ function packageJsonHasWorkspaces(pkgJsonPath: string): boolean {
       Object.hasOwn(parsed, "workspaces")
     );
   } catch (cause) {
-    if (
-      isNodeError(cause) &&
-      (cause.code === "EACCES" || cause.code === "EPERM")
-    ) {
+    const code = errnoCodeOf(cause);
+    if (code === "EACCES" || code === "EPERM") {
       throw new M3LEnvironmentDetectionError(
         `Cannot read package.json during environment detection: ${pkgJsonPath}`,
         { code: "ERR_ENVIRONMENT_DETECTION", cause },
@@ -565,7 +563,7 @@ function assertDirReadable(dir: string): void {
   try {
     fs.accessSync(dir, fs.constants.R_OK);
   } catch (cause) {
-    const code = isNodeError(cause) ? cause.code : undefined;
+    const code = errnoCodeOf(cause);
     if (!IGNORABLE_DIR_ERRORS.has(String(code))) {
       throw new M3LEnvironmentDetectionError(
         `Cannot read directory during environment detection: ${dir}`,
