@@ -116,3 +116,49 @@ Deferred. This ADR deliberately does not open that gate.
   [ADR-0002](./0002-esm-only-output.md) (the stance Phase C would need an
   exception to), [ADR-0004](./0004-exports-map-contract.md) (the contract
   the publish gates guard).
+
+## Update (2026-09-14) — `m3l-mcp` does not join the publish set
+
+[ADR-0062](./0062-runtime-mcp-surface.md) deferred one question to this ADR:
+whether `packages/m3l-mcp` joins the publish set, "to whichever of V10/U13
+lands second, via an ADR-0057 Update then". U13 landed first — its tracker
+row is Done, and
+[ADR-0103](./0103-publish-scope-rename-and-staged-first-release.md) recorded
+what actually shipped. V10 is therefore the second of the pair, and this is
+that Update.
+
+**Decision: `m3l-mcp` stays private and unpublished.** It is
+`@m3l-automation/m3l-mcp` with `private: true`, the same posture `m3l-cli`
+and `m3l-console-server` hold.
+
+Three reasons, in the order that decides it:
+
+1. **The publish set this ADR described no longer exists.** Phase B above
+   says "the fleet moves together" across ~16 packages. ADR-0103 partially
+   superseded that: the first release publishes `@monte3l/m3l-common`
+   **alone**, with `m3l-cli` and the script fleet deferred to a follow-up.
+   Adding a brand-new package to a set that was just deliberately narrowed to
+   one would reopen the decision ADR-0103 made, not follow it.
+2. **The scope rule forces a rename that buys nothing yet.** GitHub Packages
+   requires the npm scope to equal the owning account, so publishing would
+   mean `@monte3l/m3l-mcp`. Every other private package kept
+   `@m3l-automation` precisely because it is not published; renaming this one
+   on the day its first line is written would assert a distribution intent
+   that does not exist.
+3. **Nothing consumes it from outside the monorepo.** The server's transport
+   is stdio (ADR-0062) and its operator is local. An external MCP client
+   reaches it by path, not by `npm install`. The case for publishing is
+   really the case for remote transport, which is V12's gated ADR, not this
+   one.
+
+**What does not change.** `bin/check-publish-version.mjs` keeps
+`packages/m3l-common` as its single subject — V10 adds no second published
+artifact for it to gate. The Phase B lockstep-versioning rule, the
+ephemeral-`GITHUB_TOKEN` credential posture (ADR-0103), and the Phase C SEA
+gate are all untouched.
+
+**Revisit trigger.** `m3l-mcp` joins the publish set if and when ADR-0103's
+deferred fleet publish opens, on the same lockstep-version terms as the rest
+of the fleet — or earlier, if V12's remote-transport ADR creates a consumer
+that cannot reach the server by path. Either event is an ADR-0057 Update,
+not a judgement call at release time.
