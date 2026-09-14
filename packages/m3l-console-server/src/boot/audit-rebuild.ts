@@ -281,16 +281,120 @@ export async function rebuildHumanActionIndex(
 }
 
 /**
+ * The maximum number of links {@link hasManifestErrorInChain} inspects — the
+ * caught value itself plus up to nine causes — mirroring
+ * `MAX_CAUSE_CHAIN_WALK` in `errors/errno.ts`.
+ *
+ * **A depth cap rather than a visited-set, deliberately.** This runs on the
+ * boot path of a process that must come up, so what needs bounding is the
+ * WORK, not merely the termination: a cap bounds both, in O(1) memory, and
+ * survives a pathologically long ACYCLIC chain as well as a cyclic one
+ * (`e.cause = e` is constructible, and so is a ten-thousand-link chain),
+ * where a visited-set only survives the cycle and pays memory proportional
+ * to a chain an untrusted value handed us. Ten is far above anything this
+ * package builds — the deepest chain in the tree is a console wrapper over a
+ * Core storage error over a parse failure, three links — so reaching it
+ * means the chain is not one of ours.
+ *
+ * **Mirrored rather than imported, and not hoisted into a shared module.**
+ * `errno.ts` keeps its copy module-private (as does
+ * `packages/m3l-common/src/aws/rds-data/client.ts`, which `errno.ts` mirrors
+ * in turn), so importing it would widen a module's surface to share a number.
+ * Nothing enforces that the copies agree and nothing needs to: each bounds
+ * its OWN walk over a different chain for a different answer, and one shared
+ * constant would couple three independent bounds so that retuning any one of
+ * them silently retunes the others. The
+ * cross-reference is the safeguard — a change here is a prompt to go read
+ * that site, not a divergence.
+ */
+const MAX_CAUSE_CHAIN_WALK = 10;
+
+/**
+ * Whether a `Core.M3LAppendOnlyStreamManifestError` appears anywhere in
+ * `cause`'s chain — at any depth, including depth 0 (the caught value
+ * itself). Never throws.
+ *
+ * **Why the whole chain and not just the top.** Nothing between
+ * {@link readTrailIndexRows} and the boot `catch` re-raises the manifest
+ * error, so today the top-level class is already the right answer; this is
+ * robustness against the wrapper a future read path may add, and it is worth
+ * structure because of what the FALLBACK asserts —
+ * {@link MANIFEST_UNREADABLE_MESSAGE} documents at length why both of
+ * {@link REBUILD_FAILED_MESSAGE}'s clauses are false for a manifest failure.
+ * A missed classification therefore does not log a vaguer message; it logs a
+ * false reassurance about audit integrity.
+ *
+ * **Nothing it reads can escape as a throw.** `instanceof`, `Object.hasOwn`
+ * and the `.cause` read all sit inside one `try` per link, so a hostile link
+ * — an own `cause` accessor that throws, or a Proxy whose `getPrototypeOf`
+ * or `getOwnPropertyDescriptor` trap throws — ends the walk instead of
+ * propagating. That is reachable and matters more than it looks: the call
+ * site is inside `rebuildHumanActionIndexOnBoot`'s `catch`, which is NOT
+ * itself guarded, so a throw from here would escape the never-throws
+ * contract and fail boot over a value that is only being described.
+ *
+ * **Both bounds answer `false`, which is the less wrong direction rather
+ * than a harmless one.** Hitting {@link MAX_CAUSE_CHAIN_WALK}, or stopping
+ * at a link that cannot be safely inspected, selects
+ * {@link REBUILD_FAILED_MESSAGE}, so the fallback is never actively safe. It
+ * is still the right direction: answering "manifest" for a chain that was
+ * never inspected would assert a specific cause on no evidence, and the
+ * `errorFrom` comment in {@link rebuildHumanActionIndexOnBoot} is why the
+ * bytes an operator needs survive a message this function got vague.
+ *
+ * @param cause - Any caught value.
+ * @returns `true` when some link up to the bound is a manifest error.
+ */
+function hasManifestErrorInChain(cause: unknown): boolean {
+  let link: unknown = cause;
+  for (let depth = 0; depth < MAX_CAUSE_CHAIN_WALK; depth += 1) {
+    try {
+      if (link instanceof Core.M3LAppendOnlyStreamManifestError) return true;
+      // An OWN `cause` only — safe because of WHERE own-ness comes from:
+      // `Core.M3LError`'s constructor assigns `this.cause` itself rather than
+      // forwarding an options bag to `Error`, so every subclass gets an own
+      // data property even when the subclass declares `cause` with `declare`
+      // and emits no field of its own. Verified by execution against built
+      // `dist/` for `M3LError`, `M3LOperationAbortedError`,
+      // `M3LAppendOnlyStream{,Manifest,Read}Error`, `M3LConsoleError`, and a
+      // plain `Error` from both the options bag and post-construction
+      // assignment (`errors/chain-secondary-failure.ts`).
+      // The constraint that buys, for whoever adds the next error class: a
+      // class exposing `cause` as a PROTOTYPE accessor would stop this walk
+      // silently and hand an operator the generic message — the exact false
+      // negative the walk exists to prevent.
+      if (!(link instanceof Error) || !Object.hasOwn(link, "cause"))
+        return false;
+      // At the bound, stop BEFORE reading a `cause` no iteration can inspect:
+      // strictly one fewer read of an attacker-influenced accessor, and the
+      // deepest inspected link is unchanged — `errno.ts`'s `canAdvance` gate.
+      if (depth === MAX_CAUSE_CHAIN_WALK - 1) break;
+      link = link.cause;
+    } catch {
+      // A hostile link: its `instanceof` check, `Object.hasOwn` or `.cause`
+      // read threw, so nothing further can be read from it safely. Stop the
+      // walk exactly as a non-`Error` link does, rather than let a raw throw
+      // out of a helper that only picks a message.
+      return false;
+    }
+  }
+  return false;
+}
+
+/**
  * Picks the message the boot path reports a caught failure under.
  *
- * Only the cause's CLASS decides, never its message text: `instanceof` is the
- * distinction Core's storage errors are designed to be told apart by (an
- * unwritable trail, a corrupt trail, and a trail that can no longer be
- * proven each get their own class and `code`), and matching on message
- * strings would re-couple this module to wording it does not own.
+ * Only the cause's CLASS decides, never its message text, and that holds at
+ * EVERY link of the chain: `instanceof` is the distinction Core's storage
+ * errors are designed to be told apart by (an unwritable trail, a corrupt
+ * trail, and a trail that can no longer be proven each get their own class
+ * and `code`), and matching on message strings would re-couple this module
+ * to wording it does not own. A manifest failure anywhere in the chain
+ * selects the manifest message — see {@link hasManifestErrorInChain} for why
+ * depth may not decide it, and for the bounds on the walk.
  */
 function describeRebuildFailure(cause: unknown): string {
-  return cause instanceof Core.M3LAppendOnlyStreamManifestError
+  return hasManifestErrorInChain(cause)
     ? MANIFEST_UNREADABLE_MESSAGE
     : REBUILD_FAILED_MESSAGE;
 }

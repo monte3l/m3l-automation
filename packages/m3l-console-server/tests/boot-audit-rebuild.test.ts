@@ -36,6 +36,7 @@ import {
   rebuildHumanActionIndexOnBoot,
 } from "../src/boot/audit-rebuild.js";
 import type { M3LConsoleRunsConfig } from "../src/config/runs.js";
+import { M3LConsoleError } from "../src/errors/console-error.js";
 import { startConsole } from "../src/main.js";
 import { openConsoleStore } from "../src/store/store.js";
 import type {
@@ -855,4 +856,528 @@ describe("rebuildHumanActionIndexOnBoot — an unreadable manifest stays fatal",
       ),
     ).toStrictEqual([true]);
   });
+});
+
+// =============================================================================
+// PR #1254 review nit (slice X8b4c) — the manifest classification must survive
+// being WRAPPED.
+//
+// `describeRebuildFailure` inspects only the top-level caught object. That is
+// correct today: `Core.M3LAppendOnlyStream.read()` throws
+// `M3LAppendOnlyStreamManifestError` directly and nothing between it and the
+// boot catch re-raises it, so the top-level test always sees it. What makes
+// the nit worth pinning is what the FALLBACK says. `REBUILD_FAILED_MESSAGE`
+// promises the operator that "the JSONL trail is unaffected" and that the
+// condition clears "until the next boot", and both are false of a manifest
+// failure — replacing those two sentences is the entire reason
+// `MANIFEST_UNREADABLE_MESSAGE` was added in this slice. So a future wrapper
+// anywhere on the read path would not merely downgrade the wording: it would
+// silently reinstate the two claims this slice existed to delete, on the one
+// log line an operator gets, and no gate would catch it.
+//
+// The contract pinned below: an `M3LAppendOnlyStreamManifestError` ANYWHERE in
+// the caught value's `cause` chain selects the manifest message, a directly
+// thrown one still does, and a chain holding none still selects the generic
+// message.
+// =============================================================================
+
+/**
+ * A phrase only the manifest-unreadable message carries — the repair the
+ * operator actually has to perform. Matched as a phrase rather than by
+ * copying the whole sentence so that rewording the message does not fail a
+ * test about CLASSIFICATION, and read off `event.message` rather than the
+ * serialized event so the assertion cannot be satisfied by the cause chain
+ * `errorFrom` also writes into `data`.
+ */
+const MANIFEST_MESSAGE_PHRASE = "until the sidecar is repaired or restored";
+
+/**
+ * A phrase only the generic rebuild-failed message carries. It is also the
+ * first of {@link STALE_DEGRADATION_PHRASES}, deliberately: what makes the
+ * generic message wrong for a manifest failure is the same clause that
+ * identifies it.
+ */
+const GENERIC_MESSAGE_PHRASE = "the JSONL trail is unaffected";
+
+/**
+ * How deep below the wrapper the manifest error sits. Both rows matter: an
+ * implementation that inspected `cause.cause` alone would pass the deeper row
+ * and fail the shallow one, and one that inspected `cause` alone the reverse.
+ */
+const WRAPPED_CHAIN_DEPTHS = [
+  { label: "as the direct cause", depth: 1 },
+  { label: "two links down the chain", depth: 2 },
+] as const;
+
+/**
+ * Returns a REAL `M3LAppendOnlyStreamManifestError`, thrown by Core's own
+ * reader against a genuinely damaged sidecar in this test's own trail.
+ *
+ * Hand-constructing one would prove less. The classification under test is an
+ * `instanceof` check, so what it runs against must be the object the library
+ * actually throws on this path — same class, same `code`, same `context`, and
+ * the same nested `cause` from the failed parse, which is what a chain-walking
+ * implementation has to step over without mistaking it for the manifest error
+ * itself. Read here through a bare stream rather than through the boot path,
+ * because the boot path is the thing under test: this call produces a FIXTURE.
+ *
+ * The damage is the same as the "stays fatal" block above: every segment
+ * present and intact, one newline-terminated non-record appended to the
+ * sidecar, so it can never be excused as the torn manifest tail the reader
+ * tolerates.
+ */
+async function captureManifestError(): Promise<Core.M3LAppendOnlyStreamManifestError> {
+  await seedRolledOverTrail();
+  await appendFile(
+    path.join(auditDir, Core.M3L_APPEND_ONLY_MANIFEST_NAME),
+    "{ not valid json\n",
+    "utf8",
+  );
+  const seen: unknown[] = [];
+  let captured: unknown;
+  try {
+    for await (const entry of new Core.M3LAppendOnlyStream({
+      directory: auditDir,
+    }).read()) {
+      seen.push(entry);
+    }
+  } catch (cause) {
+    captured = cause;
+  }
+  // The fixture asserts its own premise: a reader that stopped escalating an
+  // unreadable sidecar would hand every test below a `captured` of
+  // `undefined`, and a chain containing nothing would then classify as generic
+  // for the right reason and fail for the wrong one.
+  expect(captured).toBeInstanceOf(Core.M3LAppendOnlyStreamManifestError);
+  return captured as Core.M3LAppendOnlyStreamManifestError;
+}
+
+/**
+ * Chains `inner` `depth` links below an `M3LConsoleError`.
+ *
+ * **Why this is a shape the boot catch can genuinely receive.** Neither the
+ * wrapper nor the chaining is invented for the test. `audit/stream.ts` already
+ * builds `new M3LConsoleError("ERR_CONSOLE_AUDIT_RECORD_INVALID" |
+ * "ERR_CONSOLE_AUDIT_WRITE_FAILED", …, { cause })` around a Core append-only
+ * failure — putting a console code over a chained Core storage error is this
+ * package's established way of surfacing one — and
+ * `ERR_CONSOLE_AUDIT_RECORD_INVALID` specifically reaches THIS catch block
+ * today, thrown by `projectHumanActionRecord` inside `readTrailIndexRows`. The
+ * one thing that does not exist today is a wrapper on the read path that
+ * chains the MANIFEST error, which is precisely the future change the nit is
+ * about. So the wrapper is real, the wrapped error is real, and only their
+ * composition is synthesized.
+ *
+ * The intermediate links are plain `Error`s with `cause`, the shape anything
+ * from a `node:fs` helper to a third-party await boundary produces — the
+ * chain-walk must not depend on every link being an `M3LError`.
+ */
+function chainUnder(inner: unknown, depth: number): M3LConsoleError {
+  let chained = inner;
+  for (let link = 1; link < depth; link += 1) {
+    chained = new Error(`intermediate wrapper ${String(link)}`, {
+      cause: chained,
+    });
+  }
+  return new M3LConsoleError(
+    "ERR_CONSOLE_AUDIT_RECORD_INVALID",
+    "a trail line could not be projected",
+    { cause: chained },
+  );
+}
+
+/** One `error` event, reduced to what it says about the message that was chosen. */
+interface ClassifiedFailureEvent {
+  readonly selectsManifestMessage: boolean;
+  readonly selectsGenericMessage: boolean;
+  readonly stalePhrases: readonly string[];
+}
+
+/**
+ * Runs the boot rebuild with `failure` raised by the injected store, and
+ * returns what each `error` event says about the message that was chosen.
+ *
+ * The failure is delivered through `options.store` — the first collaborator
+ * the try block touches — so the caught value is exactly `failure` and nothing
+ * else runs or logs: the classification is a property of the CATCH, not of the
+ * read. A spy on the REAL store keeps the seam the one the boot path is
+ * actually given, and it dies with this test's own store instance, so there is
+ * no mock state to restore.
+ *
+ * Each row pairs what the message correctly SAYS with the stale clauses it
+ * carries. A bare negative check would pass when nothing is logged at all;
+ * shaping the expectation as a one-row list makes silence a missing row, and
+ * the positive members make a message that merely reworded into something
+ * else equally wrong fail too.
+ */
+async function classifyBootFailure(
+  failure: unknown,
+): Promise<readonly ClassifiedFailureEvent[]> {
+  const store = openStore();
+  vi.spyOn(store.audit, "count").mockImplementation(() => {
+    throw failure;
+  });
+  const handler = new RecordingHandler();
+
+  const inserted = await rebuildHumanActionIndexOnBoot({
+    directory: auditDir,
+    store,
+    logger: new Core.M3LLogger([handler]),
+  });
+
+  // Still never throws, and still reports zero rows — the classification may
+  // not be bought by turning the degradation into a refusal.
+  expect(inserted).toBe(0);
+  return errorEvents(handler).map((event) => ({
+    selectsManifestMessage: event.message.includes(MANIFEST_MESSAGE_PHRASE),
+    selectsGenericMessage: event.message.includes(GENERIC_MESSAGE_PHRASE),
+    stalePhrases: STALE_DEGRADATION_PHRASES.filter((phrase) =>
+      event.message.includes(phrase),
+    ),
+  }));
+}
+
+describe("rebuildHumanActionIndexOnBoot — a manifest failure is classified through the whole cause chain", () => {
+  test.each(WRAPPED_CHAIN_DEPTHS)(
+    "a wrapped manifest error ($label) still selects the manifest message",
+    async ({ depth }) => {
+      const manifestError = await captureManifestError();
+
+      expect(
+        await classifyBootFailure(chainUnder(manifestError, depth)),
+      ).toEqual([
+        {
+          selectsManifestMessage: true,
+          selectsGenericMessage: false,
+          stalePhrases: [],
+        },
+      ]);
+    },
+  );
+
+  // The regression guard on the case that already works: a fix that walks the
+  // chain must not lose the top-level one. Driven through the REAL boot path
+  // rather than the injected seam, because this shape needs no synthesis —
+  // `read()` throws the manifest error itself. Passes today; it is here so it
+  // cannot stop passing.
+  test("a directly thrown manifest error still selects the manifest message", async () => {
+    await seedRolledOverTrail();
+    await appendFile(
+      path.join(auditDir, Core.M3L_APPEND_ONLY_MANIFEST_NAME),
+      "{ not valid json\n",
+      "utf8",
+    );
+    const handler = new RecordingHandler();
+    const store = openStore();
+
+    const inserted = await rebuildHumanActionIndexOnBoot({
+      directory: auditDir,
+      store,
+      logger: new Core.M3LLogger([handler]),
+    });
+
+    expect(inserted).toBe(0);
+    expect(
+      errorEvents(handler).map((event) => ({
+        selectsManifestMessage: event.message.includes(MANIFEST_MESSAGE_PHRASE),
+        stalePhrases: STALE_DEGRADATION_PHRASES.filter((phrase) =>
+          event.message.includes(phrase),
+        ),
+      })),
+    ).toEqual([{ selectsManifestMessage: true, stalePhrases: [] }]);
+  });
+
+  // The discriminating case. An implementation that answered "manifest"
+  // whenever the caught value had a `cause` at all would satisfy both tests
+  // above and fail this one: same wrapper, same depth, same injection — only
+  // the innermost class differs. Passes today, so it is a lock, not a RED
+  // case; re-confirm after the fix that it still discriminates.
+  test("a chained failure with NO manifest error in it still selects the generic message", async () => {
+    const chained = chainUnder(
+      new Core.M3LAppendOnlyStreamReadError("a trail line was malformed", {
+        // A nested cause of its own, so "has a deep chain" cannot be what the
+        // fix keys on.
+        cause: new Error("unexpected token"),
+      }),
+      WRAPPED_CHAIN_DEPTHS.length,
+    );
+
+    expect(await classifyBootFailure(chained)).toEqual([
+      {
+        selectsManifestMessage: false,
+        selectsGenericMessage: true,
+        stalePhrases: [...STALE_DEGRADATION_PHRASES],
+      },
+    ]);
+  });
+});
+
+// =============================================================================
+// Slice X8b — the two DEFENSIVE branches of `hasManifestErrorInChain`: the
+// depth bound (`MAX_CAUSE_CHAIN_WALK`) running out, and a link that cannot be
+// inspected without throwing. Both are argued for at length in that function's
+// own doc comment, and nothing executed either — which also left its in-loop
+// `catch` an uncovered BRANCH under this repo's per-file 80% branch gate.
+//
+// **Every shape below is SYNTHETIC, and this block does not pretend otherwise.**
+// No seam in this package produces a cyclic `cause`, a chain past the bound, or
+// a hostile link today: the deepest chain the tree builds is three links (a
+// console wrapper over a Core storage error over a parse failure), and the
+// blocks above already cover that end to end. What is NOT synthetic is the call
+// site. This walk runs inside `rebuildHumanActionIndexOnBoot`'s `catch`, on the
+// boot path of a process that must come up, over a value whose only guarantee
+// is that something threw it — and that `catch` is not itself guarded, so a
+// throw from the walk escapes the never-throws contract entirely.
+//
+// **Why expecting the GENERIC message is not vacuous here, test by test.** The
+// generic message is also what a walk that inspected nothing at all would
+// select, so each test carries its own discriminator:
+//
+//   - the bound pair is TWO-SIDED. One real manifest error at the deepest link
+//     the bound still reaches selects the MANIFEST message; the same error one
+//     link further selects the generic one. A walk that inspected nothing fails
+//     the first row, and an unbounded walk fails the second.
+//   - the uninspectable-link table carries a BENIGN CONTROL row — the identical
+//     structure with an accessor that RETURNS instead of throwing selects the
+//     manifest message — so the generic outcome is attributable to the throw
+//     rather than to a walk that never arrived. Every row also counts its own
+//     reads, so "the walk reached this link" is asserted rather than assumed.
+//   - the cycle test's discriminator is not the message at all: it is that the
+//     call RETURNS, under a timeout well below the suite default, having read
+//     no more links than the documented bound allows.
+// =============================================================================
+
+/**
+ * `MAX_CAUSE_CHAIN_WALK` as `boot/audit-rebuild.ts` documents it — the caught
+ * value itself plus up to nine causes.
+ *
+ * Module-private there and deliberately not exported (its own doc comment
+ * explains why it is mirrored rather than hoisted into a shared module), so
+ * this is a PIN on the documented bound: raising or lowering it there is a
+ * prompt to update this constant, exactly as the cross-reference to
+ * `errors/errno.ts` is a prompt to go read that site. The value is stated once
+ * here and every depth below is derived from it, so the update is one line.
+ */
+const DOCUMENTED_MAX_CAUSE_CHAIN_WALK = 10;
+
+/**
+ * A ceiling on how many times a cyclic link's `cause` may be READ across one
+ * boot failure — the bound above, plus a small allowance.
+ *
+ * The allowance exists because the classification walk is not the only reader:
+ * `errorFrom` serializes the same chain into the event's `data` immediately
+ * afterwards, and against the built library that costs exactly one further read
+ * of this link. Two is allowed so this stays an assertion about the WALK's
+ * bound and not a pin on a serializer this test does not own. What it still
+ * fails: a walk whose bound is orders of magnitude larger — one that
+ * terminates, so no timeout catches it, while doing exactly the unbounded work
+ * the cap exists to refuse.
+ */
+const MAX_CYCLIC_CAUSE_READS = DOCUMENTED_MAX_CAUSE_CHAIN_WALK + 2;
+
+/**
+ * Well below the 5s suite default, so a regression to an unbounded walk fails
+ * as this one test timing out rather than wedging the whole run. Generous
+ * enough that it is never a wall-clock race: the work under test is ten
+ * property reads.
+ */
+const CYCLIC_WALK_TIMEOUT_MS = 2_000;
+
+/**
+ * Where the manifest error sits relative to the bound, and what that selects.
+ *
+ * The deepest DETECTED depth is the bound minus one, because depth 0 is the
+ * caught value itself. The second row is the bound-exhaustion path, and it is
+ * the one case where the generic message is knowingly WRONG about audit
+ * integrity — a manifest error is in the chain, and the operator is told the
+ * JSONL trail is unaffected and that a reboot clears it. That is the trade-off
+ * `hasManifestErrorInChain` argues for explicitly ("the less wrong direction
+ * rather than a harmless one"), and pinning it is what keeps it a decision
+ * rather than an accident.
+ */
+const BOUND_RELATIVE_DEPTHS = [
+  {
+    label: "at the deepest link the bound still inspects",
+    depth: DOCUMENTED_MAX_CAUSE_CHAIN_WALK - 1,
+    selectsManifestMessage: true,
+  },
+  {
+    label: "one link past the bound",
+    depth: DOCUMENTED_MAX_CAUSE_CHAIN_WALK,
+    selectsManifestMessage: false,
+  },
+] as const;
+
+/** Counts how often a fixture link was actually read, so "never reached" is visible. */
+interface LinkReadProbe {
+  reads: number;
+}
+
+/**
+ * The three reads `hasManifestErrorInChain` performs per link that a hostile
+ * value can turn into a throw — the `instanceof` test (a `Proxy`
+ * `getPrototypeOf` trap) and the `.cause` read (an own throwing accessor) —
+ * plus the benign control that makes their outcome attributable.
+ *
+ * Each builder puts a REAL manifest error `behind` the link, so the chain does
+ * contain one: the throwing rows therefore assert that an uninspectable link
+ * ends the walk and forfeits a classification it could otherwise have made,
+ * which is the honest reading of that branch. `Object.hasOwn`'s own trap
+ * (`getOwnPropertyDescriptor`) is left uncovered on purpose — it is the same
+ * `try`, the same `return false`, and one more `Proxy` would add machinery
+ * without adding a branch.
+ *
+ * The own accessor comes first because it needs no `Proxy` at all: an object
+ * that exposes `cause` as a getter is what a third-party boundary or a lazily
+ * materialized error wrapper actually produces.
+ */
+const UNINSPECTABLE_LINKS = [
+  {
+    label: "an own `cause` accessor that throws",
+    selectsManifestMessage: false,
+    build: (behind: unknown, probe: LinkReadProbe): unknown => {
+      const link = new Error("a third-party await boundary", { cause: behind });
+      // Redefines the own data property the options bag just installed
+      // (writable AND configurable per spec), so `Object.hasOwn` still answers
+      // `true` and the walk commits to a read it cannot complete.
+      Object.defineProperty(link, "cause", {
+        configurable: true,
+        get: (): unknown => {
+          probe.reads += 1;
+          throw new TypeError("this link's cause cannot be read");
+        },
+      });
+      return link;
+    },
+  },
+  {
+    label: "an own `cause` accessor that returns (the control)",
+    selectsManifestMessage: true,
+    build: (behind: unknown, probe: LinkReadProbe): unknown => {
+      const link = new Error("a third-party await boundary");
+      Object.defineProperty(link, "cause", {
+        configurable: true,
+        get: (): unknown => {
+          probe.reads += 1;
+          return behind;
+        },
+      });
+      return link;
+    },
+  },
+  {
+    label: "a Proxy whose getPrototypeOf trap throws",
+    selectsManifestMessage: false,
+    build: (behind: unknown, probe: LinkReadProbe): unknown =>
+      new Proxy(new Error("a third-party await boundary", { cause: behind }), {
+        getPrototypeOf: (): never => {
+          probe.reads += 1;
+          throw new TypeError("this link's prototype cannot be read");
+        },
+      }),
+  },
+] as const;
+
+/**
+ * The one-row expectation {@link classifyBootFailure} must produce for each
+ * outcome, written out on both sides rather than negated: a row asserting only
+ * what the message is NOT would be satisfied by a message that is differently
+ * wrong.
+ */
+function expectOneEventSelecting(
+  selectsManifestMessage: boolean,
+): readonly ClassifiedFailureEvent[] {
+  return [
+    selectsManifestMessage
+      ? {
+          selectsManifestMessage: true,
+          selectsGenericMessage: false,
+          stalePhrases: [],
+        }
+      : {
+          selectsManifestMessage: false,
+          selectsGenericMessage: true,
+          stalePhrases: [...STALE_DEGRADATION_PHRASES],
+        },
+  ];
+}
+
+describe("rebuildHumanActionIndexOnBoot — the cause-chain walk is bounded and cannot be made to throw", () => {
+  // `e.cause = e` is constructible, and a walk without a bound over it does not
+  // return — it spins inside a catch block on the boot path, so the process
+  // never finishes coming up and never logs why. The assertion that matters is
+  // therefore the one the test framework makes: this call RETURNED. The message
+  // is checked too, but the timeout is the discriminator.
+  test(
+    "a cyclic cause chain returns a generic degradation instead of spinning",
+    { timeout: CYCLIC_WALK_TIMEOUT_MS },
+    async () => {
+      const cyclic = new Error("a failure whose cause is itself");
+      cyclic.cause = cyclic;
+
+      expect(await classifyBootFailure(cyclic)).toEqual(
+        expectOneEventSelecting(false),
+      );
+
+      // And it terminated because the BOUND ran out, not because the work was
+      // merely finite: the same cycle built from a counting accessor shows how
+      // many links were read. A cycle read once is as compatible with "the walk
+      // did nothing" as with a cap, and a cycle read ten thousand times would
+      // satisfy the timeout above while defeating the reason the cap is a depth
+      // cap rather than a visited-set.
+      const probe: LinkReadProbe = { reads: 0 };
+      const counted = new Error(
+        "a failure whose cause accessor returns itself",
+      );
+      Object.defineProperty(counted, "cause", {
+        configurable: true,
+        get: (): unknown => {
+          probe.reads += 1;
+          return counted;
+        },
+      });
+
+      expect(await classifyBootFailure(counted)).toEqual(
+        expectOneEventSelecting(false),
+      );
+      expect(probe.reads).toBeGreaterThanOrEqual(1);
+      expect(probe.reads).toBeLessThanOrEqual(MAX_CYCLIC_CAUSE_READS);
+    },
+  );
+
+  test.each(BOUND_RELATIVE_DEPTHS)(
+    "a manifest error $label selects the manifest message: $selectsManifestMessage",
+    async ({ depth, selectsManifestMessage }) => {
+      const manifestError = await captureManifestError();
+
+      expect(
+        await classifyBootFailure(chainUnder(manifestError, depth)),
+      ).toEqual(expectOneEventSelecting(selectsManifestMessage));
+    },
+  );
+
+  test.each(UNINSPECTABLE_LINKS)(
+    "$label ends the walk without escaping the never-throws contract",
+    async ({ build, selectsManifestMessage }) => {
+      const manifestError = await captureManifestError();
+      const probe: LinkReadProbe = { reads: 0 };
+
+      // A throw out of the walk would surface HERE, as this call rejecting
+      // rather than as a wrongly chosen message — `classifyBootFailure` awaits
+      // the real boot entry point and asserts it inserted zero rows. That is
+      // the whole reason the `try` sits inside the loop, so a test that only
+      // compared message text would miss it.
+      const classified = await classifyBootFailure(
+        chainUnder(build(manifestError, probe), 1),
+      );
+
+      expect(classified).toEqual(
+        expectOneEventSelecting(selectsManifestMessage),
+      );
+      // The walk actually arrived at the hostile link. Without this, a walk
+      // that stopped one link earlier for an unrelated reason would produce
+      // the same generic message and look like a covered defence.
+      expect(probe.reads).toBeGreaterThanOrEqual(1);
+    },
+  );
 });
