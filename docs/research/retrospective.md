@@ -96,12 +96,12 @@ the 13 nobody has opened.
 
 ## Outcomes
 
-| Outcome              | Meaning                                                                              |
-| -------------------- | ------------------------------------------------------------------------------------ |
-| `promoted`           | Swept; at least one insight reached `.claude/rules/`, `.claude/agents/`, or a skill. |
-| `no-durable-insight` | Swept in full; nothing cleared the Step 2 filters. A real result, not a gap.         |
-| `deferred`           | Swept; a candidate was found but held back, with the reason in the notes.            |
-| `not-yet-swept`      | Backfilled state — never read by a sweep. The backlog this tracker counts.           |
+| Outcome              | Meaning                                                                                                        |
+| -------------------- | -------------------------------------------------------------------------------------------------------------- |
+| `promoted`           | Swept; at least one insight reached `.claude/rules/`, `.claude/agents/`, a skill, or a `.claude/hooks/` guard. |
+| `no-durable-insight` | Swept in full; nothing cleared the Step 2 filters. A real result, not a gap.                                   |
+| `deferred`           | Swept; a candidate was found but held back, with the reason in the notes.                                      |
+| `not-yet-swept`      | Backfilled state — never read by a sweep. The backlog this tracker counts.                                     |
 
 ## Backfill note
 
