@@ -31,6 +31,16 @@
  * prefix of the trail. A partial index that looks complete is the one
  * outcome an audit index may never produce.
  *
+ * **ARCHIVAL is the one incompleteness this rebuild accepts.** ADR-0070
+ * sanctions archiving a whole date out of the trail, which leaves the
+ * directory's `manifest.jsonl` sealing segments that are no longer on disk.
+ * Refusing to rebuild over that would let the documented procedure disable
+ * the index permanently — nothing inserted, so every later boot re-enters
+ * the same path — so the survivors are indexed and every absent segment is
+ * reported at `error`, naming it. An unreadable manifest stays fatal: it is
+ * the record of what was sealed, and without it an archived segment and a
+ * silently deleted one are the same observation.
+ *
  * @packageDocumentation
  */
 
@@ -53,6 +63,63 @@ const REBUILT_MESSAGE = "human-action audit index rebuilt from the JSONL trail";
 /** Logged when the boot rebuild itself failed; see {@link rebuildHumanActionIndexOnBoot}. */
 const REBUILD_FAILED_MESSAGE =
   "human-action audit index rebuild failed; the JSONL trail is unaffected and queries against the index will under-report until the next boot";
+
+/**
+ * Logged instead of {@link REBUILD_FAILED_MESSAGE} when the rebuild failed
+ * because the trail's `manifest.jsonl` sidecar could not be READ.
+ *
+ * Both clauses of the general message would mislead for this cause, and in
+ * the same direction: the sidecar is part of the trail, so "the trail is
+ * unaffected" is not something this module can assert, and the damage is
+ * persistent — the next boot re-reads the same bad bytes and fails
+ * identically, so nothing "until the next boot" describes what an operator
+ * must do. What they must do is repair or restore the sidecar.
+ *
+ * The failure is also not the index's: the sidecar is what states which
+ * segments were sealed, so without it an archived segment and a deleted one
+ * are indistinguishable, and continuing would mean indexing a possibly
+ * incomplete trail as if it were whole.
+ */
+const MANIFEST_UNREADABLE_MESSAGE =
+  "human-action audit trail manifest could not be read, so which segments are sealed cannot be established and an archived segment cannot be told apart from a deleted one; nothing was indexed, and every boot will fail the same way until the sidecar is repaired or restored";
+
+/**
+ * Reports ONE segment the manifest seals and the directory no longer holds —
+ * a date archived by ADR-0070's own procedure, or one deleted outside it.
+ * This module cannot tell those apart and does not try: both mean the same
+ * thing to a rebuild, which is that entries the trail once held are not
+ * available to index.
+ *
+ * **At `error`, and that is part of the contract.** An audit segment leaving
+ * the trail is a compliance finding, not an operational detail, and
+ * `M3LLogLevelFloor` is configurable — a deployment that raised its floor
+ * must not be able to drop this. One event per segment rather than one
+ * summary, so each finding is separately attributable, greppable and
+ * alertable.
+ *
+ * The seal's `sha256` travels with it because it is what makes the tolerance
+ * provable rather than merely polite: an operator holding the archived copy
+ * can reproduce that digest against it with `sha256sum` and settle whether
+ * what left this directory is what they still have. The segment NAME is
+ * sanctioned data (a date prefix and a counter, both from the writer's own
+ * clock); the stream directory is caller input and is deliberately absent
+ * from both the message and the context.
+ */
+function reportArchivedSegment(
+  logger: Core.M3LLogger,
+  segment: Core.M3LAppendOnlySealedSegment,
+): void {
+  logger.error(
+    `human-action audit trail segment ${segment.segment} is sealed in the manifest but is no longer on disk (an archived or deleted date); the entries it held have left the trail, no rebuild can put them back now or on any later boot, and the index rebuild continues with the segments that remain`,
+    {
+      segment: segment.segment,
+      sealedAt: segment.at,
+      entryCount: segment.entryCount,
+      byteLength: segment.byteLength,
+      sha256: segment.sha256,
+    },
+  );
+}
 
 /**
  * Reads the ENTIRE trail under `directory` and returns the index rows it
@@ -87,6 +154,15 @@ const REBUILD_FAILED_MESSAGE =
  * died mid-append, and it is the one loss this rebuild accepts rather than
  * failing over. The same fragment mid-stream is data loss, not a torn tail,
  * and Core throws for it regardless of this callback.
+ *
+ * **An ARCHIVED segment is tolerated too, and reported at `error`** — see
+ * {@link reportArchivedSegment}. A segment the manifest sealed and the
+ * directory no longer holds is what ADR-0070's whole-date archival leaves
+ * behind, so refusing to rebuild over it would make the sanctioned procedure
+ * disable the index. An unreadable MANIFEST is the opposite case and stays
+ * fatal: that is the sidecar which states what was sealed at all, and
+ * without it this reader cannot tell an archived segment from a silently
+ * deleted one.
  */
 async function readTrailIndexRows(
   directory: string,
@@ -101,6 +177,16 @@ async function readTrailIndexRows(
         segmentIndex: segment.segmentIndex,
         segmentCount: segment.segmentCount,
       });
+    },
+    // Supplying this handler is the ONLY thing that tolerates a
+    // sealed-but-absent segment; left unset, `read()` throws
+    // `M3LAppendOnlyStreamManifestError` and — because the boot path never
+    // throws — a whole archived date would silently make the rebuild index
+    // nothing, permanently (nothing is inserted, so the next boot re-enters
+    // the same path). Tolerating it and saying loudly what is missing is
+    // strictly better than refusing to index the survivors.
+    onArchivedSegment: (segment) => {
+      reportArchivedSegment(logger, segment);
     },
   })) {
     const record = projectHumanActionRecord(
@@ -176,6 +262,11 @@ export interface RebuildHumanActionIndexOptions {
  * @throws {@link Core.M3LAppendOnlyStreamReadError} when a line is malformed,
  *   oversized, or a segment sequence is missing — surfaced rather than
  *   swallowed, so a corrupt trail is never quietly indexed as a prefix.
+ * @throws {@link Core.M3LAppendOnlyStreamManifestError} when the trail's
+ *   `manifest.jsonl` sidecar exists and cannot be read. A sealed segment
+ *   that is merely ABSENT no longer throws — it is tolerated and reported
+ *   through {@link reportArchivedSegment} — but an unreadable sidecar is
+ *   fatal, because it is the record of which segments were sealed.
  *
  * @example
  * ```ts
@@ -187,6 +278,125 @@ export async function rebuildHumanActionIndex(
 ): Promise<number> {
   const rows = await readTrailIndexRows(options.directory, options.logger);
   return truncateAndInsert(options.store, rows);
+}
+
+/**
+ * The maximum number of links {@link hasManifestErrorInChain} inspects — the
+ * caught value itself plus up to nine causes — mirroring
+ * `MAX_CAUSE_CHAIN_WALK` in `errors/errno.ts`.
+ *
+ * **A depth cap rather than a visited-set, deliberately.** This runs on the
+ * boot path of a process that must come up, so what needs bounding is the
+ * WORK, not merely the termination: a cap bounds both, in O(1) memory, and
+ * survives a pathologically long ACYCLIC chain as well as a cyclic one
+ * (`e.cause = e` is constructible, and so is a ten-thousand-link chain),
+ * where a visited-set only survives the cycle and pays memory proportional
+ * to a chain an untrusted value handed us. Ten is far above anything this
+ * package builds — the deepest chain in the tree is a console wrapper over a
+ * Core storage error over a parse failure, three links — so reaching it
+ * means the chain is not one of ours.
+ *
+ * **Mirrored rather than imported, and not hoisted into a shared module.**
+ * `errno.ts` keeps its copy module-private (as does
+ * `packages/m3l-common/src/aws/rds-data/client.ts`, which `errno.ts` mirrors
+ * in turn), so importing it would widen a module's surface to share a number.
+ * Nothing enforces that the copies agree and nothing needs to: each bounds
+ * its OWN walk over a different chain for a different answer, and one shared
+ * constant would couple three independent bounds so that retuning any one of
+ * them silently retunes the others. The
+ * cross-reference is the safeguard — a change here is a prompt to go read
+ * that site, not a divergence.
+ */
+const MAX_CAUSE_CHAIN_WALK = 10;
+
+/**
+ * Whether a `Core.M3LAppendOnlyStreamManifestError` appears anywhere in
+ * `cause`'s chain — at any depth, including depth 0 (the caught value
+ * itself). Never throws.
+ *
+ * **Why the whole chain and not just the top.** Nothing between
+ * {@link readTrailIndexRows} and the boot `catch` re-raises the manifest
+ * error, so today the top-level class is already the right answer; this is
+ * robustness against the wrapper a future read path may add, and it is worth
+ * structure because of what the FALLBACK asserts —
+ * {@link MANIFEST_UNREADABLE_MESSAGE} documents at length why both of
+ * {@link REBUILD_FAILED_MESSAGE}'s clauses are false for a manifest failure.
+ * A missed classification therefore does not log a vaguer message; it logs a
+ * false reassurance about audit integrity.
+ *
+ * **Nothing it reads can escape as a throw.** `instanceof`, `Object.hasOwn`
+ * and the `.cause` read all sit inside one `try` per link, so a hostile link
+ * — an own `cause` accessor that throws, or a Proxy whose `getPrototypeOf`
+ * or `getOwnPropertyDescriptor` trap throws — ends the walk instead of
+ * propagating. That is reachable and matters more than it looks: the call
+ * site is inside `rebuildHumanActionIndexOnBoot`'s `catch`, which is NOT
+ * itself guarded, so a throw from here would escape the never-throws
+ * contract and fail boot over a value that is only being described.
+ *
+ * **Both bounds answer `false`, which is the less wrong direction rather
+ * than a harmless one.** Hitting {@link MAX_CAUSE_CHAIN_WALK}, or stopping
+ * at a link that cannot be safely inspected, selects
+ * {@link REBUILD_FAILED_MESSAGE}, so the fallback is never actively safe. It
+ * is still the right direction: answering "manifest" for a chain that was
+ * never inspected would assert a specific cause on no evidence, and the
+ * `errorFrom` comment in {@link rebuildHumanActionIndexOnBoot} is why the
+ * bytes an operator needs survive a message this function got vague.
+ *
+ * @param cause - Any caught value.
+ * @returns `true` when some link up to the bound is a manifest error.
+ */
+function hasManifestErrorInChain(cause: unknown): boolean {
+  let link: unknown = cause;
+  for (let depth = 0; depth < MAX_CAUSE_CHAIN_WALK; depth += 1) {
+    try {
+      if (link instanceof Core.M3LAppendOnlyStreamManifestError) return true;
+      // An OWN `cause` only — safe because of WHERE own-ness comes from:
+      // `Core.M3LError`'s constructor assigns `this.cause` itself rather than
+      // forwarding an options bag to `Error`, so every subclass gets an own
+      // data property even when the subclass declares `cause` with `declare`
+      // and emits no field of its own. Verified by execution against built
+      // `dist/` for `M3LError`, `M3LOperationAbortedError`,
+      // `M3LAppendOnlyStream{,Manifest,Read}Error`, `M3LConsoleError`, and a
+      // plain `Error` from both the options bag and post-construction
+      // assignment (`errors/chain-secondary-failure.ts`).
+      // The constraint that buys, for whoever adds the next error class: a
+      // class exposing `cause` as a PROTOTYPE accessor would stop this walk
+      // silently and hand an operator the generic message — the exact false
+      // negative the walk exists to prevent.
+      if (!(link instanceof Error) || !Object.hasOwn(link, "cause"))
+        return false;
+      // At the bound, stop BEFORE reading a `cause` no iteration can inspect:
+      // strictly one fewer read of an attacker-influenced accessor, and the
+      // deepest inspected link is unchanged — `errno.ts`'s `canAdvance` gate.
+      if (depth === MAX_CAUSE_CHAIN_WALK - 1) break;
+      link = link.cause;
+    } catch {
+      // A hostile link: its `instanceof` check, `Object.hasOwn` or `.cause`
+      // read threw, so nothing further can be read from it safely. Stop the
+      // walk exactly as a non-`Error` link does, rather than let a raw throw
+      // out of a helper that only picks a message.
+      return false;
+    }
+  }
+  return false;
+}
+
+/**
+ * Picks the message the boot path reports a caught failure under.
+ *
+ * Only the cause's CLASS decides, never its message text, and that holds at
+ * EVERY link of the chain: `instanceof` is the distinction Core's storage
+ * errors are designed to be told apart by (an unwritable trail, a corrupt
+ * trail, and a trail that can no longer be proven each get their own class
+ * and `code`), and matching on message strings would re-couple this module
+ * to wording it does not own. A manifest failure anywhere in the chain
+ * selects the manifest message — see {@link hasManifestErrorInChain} for why
+ * depth may not decide it, and for the bounds on the walk.
+ */
+function describeRebuildFailure(cause: unknown): string {
+  return hasManifestErrorInChain(cause)
+    ? MANIFEST_UNREADABLE_MESSAGE
+    : REBUILD_FAILED_MESSAGE;
 }
 
 /**
@@ -239,7 +449,7 @@ export async function rebuildHumanActionIndexOnBoot(
     // whole recursive cause chain (redacted) rather than flattening it to one
     // message string. It never throws, which matters on a path whose entire
     // contract is that it does not.
-    options.logger.errorFrom(cause, REBUILD_FAILED_MESSAGE);
+    options.logger.errorFrom(cause, describeRebuildFailure(cause));
     return 0;
   }
 }

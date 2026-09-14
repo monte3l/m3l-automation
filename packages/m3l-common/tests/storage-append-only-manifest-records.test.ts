@@ -856,6 +856,113 @@ describe("seal segment shape", () => {
 });
 
 // ---------------------------------------------------------------------------
+// A record's instant, admitted only when it is an ISO-8601 instant
+// ---------------------------------------------------------------------------
+
+describe("record instant shape", () => {
+  // The security fix this suite pins (X8b4c): `at` was the one seal field
+  // admitted on TYPE alone. Its three siblings are all shape-allowlisted —
+  // `segment` through `parseSegmentName`, `sha256` through `ownDigest`'s
+  // anchored hex pattern, the two counts through `ownMeasurement` — so a bare
+  // `ownString` on `at` left one field through which arbitrary bytes read off
+  // disk travel into a caller's hands.
+  //
+  // They really do travel: `at` is one of the five fields
+  // `M3LAppendOnlyReadOptions.onArchivedSegment` is handed, and that option's
+  // own `@example` tells callers to log the payload. A 309-byte `at` carrying
+  // an escape sequence, a carriage return and a newline therefore reaches an
+  // operator's log verbatim, where it can erase the line it is on and forge
+  // library-looking lines around it. The writer stamps this field with
+  // `new Date().toISOString()` and nothing else, so the only shape the format
+  // ever states is `YYYY-MM-DDTHH:mm:ss.sssZ` — an allowlist, the house rule
+  // at a sanitization boundary, rather than a hunt for which bytes are
+  // dangerous.
+  //
+  // Both record kinds are covered because both read `at` the same loose way.
+  // Leaving one validated and the other not is the exact asymmetry that
+  // produced this finding in the first place.
+  const MALFORMED_RECORD_MESSAGE =
+    "append-only stream: a sealed-segment manifest record is incomplete";
+
+  /**
+   * 309 characters: a plausible-looking instant, then the terminal-control
+   * payload a security probe drove through this field and watched arrive
+   * verbatim. `\u001b[2K` erases the operator's line, and the `\r`/`\n` let the
+   * rest of the value pose as log lines this library wrote.
+   */
+  const INJECTED_INSTANT = `2026-09-11T01:00:00.000Z\u001b[2K\rmanifest verified OK\n${"x".repeat(259)}`;
+
+  const REFUSED_INSTANTS = [
+    ["control bytes and newlines", INJECTED_INSTANT],
+    ["prose rather than an instant", "yesterday"],
+    ["a calendar-impossible instant", "2026-13-45T99:99:99.999Z"],
+    ["an empty string", ""],
+    ["300 characters of padding", "x".repeat(300)],
+  ] as const;
+
+  test.each(REFUSED_INSTANTS)(
+    "is fatal on a mid-file seal whose `at` is %s",
+    async (_label, at) => {
+      await writeManifestBytes(
+        `${sealLine({ segment: SEGMENT_OLD, at })}${sealLine()}`,
+      );
+      const port = createFailurePort();
+
+      const thrown = await catchRejected(() =>
+        readManifest(sandbox, AMPLE_MAX_BYTES, port.build),
+      );
+
+      const call = expectPortFailure(thrown, port);
+      // The SAME fatal path a missing field and a bad `sha256` already take —
+      // same message constant, same port — not a new channel of its own.
+      expect(call.message).toBe(MALFORMED_RECORD_MESSAGE);
+    },
+  );
+
+  test.each(REFUSED_INSTANTS)(
+    "is fatal on a mid-file baseline whose `at` is %s",
+    async (_label, at) => {
+      await writeManifestBytes(`${baselineLine(SEGMENT_OLD, at)}${sealLine()}`);
+      const port = createFailurePort();
+
+      const thrown = await catchRejected(() =>
+        readManifest(sandbox, AMPLE_MAX_BYTES, port.build),
+      );
+
+      const call = expectPortFailure(thrown, port);
+      expect(call.message).toBe(MALFORMED_RECORD_MESSAGE);
+    },
+  );
+
+  test("accepts a seal whose `at` is exactly what the writer stamps", async () => {
+    // Generated from a real `Date`, never a literal: this is the regression
+    // guard against a pattern tightened past the writer's own output, and a
+    // hard-coded instant could drift from what `toISOString` renders while
+    // this test went on passing. Without it, an implementation refusing every
+    // `at` outright would satisfy every refusal row above.
+    const at = new Date().toISOString();
+    await writeManifestBytes(sealLine({ at }));
+    const port = createFailurePort();
+
+    const contents = await readManifest(sandbox, AMPLE_MAX_BYTES, port.build);
+
+    expect(definedOrThrow(contents.seals.get(SEGMENT_NEW), "the seal").at).toBe(
+      at,
+    );
+  });
+
+  test("accepts a baseline whose `at` is exactly what the writer stamps", async () => {
+    const at = new Date().toISOString();
+    await writeManifestBytes(baselineLine(SEGMENT_OLD, at));
+    const port = createFailurePort();
+
+    const contents = await readManifest(sandbox, AMPLE_MAX_BYTES, port.build);
+
+    expect(definedOrThrow(contents.baseline, "the baseline").at).toBe(at);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // The fold, at its own boundary
 // ---------------------------------------------------------------------------
 

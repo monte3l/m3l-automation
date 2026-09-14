@@ -56,8 +56,8 @@
  * @packageDocumentation
  */
 
-import { isFunction } from "../utils/guards.js";
 import { readAppendOnlySegments } from "../../internal/storage/append-only-reader.js";
+import { buildReaderOptions } from "../../internal/storage/append-only-read-wiring.js";
 import { renderEntryLine } from "../../internal/storage/append-only-render.js";
 import { listSegmentFiles } from "../../internal/storage/append-only-segments.js";
 import { AppendOnlySealer } from "../../internal/storage/append-only-sealer.js";
@@ -290,16 +290,34 @@ export class M3LAppendOnlyStream {
    * value `append()` could never itself have written (a bare array, `-0`, a
    * too-deep structure) throws rather than being handed back as genuine. A
    * missing directory yields nothing. See
-   * `internal/storage/append-only-reader.ts` for the full read contract.
+   * `internal/storage/append-only-read-plan.ts` (which segments) and
+   * `append-only-reader.ts` (their bytes).
+   *
+   * **The archival check is eager.** Every `onArchivedSegment` call is
+   * resolved before the first entry is yielded, so a caller that supplied no
+   * handler learns the trail is incomplete — by the throw — before it has
+   * consumed anything at all. This deliberately differs from
+   * `onTruncatedTail`, which fires in read order at the point the torn
+   * fragment is reached: detecting a torn tail requires reading a segment's
+   * bytes, whereas the archival scan needs only the manifest and the
+   * directory listing, so nothing is gained by deferring it.
    *
    * @param options - `onTruncatedTail` tolerates an unterminated trailing
    *   fragment on the LAST segment only; the same fragment mid-stream — data
-   *   loss, not a torn tail — always throws regardless.
+   *   loss, not a torn tail — always throws regardless. `onArchivedSegment`
+   *   tolerates a segment the directory's `manifest.jsonl` sealed and which
+   *   is no longer on disk; see
+   *   {@link M3LAppendOnlyReadOptions.onArchivedSegment} for that check's
+   *   missing-manifest blind spot.
    * @throws {@link M3LError} `ERR_INVALID_ARGUMENT` for a non-object
    *   `options`, an unknown own key on it, or a non-callable
-   *   `onTruncatedTail`.
+   *   `onTruncatedTail` or `onArchivedSegment`.
    * @throws {@link "./M3LAppendOnlyStreamReadError.js".M3LAppendOnlyStreamReadError} for a malformed/oversized
    *   line, a missing sequence, an intolerable fragment, or a read failure.
+   * @throws {@link "./M3LAppendOnlyStreamManifestError.js".M3LAppendOnlyStreamManifestError} when the manifest
+   *   states a seal for a segment no longer on disk and no
+   *   `onArchivedSegment` was supplied, or when a `manifest.jsonl` that is
+   *   present cannot be read or parsed at all.
    *
    * @example
    * ```ts
@@ -311,20 +329,14 @@ export class M3LAppendOnlyStream {
    */
   read(options?: M3LAppendOnlyReadOptions): AsyncIterable<M3LAppendOnlyEntry> {
     validateReadOptions(options);
-    return readAppendOnlySegments({
-      directory: this.streamDirectory,
-      maxLineBytes: this.streamMaxLineBytes,
-      // Conditional spread, not a direct assignment: `exactOptionalPropertyTypes`
-      // forbids setting an optional property to a value typed `T | undefined`.
-      // We spread only when the value is actually callable: `validateReadOptions`
-      // rejects truthy non-functions, so any falsy non-function (e.g. `null`, `0`) must
-      // degrade to the absent-callback path rather than being passed through as a
-      // present-but-uncallable callback — which would silently swallow a torn tail.
-      ...(isFunction(options?.onTruncatedTail) && {
-        onTruncatedTail: options.onTruncatedTail,
+    return readAppendOnlySegments(
+      buildReaderOptions({
+        directory: this.streamDirectory,
+        maxLineBytes: this.streamMaxLineBytes,
+        maxManifestBytes: DEFAULT_MAX_MANIFEST_BYTES,
+        readOptions: options,
       }),
-      buildError: buildAppendOnlyStreamReadError,
-    }) as AsyncIterable<M3LAppendOnlyEntry>;
+    ) as AsyncIterable<M3LAppendOnlyEntry>;
   }
 
   /**

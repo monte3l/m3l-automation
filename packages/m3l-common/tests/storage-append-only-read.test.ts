@@ -59,6 +59,7 @@ import {
 import type {
   M3LAppendOnlyEntry,
   M3LAppendOnlyReadOptions,
+  M3LAppendOnlySealedSegment,
   M3LAppendOnlyTruncatedSegment,
 } from "../src/core/storage/index.js";
 
@@ -851,10 +852,16 @@ describe("type contracts", () => {
     >().toEqualTypeOf<"ERR_APPEND_ONLY_STREAM_READ">();
   });
 
-  test("read options carry only an optional torn-tail callback", () => {
+  test("read options carry exactly two optional callbacks, for a torn tail and an archived segment", () => {
+    // Exact equality, never `toMatchTypeOf`: the value of this line is that
+    // adding a key to the public options bag cannot pass unnoticed, which is
+    // how it caught `onArchivedSegment` arriving (X8b slice 4c).
     expectTypeOf<M3LAppendOnlyReadOptions>().toEqualTypeOf<{
       readonly onTruncatedTail?: (
         segment: M3LAppendOnlyTruncatedSegment,
+      ) => void;
+      readonly onArchivedSegment?: (
+        segment: M3LAppendOnlySealedSegment,
       ) => void;
     }>();
   });
@@ -959,7 +966,7 @@ describe("gap detection mid-stream (M2 — a hole must never read back as comple
   // never noticed and both remaining segments were handed back as if they were
   // the whole trail.
   //
-  // THE FIX: `assertNoSequenceGap` (`append-only-reader.ts:232-256`) walks
+  // THE FIX: `assertNoSequenceGap` (`append-only-read-plan.ts`) walks
   // the sorted segment list and throws `M3LAppendOnlyStreamReadError` if any
   // consecutive pair has a non-unit sequence delta or a date boundary that
   // breaks the expected monotone sequence.
@@ -1077,8 +1084,8 @@ describe("line-length ceiling on a COMPLETE line (S2)", () => {
   // writer could never have produced (its own content ceiling is 1023 bytes at
   // this `maxLineBytes`) was handed back as genuine.
   //
-  // THE FIX: `append-only-reader.ts:359-364` now checks the byte length of
-  // every complete, newline-terminated line against `maxLineBytes` before
+  // THE FIX: `splitLines` (`append-only-lines.ts`) now checks the byte length
+  // of every complete, newline-terminated line against `maxLineBytes` before
   // yielding it, so the ceiling is enforced against both the in-flight
   // fragment and any fully extracted line.
   test.each([{ byteLength: 2045 }, { byteLength: 2046 }, { byteLength: 2047 }])(

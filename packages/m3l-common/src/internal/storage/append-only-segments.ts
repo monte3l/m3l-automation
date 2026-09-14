@@ -20,10 +20,20 @@
  * manifest itself carries no in-memory state across processes either; it is
  * only ever appended to and re-read from disk by its own owner. Nor is the
  * manifest a segment: `manifest.jsonl` does not match
- * {@link SEGMENT_NAME_PATTERN}, so it is invisible to
- * {@link discoverActiveSegment}, the reader's `discoverSegmentsInOrder`
- * (`./append-only-reader.js`) and {@link listSegmentFiles} — it never raises
- * their `skipped` count and never enters their byte total.
+ * {@link SEGMENT_NAME_PATTERN}, so it is invisible to every consumer of that
+ * pattern — but each of those consumers ignores it in its own terms, and only
+ * one of them has a `skipped` count or a byte total to speak of:
+ *
+ * - {@link listSegmentFiles} owns both fields, and the manifest enters
+ *   neither: it is dropped as "not a segment name" before `skipped` is
+ *   touched, and its bytes never join the listing's total.
+ * - {@link discoverActiveSegment} reports neither field. The manifest simply
+ *   never becomes a candidate for "the segment to append to", which is the
+ *   one question that function asks.
+ * - The read path ({@link "./append-only-read-plan.js".planSegmentsToRead})
+ *   reports neither field either — it silently drops any directory entry
+ *   whose name {@link parseSegmentName} rejects, so the manifest never
+ *   enters the ordered run it plans or the continuity check over it.
  *
  * A `stat` that fails is never read as "the file is absent" unless it says
  * `ENOENT`. Every other failure propagates, because a byte count silently
@@ -54,7 +64,7 @@ import {
 /**
  * One segment file name's parsed parts: its UTC date prefix and sequence.
  *
- * Exported for the read side (`./append-only-reader.js`): a reader has to
+ * Exported for the read side (`./append-only-read-plan.js`): a reader has to
  * enumerate every date's segments, not just today's, so it needs the parser
  * itself rather than a second copy of {@link SEGMENT_NAME_PATTERN}.
  */
@@ -198,15 +208,15 @@ export function segmentFileName(datePrefix: string, sequence: number): string {
  *   segment in the first place, so, like a foreign extension or a stray
  *   file, it is silently excluded rather than counted as `skipped`. See that
  *   function's own doc for the exact three cases `skipped` does count.
- * - the reader's `discoverSegmentsInOrder` (`./append-only-reader.js`) builds
- *   its gap check only from names this function accepts, so a rejected name
- *   simply never enters that list — it is not removed from a run that
- *   otherwise contained it. For any trail this writer alone produced, every
- *   real segment name is already a valid calendar date (it can only ever
- *   have come from {@link currentDatePrefix}), so tightening this check
- *   cannot open a gap between two genuine segments. It only changes the
- *   outcome for a foreign or planted name, which was never part of that
- *   writer's own contiguous sequence to begin with.
+ * - the read path ({@link "./append-only-read-plan.js".planSegmentsToRead})
+ *   builds its gap check only from names this function accepts, so a
+ *   rejected name simply never enters that list — it is not removed from a
+ *   run that otherwise contained it. For any trail this writer alone
+ *   produced, every real segment name is already a valid calendar date (it
+ *   can only ever have come from {@link currentDatePrefix}), so tightening
+ *   this check cannot open a gap between two genuine segments. It only
+ *   changes the outcome for a foreign or planted name, which was never part
+ *   of that writer's own contiguous sequence to begin with.
  */
 export function parseSegmentName(name: string): ParsedSegmentName | undefined {
   const match = SEGMENT_NAME_PATTERN.exec(name);
@@ -428,7 +438,7 @@ export async function nextSegment(
  * filesystem read as tampering.
  *
  * Deliberately does **not** apply the read side's continuity check
- * (`append-only-reader.ts`'s `assertNoSequenceGap`): an inventory that
+ * (`append-only-read-plan.ts`'s `assertNoSequenceGap`): an inventory that
  * refuses to run against a damaged trail — a segment deleted or lost between
  * two others — is useless exactly when it is needed, and would make a
  * cleanup or audit report fail instead of showing the operator the damage.

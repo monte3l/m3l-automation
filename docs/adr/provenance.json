@@ -1516,7 +1516,7 @@
       },
       {
         "path": "docs/plans/2026-08-20-m3l-console.md",
-        "blob": "ef043a75b4a19dd9a0855954cbfda1fab5b9e1ff"
+        "blob": "fe0addd9373d3f88cfed2f7b43f08d7f91dbf86b"
       },
       {
         "path": "docs/plans/IMPLEMENTATION.md",
@@ -1616,7 +1616,7 @@
     "sourceFiles": [
       {
         "path": "docs/plans/2026-08-20-m3l-console.md",
-        "blob": "ef043a75b4a19dd9a0855954cbfda1fab5b9e1ff"
+        "blob": "fe0addd9373d3f88cfed2f7b43f08d7f91dbf86b"
       },
       {
         "path": "docs/plans/IMPLEMENTATION.md",
@@ -1655,7 +1655,7 @@
     "sourceFiles": [
       {
         "path": "docs/plans/2026-08-20-m3l-console.md",
-        "blob": "ef043a75b4a19dd9a0855954cbfda1fab5b9e1ff"
+        "blob": "fe0addd9373d3f88cfed2f7b43f08d7f91dbf86b"
       },
       {
         "path": "docs/plans/IMPLEMENTATION.md",
@@ -2622,7 +2622,7 @@
       },
       {
         "path": "packages/m3l-common/tests/storage-append-only-segments-listing.test.ts",
-        "blob": "9570fadb92ebdb6a87b16fb58f55f087501f45e9"
+        "blob": "d2941c21885191f117a44d95092c1721dc3c3db8"
       },
       {
         "path": "packages/m3l-console-server/tests/integration/handler.integration.test.ts",
@@ -2637,7 +2637,7 @@
         "blob": "95c85cb4f217b9419bcb7f63ced3452cb9739475"
       }
     ],
-    "verifiedAt": "2026-09-13"
+    "verifiedAt": "2026-09-14"
   },
   "0101": {
     "sourceFiles": [
@@ -2672,13 +2672,13 @@
       },
       {
         "path": "docs/plans/2026-08-20-m3l-console.md",
-        "blob": "ef043a75b4a19dd9a0855954cbfda1fab5b9e1ff"
+        "blob": "fe0addd9373d3f88cfed2f7b43f08d7f91dbf86b"
       },
       {
         "path": "packages/m3l-console-server/src/boot/audit-rebuild.ts",
-        "blob": "0a2690fcc0df90c3704b74b16e6d8feeffd34ce3"
+        "blob": "5eef56ea0c303d5f10c3054a2a4bee7e9463f480"
       }
     ],
-    "verifiedAt": "2026-09-13"
+    "verifiedAt": "2026-09-14"
   }
 }

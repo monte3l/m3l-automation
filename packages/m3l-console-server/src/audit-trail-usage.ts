@@ -16,12 +16,12 @@
  * `run-output-retention.ts`, `session-artifact-retention.ts`), this is the
  * one section of the cleanup sweep that does not sweep — it only
  * inventories. ADR-0070 declares the audit-trail class as segment-and-retain,
- * and `internal/storage/append-only-reader.ts`'s `assertNoSequenceGap` makes
- * intra-date deletion destroy the trail's readability rather than reclaim
- * space — while `boot/audit-rebuild.ts`'s rebuild never throws, so that
- * damage would be invisible at boot. Do not "harmonise" this driver with its
- * siblings by adding deletion; that would reintroduce exactly the damage this
- * module exists to avoid.
+ * and `internal/storage/append-only-read-plan.ts`'s `assertNoSequenceGap`
+ * makes intra-date deletion destroy the trail's readability rather than
+ * reclaim space — while `boot/audit-rebuild.ts`'s rebuild never throws, so
+ * that damage would be invisible at boot. Do not "harmonise" this driver
+ * with its siblings by adding deletion; that would reintroduce exactly the
+ * damage this module exists to avoid.
  *
  * **A non-zero `skipped` count is worth investigating, but is not proof of
  * tampering by itself — it has two possible causes.** The first is a symlink

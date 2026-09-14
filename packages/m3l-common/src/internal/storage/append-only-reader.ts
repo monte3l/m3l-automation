@@ -11,13 +11,19 @@
  * `M3LAgentDecisionLog`'s segments, say) reuses this security-critical read
  * path instead of forking a second copy of it.
  *
- * This module reuses the exact segment-name parser the writer's own
- * cold-start discovery uses (`./append-only-segments.js`'s
- * {@link parseSegmentName}), rather than a second regex that could drift
- * from it. Unlike the writer, which only ever scans **today's** date prefix,
- * this module enumerates every date a segment exists under — a fresh
- * process reading back a stream that has lived across midnight has to see
- * all of it, not just today's slice.
+ * **Which segments a read covers — and whether that set is the whole trail —
+ * is not this module's question.** `./append-only-read-plan.js` owns it, and
+ * owns the reasoning behind it: enumerating every date a segment exists
+ * under, consulting the directory-wide `manifest.jsonl` sidecar (ADR-0102),
+ * escalating a sealed segment that is no longer on disk, and walking
+ * sequence continuity over the union of what is present and what the
+ * manifest still accounts for. That planning runs to completion before
+ * {@link readAppendOnlySegments} opens anything, so an incomplete or
+ * unverifiable trail is refused on the consumer's first `next()` rather than
+ * midway through a read; this module receives a settled list of segments and
+ * does nothing but read them. The two error ports in the options mirror the
+ * same split: a proof-layer refusal (`buildManifestError`) reads differently
+ * from "this trail would not parse" (`buildError`).
  *
  * Every line read back is proven and rebuilt through the exact same
  * `projectAppendOnlyEntry` the writer serializes through
@@ -55,11 +61,10 @@
  */
 
 import type { FileHandle } from "node:fs/promises";
-import { open, readdir } from "node:fs/promises";
-import path from "node:path";
+import { open } from "node:fs/promises";
 
 import { M3LError } from "../../core/errors/index.js";
-import { isEnoentError } from "../../core/utils/guards.js";
+import { isPromise } from "../../core/utils/guards.js";
 import { chainSecondaryFailure } from "../errors/chain-secondary-failure.js";
 import {
   assertSegmentIsReadable,
@@ -73,41 +78,12 @@ import {
 } from "./append-only-lines.js";
 import type { AppendOnlyProjectionFailure } from "./append-only-projection.js";
 import { projectAppendOnlyEntry } from "./append-only-projection.js";
-import type { ParsedSegmentName } from "./append-only-segments.js";
-import { parseSegmentName } from "./append-only-segments.js";
-
-/**
- * Reported for a trailing, unterminated fragment `read()` tolerates rather
- * than throws on. Structurally identical to the public
- * `M3LAppendOnlyTruncatedSegment` an owner reports this through — this
- * module never imports that type, so a second owner is free to shape its own
- * public payload the same way without pulling in the first owner's types.
- */
-interface AppendOnlyTruncatedSegment {
-  /** Bytes in the trailing fragment that had no terminating newline. */
-  readonly byteLength: number;
-  /** Zero-based index of the segment in read order. */
-  readonly segmentIndex: number;
-  /** Total number of segments in this read. */
-  readonly segmentCount: number;
-}
-
-/** The settings one {@link readAppendOnlySegments} call runs under. */
-export interface AppendOnlyReaderOptions {
-  /** The directory to enumerate segments from. */
-  readonly directory: string;
-  /** The ceiling an unterminated trailing fragment is measured against. */
-  readonly maxLineBytes: number;
-  /** Invoked once for a tolerated torn tail on the last segment only. */
-  readonly onTruncatedTail?: (segment: AppendOnlyTruncatedSegment) => void;
-  /** The owner's error vocabulary for every failure this reader raises. */
-  readonly buildError: AppendOnlyReadFailure;
-}
-
-/** One segment discovered on disk, in the order lines will be read from it. */
-interface DiscoveredSegment extends ParsedSegmentName {
-  readonly path: string;
-}
+import type { DiscoveredSegment } from "./append-only-read-plan.js";
+import { planSegmentsToRead } from "./append-only-read-plan.js";
+import type {
+  AppendOnlyReaderOptions,
+  AppendOnlyTruncatedSegment,
+} from "./append-only-reader-types.js";
 
 /**
  * Per-segment context threaded through {@link readSegmentEntries}: this
@@ -120,91 +96,6 @@ interface SegmentReadContext {
   readonly maxLineBytes: number;
   readonly onTruncatedTail?: (segment: AppendOnlyTruncatedSegment) => void;
   readonly buildError: AppendOnlyReadFailure;
-}
-
-/**
- * Lists every segment under `directory`, oldest `(date, sequence)` first.
- *
- * A missing directory yields an empty list rather than throwing — a rebuild
- * against a stream that has never been written to is a normal, empty case.
- * Any other failure (`EACCES`, …) is a real problem with a directory that
- * does exist and propagates as the owner's typed error.
- */
-async function discoverSegmentsInOrder(
-  directory: string,
-  buildError: AppendOnlyReadFailure,
-): Promise<readonly DiscoveredSegment[]> {
-  let names: string[];
-  try {
-    names = await readdir(directory);
-  } catch (cause) {
-    if (isEnoentError(cause)) {
-      return [];
-    }
-    throw buildError("append-only stream: failed to list segments", {
-      cause,
-    });
-  }
-
-  const segments: DiscoveredSegment[] = [];
-  for (const name of names) {
-    const parsed = parseSegmentName(name);
-    if (parsed !== undefined) {
-      segments.push({ ...parsed, path: path.join(directory, name) });
-    }
-  }
-  segments.sort((left, right) =>
-    left.datePrefix === right.datePrefix
-      ? left.sequence - right.sequence
-      : left.datePrefix < right.datePrefix
-        ? -1
-        : 1,
-  );
-  assertNoSequenceGap(segments, buildError);
-  return segments;
-}
-
-/**
- * Rejects a gap in `(datePrefix, sequence)` within one date: the writer
- * always starts a date's segments at sequence 1 and increments by exactly
- * one on every rotation (`./append-only-segments.js`), so a missing sequence
- * number between two segments this reader DID find is either an already-
- * deleted segment or one truncated all the way to zero bytes before this
- * date's numbering could roll forward past it — either way, entries this
- * stream once held are unaccounted for.
- *
- * Deliberately scoped: this proves continuity only among the segments
- * actually present on disk. It cannot detect the deletion of a date's own
- * LAST segment (the remaining ones are still perfectly contiguous starting
- * at 1), and an actor able to write the stream directory could rename the
- * remaining segments to close a gap before this check ever runs. It raises
- * the bar against accidental and casual tampering; it does not prove the
- * directory's contents are complete.
- */
-function assertNoSequenceGap(
-  segments: readonly DiscoveredSegment[],
-  buildError: AppendOnlyReadFailure,
-): void {
-  let previous: DiscoveredSegment | undefined;
-  for (const segment of segments) {
-    const expectedSequence =
-      previous !== undefined && previous.datePrefix === segment.datePrefix
-        ? previous.sequence + 1
-        : 1;
-    if (segment.sequence !== expectedSequence) {
-      throw buildError(
-        "append-only stream: a segment sequence number is missing",
-        {
-          context: {
-            datePrefix: segment.datePrefix,
-            expectedSequence,
-            foundSequence: segment.sequence,
-          },
-        },
-      );
-    }
-    previous = segment;
-  }
 }
 
 /**
@@ -268,6 +159,56 @@ function resolveTornTail(
     segmentIndex: context.segmentIndex,
     segmentCount: context.segmentCount,
   };
+}
+
+/**
+ * Hands one tolerated torn tail to the read's `onTruncatedTail`, and — when
+ * that handler returns a thenable — waits for it to settle, so a rejection
+ * fails the read instead of disappearing.
+ *
+ * **A rejection reaching the caller is the OPPOSITE of how the sealer treats
+ * its own reporting handler, and the difference is deliberate.**
+ * {@link "./append-only-seal-report.js".reportSealFailure} attaches to and
+ * SWALLOWS a thenable `onSealFailed` returns, because the sealer owes its
+ * caller a never-throws append path and has nothing left to report a
+ * reporting failure to. The read path owes no such contract, and this handler
+ * is the only notification saying a trailing record was dropped — so a
+ * handler that failed to record that must fail the read rather than leave the
+ * caller holding a clean-looking, short trail. A future reader should not
+ * carry the sealer's rule across to here.
+ *
+ * The option is typed `(segment) => void`, and TypeScript's void-return
+ * compatibility rule accepts an `async` handler, so a returned promise is
+ * ordinary type-checked caller code rather than an abuse of the option.
+ * ESLint's `no-misused-promises` sees only some of the shapes that reach
+ * here — never one arriving through an options object whose type was
+ * inferred rather than annotated — so this contract is held at runtime and
+ * never delegated to the linter.
+ *
+ * Called from inside {@link readSegmentEntries}' single guard, so a rejection
+ * surfaces as the owner's own read error carrying the handler's error as
+ * `cause` — exactly what a SYNCHRONOUS throw from the same handler already
+ * produces, rather than a second shape a caller would have to discriminate.
+ *
+ * **A handler that never settles stalls the read**, holding this segment's
+ * descriptor open for as long as it takes. There is no timeout here on
+ * purpose: any number picked would either abandon a slow-but-honest handler
+ * or paper over a wedged one, and the caller who wrote the handler is the
+ * only party able to judge which. The hazard is stated where that caller
+ * reads it, on
+ * {@link "../../core/storage/append-only-read-types.js".M3LAppendOnlyReadOptions.onTruncatedTail}.
+ */
+async function reportTornTail(
+  tail: AppendOnlyTruncatedSegment,
+  context: SegmentReadContext,
+): Promise<void> {
+  // Widened to `unknown` rather than awaited directly: the declared return
+  // type is `void`, so an `await` on the call itself would read as a mistake
+  // — and the value that arrives anyway is exactly what this settles.
+  const reported = context.onTruncatedTail?.(tail) as unknown;
+  if (isPromise(reported)) {
+    await reported;
+  }
 }
 
 /**
@@ -340,6 +281,12 @@ async function releaseAfterFailure(
  * {@link "./append-only-lines.js".splitLines}, or {@link resolveTornTail}) is
  * wrapped in it, so nothing leaks a raw Node error out of `read()`.
  *
+ * That guard is also what gives {@link reportTornTail} its shape: the
+ * owner's `onTruncatedTail` is caller code, so whatever it throws — or
+ * rejects with — is wrapped here as `cause`, and a synchronous throw and an
+ * async rejection from the same handler therefore reach the caller
+ * identically.
+ *
  * `close` is split across two paths. On the SUCCESS path it closes inside
  * the `try` and a failure throws: the segment was read to completion, so
  * there is no other outcome for it to displace, and swallowing it reports a
@@ -381,7 +328,7 @@ async function* readSegmentEntries(
 
     const tornTail = resolveTornTail(carry.length, context);
     if (tornTail !== undefined) {
-      context.onTruncatedTail?.(tornTail);
+      await reportTornTail(tornTail, context);
     }
 
     // Claim the close before attempting it, so the `finally` stands down
@@ -417,18 +364,20 @@ async function* readSegmentEntries(
  * `(date, sequence)` ascending order — the exact order `append()` produced
  * them in.
  *
- * @param options - The directory, line-length ceiling, torn-tail policy, and
- *   error port to read under.
+ * `./append-only-read-plan.js` settles which segments that is, and whether
+ * they account for the whole trail, before the first segment is opened — so a
+ * directory whose accounting does not add up is refused on the consumer's
+ * first `next()`. Everything below that line is reading.
+ *
+ * @param options - The directory, the two size ceilings, the torn-tail and
+ *   archival policies, and the two error ports to read under.
  * @returns Every entry, as the library's own detached, null-prototype
  *   rebuild of what was parsed.
  */
 export async function* readAppendOnlySegments(
   options: AppendOnlyReaderOptions,
 ): AsyncGenerator<Readonly<Record<string, unknown>>> {
-  const segments = await discoverSegmentsInOrder(
-    options.directory,
-    options.buildError,
-  );
+  const segments = await planSegmentsToRead(options);
   const segmentCount = segments.length;
   for (const [segmentIndex, segment] of segments.entries()) {
     yield* readSegmentEntries(segment, {

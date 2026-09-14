@@ -664,13 +664,14 @@ describe("[security] a segment hardlinked away after this writer created it", ()
 
     // `nlink` cannot say WHICH of the two links is "ours" — only that more
     // than one exists. `read()` already refuses such a segment outright
-    // (append-only-reader.ts:436), and `skipped` exists precisely to mean
-    // "this directory is not what this writer left behind" rather than "an
-    // I/O error occurred". Excluding a segment this writer itself created,
-    // the moment ANY second link to its inode appears, is a deliberate false
-    // positive: under-reporting a tampered-with segment is the safe
-    // direction, since the alternative is silently trusting an inode that
-    // may since have been altered through its other name.
+    // (`assertSegmentIsReadable`, in `append-only-fs.ts`, applied to the
+    // descriptor `readSegmentEntries` has just opened), and `skipped` exists
+    // precisely to mean "this directory is not what this writer left behind"
+    // rather than "an I/O error occurred". Excluding a segment this writer
+    // itself created, the moment ANY second link to its inode appears, is a
+    // deliberate false positive: under-reporting a tampered-with segment is
+    // the safe direction, since the alternative is silently trusting an inode
+    // that may since have been altered through its other name.
     expect(listed.segments).toEqual([]);
     expect(listed.skipped).toBe(1);
   });

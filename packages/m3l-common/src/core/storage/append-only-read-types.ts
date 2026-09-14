@@ -16,6 +16,8 @@
  * @packageDocumentation
  */
 
+import type { M3LAppendOnlySealedSegment } from "./append-only-verify-types.js";
+
 /**
  * The default segment size ceiling: 8 MiB.
  *
@@ -162,13 +164,29 @@ export interface M3LAppendOnlySegmentListing {
  * that it tolerates losing a torn last record (a process that died
  * mid-append) rather than failing the whole read over it.
  *
+ * `onArchivedSegment` reads the same way for a segment the directory's
+ * `manifest.jsonl` sidecar sealed and which is no longer on disk: left unset
+ * the read throws, and supplying it is how a caller writes down that an
+ * archived segment is expected rather than alarming.
+ *
+ * **Either handler may be `async`, and a rejected promise fails the read** —
+ * the read never continues past a notification the caller could not record.
+ * The two differ in what the caller then catches, because they fire at
+ * different points in the read; each field documents its own shape below.
+ *
  * @example
  * ```ts
+ * import { appendFile } from "node:fs/promises";
  * import type { M3LAppendOnlyReadOptions } from "@monte3l/m3l-common/core";
  *
  * const options: M3LAppendOnlyReadOptions = {
  *   onTruncatedTail: (segment) => {
  *     console.warn(`torn tail: ${String(segment.byteLength)} bytes dropped`);
+ *   },
+ *   // `async` is supported: the read waits for this promise, and a rejection
+ *   // fails the read rather than letting the finding go unrecorded.
+ *   onArchivedSegment: async (segment) => {
+ *     await appendFile("audit.log", `archived ${segment.segment}\n`);
  *   },
  * };
  * ```
@@ -178,6 +196,72 @@ export interface M3LAppendOnlyReadOptions {
    * Invoked once, with the trailing fragment's detail, when the stream's
    * last segment ends in an unterminated line. Left unset, the same
    * situation throws instead.
+   *
+   * **An `async` handler is supported, and its failure fails the read.** The
+   * signature says `void`, which TypeScript's void-return compatibility rule
+   * lets an `async` handler satisfy — so an `async` handler that awaits a log
+   * write is ordinary caller code here, not an abuse of the option. `read()`
+   * waits for the returned promise: it resolves and the read continues, or it
+   * rejects and the read fails with
+   * {@link "./M3LAppendOnlyStreamReadError.js".M3LAppendOnlyStreamReadError}
+   * carrying the rejection reason as `cause` — the same shape a synchronous
+   * throw from this handler produces. Nothing is silently swallowed, because
+   * this handler is the only notification saying a trailing record was
+   * dropped.
+   *
+   * **The corollary: a handler that never settles stalls the read.** `read()`
+   * applies no timeout — picking one would either abandon a slow-but-honest
+   * handler or hide a wedged one — so a handler awaiting something that may
+   * hang needs its own deadline before the promise it returns.
    */
   readonly onTruncatedTail?: (segment: M3LAppendOnlyTruncatedSegment) => void;
+  /**
+   * Invoked once per segment the directory's `manifest.jsonl` sidecar states
+   * a seal for and which is no longer on disk. Left unset, the same situation
+   * throws
+   * {@link "./M3LAppendOnlyStreamManifestError.js".M3LAppendOnlyStreamManifestError}
+   * instead — supplying this handler is what **tolerates** a sealed-but-absent
+   * segment, and it is the only thing that does.
+   *
+   * The payload is the manifest's full claim, `sha256` included, and that is
+   * what makes the tolerance provable rather than merely polite: an operator
+   * holding the archived copy can reproduce that digest against it with
+   * `sha256sum` and settle whether the segment that left this directory is
+   * the segment they still have. A bare name would only let them agree that
+   * something is gone.
+   *
+   * **The check is eager.** Every archival finding is resolved before the
+   * first entry is yielded, so a caller who supplied no handler gets the
+   * throw before it has consumed anything at all. This deliberately differs
+   * from `onTruncatedTail`, which fires in read order at the point the torn
+   * fragment is reached: detecting a torn tail requires reading a segment's
+   * bytes, whereas the archival scan needs only the manifest and the
+   * directory listing. Nothing is gained by making a caller consume a partial
+   * trail before learning it is incomplete — a consumer streaming this trail
+   * into a rebuild wants that answer before it has committed the first entry,
+   * not after.
+   *
+   * **An `async` handler is supported, and its failure fails the read** — on
+   * the same terms as `onTruncatedTail` above, with one difference in shape.
+   * `read()` waits for the returned promise before yielding anything, and a
+   * rejection surfaces the rejection reason ITSELF, unwrapped, rather than
+   * inside a library error: this handler runs ahead of the first entry, where
+   * no segment read is in flight to attribute a failure to. Nothing is
+   * swallowed — supplying this handler is what tolerates a sealed-but-absent
+   * segment, so a handler that could not record the finding must not leave
+   * the read looking complete. The same corollary applies: there is no
+   * timeout, so a handler that never settles stalls the read before the first
+   * entry.
+   *
+   * **A missing manifest is not a finding**, and that is a limitation rather
+   * than a proof about the directory. From inside the directory, a sidecar
+   * that was deleted and a trail that never sealed anything are the same
+   * observation, so with no `manifest.jsonl` present the read behaves exactly
+   * as it did before this option existed: nothing is reported, and a whole
+   * deleted date reads back short and silent. Anyone able to delete the
+   * segments can delete the sidecar alongside them, so the defence against
+   * that lives outside this library — filesystem permissions, or a copy of
+   * the manifest kept elsewhere — and never in `read()`.
+   */
+  readonly onArchivedSegment?: (segment: M3LAppendOnlySealedSegment) => void;
 }
