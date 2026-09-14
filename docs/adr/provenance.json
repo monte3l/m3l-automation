@@ -39,7 +39,7 @@
       },
       {
         "path": "package.json",
-        "blob": "046bb8ff916ba9212d52c5063423a4cc491e1de4"
+        "blob": "4b9628f2f059c684c129f70f699501a835943438"
       },
       {
         "path": "packages/m3l-console-server/Containerfile",
@@ -51,20 +51,20 @@
       },
       {
         "path": "pnpm-lock.yaml",
-        "blob": "7ecbeb0e17faeb06ac360ac6163242c39b3f6caf"
+        "blob": "01d85710ed20f7e16174f7e8dc431c7cb844c503"
       },
       {
         "path": "turbo.json",
         "blob": "d2b88dbb4423408a33153335c055b088c6fd628a"
       }
     ],
-    "verifiedAt": "2026-09-13"
+    "verifiedAt": "2026-09-14"
   },
   "0002": {
     "sourceFiles": [
       {
         "path": "package.json",
-        "blob": "046bb8ff916ba9212d52c5063423a4cc491e1de4"
+        "blob": "4b9628f2f059c684c129f70f699501a835943438"
       },
       {
         "path": "packages/m3l-common/package.json",
@@ -121,7 +121,7 @@
       },
       {
         "path": "package.json",
-        "blob": "046bb8ff916ba9212d52c5063423a4cc491e1de4"
+        "blob": "4b9628f2f059c684c129f70f699501a835943438"
       },
       {
         "path": "packages/m3l-common/package.json",
@@ -154,7 +154,7 @@
       },
       {
         "path": "package.json",
-        "blob": "046bb8ff916ba9212d52c5063423a4cc491e1de4"
+        "blob": "4b9628f2f059c684c129f70f699501a835943438"
       },
       {
         "path": "packages/m3l-common/package.json",
@@ -196,7 +196,7 @@
     "sourceFiles": [
       {
         "path": "package.json",
-        "blob": "046bb8ff916ba9212d52c5063423a4cc491e1de4"
+        "blob": "4b9628f2f059c684c129f70f699501a835943438"
       },
       {
         "path": "packages/m3l-common/package.json",
@@ -272,19 +272,19 @@
       },
       {
         "path": "package.json",
-        "blob": "046bb8ff916ba9212d52c5063423a4cc491e1de4"
+        "blob": "4b9628f2f059c684c129f70f699501a835943438"
       }
     ],
-    "verifiedAt": "2026-09-13"
+    "verifiedAt": "2026-09-14"
   },
   "0011": {
     "sourceFiles": [
       {
         "path": "package.json",
-        "blob": "046bb8ff916ba9212d52c5063423a4cc491e1de4"
+        "blob": "4b9628f2f059c684c129f70f699501a835943438"
       }
     ],
-    "verifiedAt": "2026-09-13"
+    "verifiedAt": "2026-09-14"
   },
   "0012": {
     "sourceFiles": [
@@ -331,7 +331,7 @@
       },
       {
         "path": "package.json",
-        "blob": "046bb8ff916ba9212d52c5063423a4cc491e1de4"
+        "blob": "4b9628f2f059c684c129f70f699501a835943438"
       }
     ],
     "verifiedAt": "2026-09-14"
@@ -384,10 +384,10 @@
       },
       {
         "path": "package.json",
-        "blob": "046bb8ff916ba9212d52c5063423a4cc491e1de4"
+        "blob": "4b9628f2f059c684c129f70f699501a835943438"
       }
     ],
-    "verifiedAt": "2026-09-13"
+    "verifiedAt": "2026-09-14"
   },
   "0015": {
     "sourceFiles": [
@@ -517,10 +517,10 @@
       },
       {
         "path": "tsconfig.json",
-        "blob": "970fb5e829dc53830bfd2eb25e5a975c09d08504"
+        "blob": "4ff09ac38c1f69a3878cb2a5e0638b71a695f0f9"
       }
     ],
-    "verifiedAt": "2026-09-11"
+    "verifiedAt": "2026-09-14"
   },
   "0020": {
     "sourceFiles": [
@@ -534,10 +534,10 @@
       },
       {
         "path": "package.json",
-        "blob": "046bb8ff916ba9212d52c5063423a4cc491e1de4"
+        "blob": "4b9628f2f059c684c129f70f699501a835943438"
       }
     ],
-    "verifiedAt": "2026-09-13"
+    "verifiedAt": "2026-09-14"
   },
   "0021": {
     "sourceFiles": [
@@ -580,7 +580,7 @@
       },
       {
         "path": "package.json",
-        "blob": "046bb8ff916ba9212d52c5063423a4cc491e1de4"
+        "blob": "4b9628f2f059c684c129f70f699501a835943438"
       },
       {
         "path": "pnpm-workspace.yaml",
@@ -588,14 +588,14 @@
       },
       {
         "path": "tsconfig.json",
-        "blob": "970fb5e829dc53830bfd2eb25e5a975c09d08504"
+        "blob": "4ff09ac38c1f69a3878cb2a5e0638b71a695f0f9"
       },
       {
         "path": "turbo.json",
         "blob": "d2b88dbb4423408a33153335c055b088c6fd628a"
       }
     ],
-    "verifiedAt": "2026-09-13"
+    "verifiedAt": "2026-09-14"
   },
   "0023": {
     "sourceFiles": [
@@ -694,7 +694,7 @@
       },
       {
         "path": "pnpm-lock.yaml",
-        "blob": "7ecbeb0e17faeb06ac360ac6163242c39b3f6caf"
+        "blob": "01d85710ed20f7e16174f7e8dc431c7cb844c503"
       }
     ],
     "verifiedAt": "2026-09-14"
@@ -790,10 +790,10 @@
       },
       {
         "path": "tsconfig.json",
-        "blob": "970fb5e829dc53830bfd2eb25e5a975c09d08504"
+        "blob": "4ff09ac38c1f69a3878cb2a5e0638b71a695f0f9"
       }
     ],
-    "verifiedAt": "2026-09-13"
+    "verifiedAt": "2026-09-14"
   },
   "0029": {
     "sourceFiles": [
@@ -823,10 +823,10 @@
       },
       {
         "path": "package.json",
-        "blob": "046bb8ff916ba9212d52c5063423a4cc491e1de4"
+        "blob": "4b9628f2f059c684c129f70f699501a835943438"
       }
     ],
-    "verifiedAt": "2026-09-13"
+    "verifiedAt": "2026-09-14"
   },
   "0030": {
     "sourceFiles": [
@@ -917,7 +917,7 @@
       },
       {
         "path": "package.json",
-        "blob": "046bb8ff916ba9212d52c5063423a4cc491e1de4"
+        "blob": "4b9628f2f059c684c129f70f699501a835943438"
       },
       {
         "path": "packages/m3l-common/src/aws/clients/provider.ts",
@@ -962,7 +962,7 @@
       },
       {
         "path": "bin/lib/command-catalog.mjs",
-        "blob": "59714b87a7691b9d3d7b27db1268bcad4a6c6eb0"
+        "blob": "cb9a9375d639678f196a4f43f419f011f3d7b1a6"
       },
       {
         "path": "bin/lib/hub-sync.mjs",
@@ -1014,7 +1014,7 @@
       },
       {
         "path": "docs/logs/README.md",
-        "blob": "16a89c0383c42d569196eb9e9a006d8aefc3bc5e"
+        "blob": "764448bc687b32e1027f185fbf8818fe19ecf6dc"
       },
       {
         "path": "docs/plans/IMPLEMENTATION.md",
@@ -1026,7 +1026,7 @@
       },
       {
         "path": "package.json",
-        "blob": "046bb8ff916ba9212d52c5063423a4cc491e1de4"
+        "blob": "4b9628f2f059c684c129f70f699501a835943438"
       }
     ],
     "verifiedAt": "2026-09-14"
@@ -1102,7 +1102,7 @@
       },
       {
         "path": "package.json",
-        "blob": "046bb8ff916ba9212d52c5063423a4cc491e1de4"
+        "blob": "4b9628f2f059c684c129f70f699501a835943438"
       },
       {
         "path": "packages/m3l-common/package.json",
@@ -1262,7 +1262,7 @@
       },
       {
         "path": "package.json",
-        "blob": "046bb8ff916ba9212d52c5063423a4cc491e1de4"
+        "blob": "4b9628f2f059c684c129f70f699501a835943438"
       },
       {
         "path": "packages/m3l-common/src/aws/clients/provider.ts",
@@ -1317,16 +1317,16 @@
     "sourceFiles": [
       {
         "path": "package.json",
-        "blob": "046bb8ff916ba9212d52c5063423a4cc491e1de4"
+        "blob": "4b9628f2f059c684c129f70f699501a835943438"
       }
     ],
-    "verifiedAt": "2026-09-13"
+    "verifiedAt": "2026-09-14"
   },
   "0049": {
     "sourceFiles": [
       {
         "path": "bin/check-eslint-zones.mjs",
-        "blob": "6e8a6f825404e746e763729913abaafe4c162e80"
+        "blob": "b6eb6cce34354c97353340de1866f96941f5133f"
       },
       {
         "path": "docs/reference/aws/cloudformation.md",
@@ -1495,7 +1495,7 @@
     "sourceFiles": [
       {
         "path": "bin/check-eslint-zones.mjs",
-        "blob": "6e8a6f825404e746e763729913abaafe4c162e80"
+        "blob": "b6eb6cce34354c97353340de1866f96941f5133f"
       },
       {
         "path": "packages/m3l-cli/src/run/spawn.ts",
@@ -1506,7 +1506,7 @@
         "blob": "ce7a512e81caf80a6164321b8af75d195d7b7161"
       }
     ],
-    "verifiedAt": "2026-09-13"
+    "verifiedAt": "2026-09-14"
   },
   "0056": {
     "sourceFiles": [
@@ -1822,7 +1822,7 @@
       },
       {
         "path": "package.json",
-        "blob": "046bb8ff916ba9212d52c5063423a4cc491e1de4"
+        "blob": "4b9628f2f059c684c129f70f699501a835943438"
       }
     ],
     "verifiedAt": "2026-09-14"
@@ -2058,7 +2058,7 @@
       },
       {
         "path": "package.json",
-        "blob": "046bb8ff916ba9212d52c5063423a4cc491e1de4"
+        "blob": "4b9628f2f059c684c129f70f699501a835943438"
       },
       {
         "path": "turbo.json",
@@ -2146,7 +2146,7 @@
       },
       {
         "path": "docs/research/retrospective.md",
-        "blob": "203ed8da7f6cd8a9335c865a0ab33647f32505c2"
+        "blob": "c062b308260448cae0466ac1c5936053a505168d"
       }
     ],
     "verifiedAt": "2026-09-14"
@@ -2577,7 +2577,7 @@
       },
       {
         "path": "docs/logs/README.md",
-        "blob": "16a89c0383c42d569196eb9e9a006d8aefc3bc5e"
+        "blob": "764448bc687b32e1027f185fbf8818fe19ecf6dc"
       }
     ],
     "verifiedAt": "2026-09-14"
