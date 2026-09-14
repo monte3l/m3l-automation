@@ -28,6 +28,7 @@
 import { readFileSync } from "node:fs";
 import process from "node:process";
 
+import { errnoCodeOf } from "./lib/errno.mjs";
 import {
   buildDeltaPatch,
   countReviewComments,
@@ -182,10 +183,7 @@ async function main(argv) {
     try {
       content = readFileSync(file, "utf8");
     } catch (error) {
-      if (
-        !(error instanceof Error) ||
-        /** @type {NodeJS.ErrnoException} */ (error).code !== "ENOENT"
-      ) {
+      if (errnoCodeOf(error) !== "ENOENT") {
         process.stderr.write(
           `pr-review-gate: failed to read ${file}: ${String(error)}\n`,
         );

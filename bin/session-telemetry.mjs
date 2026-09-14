@@ -44,6 +44,7 @@ import { homedir } from "node:os";
 import { join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { resolveClaudeProjectDir } from "./lib/claude-home.mjs";
+import { errnoCodeOf } from "./lib/errno.mjs";
 import { createReporter, parseJsonFlag } from "./lib/report.mjs";
 
 /** Where the session-report plugin caches its installed revisions. */
@@ -834,7 +835,7 @@ export function resolveAnalyzerPath(cacheDir, fs) {
   try {
     entries = fs.readdir(cacheDir);
   } catch (cause) {
-    if (cause instanceof Error && "code" in cause && cause.code === "ENOENT") {
+    if (errnoCodeOf(cause) === "ENOENT") {
       return null;
     }
     throw new Error(

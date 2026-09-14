@@ -33,6 +33,7 @@ import {
 } from "./lib/project-hub.mjs";
 import { SCRIPT_DOCS_DIR, scriptPackageDirs } from "./lib/script-doc-paths.mjs";
 import { createReporter, parseJsonFlag } from "./lib/report.mjs";
+import { errnoCodeOf } from "./lib/errno.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -52,7 +53,7 @@ function listMarkdownFiles(dir, skip = []) {
   try {
     entries = readdirSync(join(root, dir), { withFileTypes: true });
   } catch (cause) {
-    if (cause instanceof Error && "code" in cause && cause.code === "ENOENT") {
+    if (errnoCodeOf(cause) === "ENOENT") {
       return [];
     }
     throw cause;
