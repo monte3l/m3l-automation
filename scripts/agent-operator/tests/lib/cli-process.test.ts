@@ -148,6 +148,27 @@ describe("runCliProcess — spawn failure (a value, not a throw)", () => {
     },
   );
 
+  // X8e slice 2 (issue #1251): pins the Error-instance-only errno check now
+  // that readFailureCode classifies via Core.errnoCodeOf, which requires
+  // `value instanceof Error`. A plain object carrying an ENOENT-shaped
+  // `code` (no `Error` anywhere in its prototype chain) does not qualify —
+  // contrast this with the real-`Error` ENOENT case above, which resolves
+  // failureCode to "ENOENT".
+  test("an 'error' event carrying a plain non-Error object shaped like ENOENT leaves failureCode undefined", async () => {
+    const child = createFakeChild();
+    const { spawn } = createFakeSpawn(child);
+    const resultPromise = runCliProcess({ ...baseOptions, spawn });
+
+    // Intentionally a plain non-Error object shaped like an errno failure —
+    // proves Core.errnoCodeOf (Error-instance-only) does not classify it the
+    // way a tolerant any-object check would.
+    child.emit("error", { code: "ENOENT" });
+
+    const result = await resultPromise;
+    expect(result.disposition).toBe("spawn-failed");
+    expect(result.failureCode).toBeUndefined();
+  });
+
   test("an 'error' event followed by a 'close' event settles once, from the first event (the settled guard)", async () => {
     const child = createFakeChild();
     const { spawn } = createFakeSpawn(child);
