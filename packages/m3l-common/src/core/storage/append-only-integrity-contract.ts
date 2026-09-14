@@ -26,6 +26,42 @@
  *
  * **What `read()` vouches for in a trail it hands entries back from**
  *
+ * **Every sealed segment is verified inline, and there is no opt-out.** As a
+ * segment the manifest CLAIMS is streamed, its raw bytes are fed to the same
+ * measurement the seal was written from — from the chunks the read is already
+ * performing, so verification costs CPU and never a second pass over the file
+ * — and a disagreement on any of the three numbers throws
+ * {@link "./M3LAppendOnlyStreamIntegrityError.js".M3LAppendOnlyStreamIntegrityError}
+ * instead of handing those entries back as genuine. A segment the manifest
+ * does NOT claim is never digested: there is no claim to compare it against,
+ * which is the same reason `verify()` reports such a segment `"unsealed"` or
+ * `"legacy"` rather than measuring it. The read options carry no switch that
+ * turns this off — a trail whose bytes are not the sealed bytes is not a
+ * trail this library will read out.
+ *
+ * **Two limits on WHEN that refusal can land. Both are contract limits, not
+ * defects, and both are pinned by tests.**
+ *
+ * - **A mismatch is only detectable at a segment's END**, because a `sha256`
+ *   cannot be known until its last byte has been read — so by the time the
+ *   throw arrives, a caller iterating `read()` has already received that
+ *   segment's entries and may have acted on them. The one exception is a
+ *   segment that has GROWN past its sealed byte length: that is already proof
+ *   without the digest, so it is refused mid-segment, before the appended
+ *   entries are yielded. Closing the general case would mean buffering a
+ *   whole segment before yielding anything; the bound that is kept instead is
+ *   that the refusal always lands before the NEXT segment's entries.
+ * - **A caller that stops mid-segment gets no verdict for it.** Breaking out
+ *   of the iteration resumes the reader at its cleanup, which releases the
+ *   segment's handle without finishing the digest, so the segment the caller
+ *   stopped inside is never compared against its seal — and neither is any
+ *   LATER segment, which the reader never opened at all, so the unverified
+ *   remainder is the whole tail of the trail, not one segment's worth.
+ *   `break` is a normal, successful way to stop reading, so this stays silent
+ *   rather than throwing. A caller that needs a verdict over every segment
+ *   regardless of how far it reads wants `verify()`, which measures each
+ *   claim in full.
+ *
  * **The archival check is eager.** Every `onArchivedSegment` call is
  * resolved before the first entry is yielded, so a caller that supplied no
  * handler learns the trail is incomplete — by the throw — before it has

@@ -293,10 +293,14 @@ export class M3LAppendOnlyStream {
    * `internal/storage/append-only-read-plan.ts` (which segments) and
    * `append-only-reader.ts` (their bytes).
    *
-   * **The archival check is eager**, and fires at a deliberately different
-   * point from `onTruncatedTail` — see
+   * **Every SEALED segment's bytes are verified inline** against the claim
+   * the directory's `manifest.jsonl` recorded for them, from the chunks this
+   * read is already performing, and a disagreement throws rather than being
+   * handed back as genuine. **The archival check is eager**, and fires at a
+   * deliberately different point from `onTruncatedTail` — see
    * `core/storage/append-only-integrity-contract.ts`'s header for the
-   * read/verify integrity contract in full.
+   * read/verify integrity contract in full, including the two points at which
+   * an integrity disagreement can and cannot be detected.
    *
    * @param options - `onTruncatedTail` tolerates an unterminated trailing
    *   fragment on the LAST segment only; the same fragment mid-stream — data
@@ -306,14 +310,23 @@ export class M3LAppendOnlyStream {
    *   {@link M3LAppendOnlyReadOptions.onArchivedSegment} for that check's
    *   missing-manifest blind spot.
    * @throws {@link M3LError} `ERR_INVALID_ARGUMENT` for a non-object
-   *   `options`, an unknown own key on it, or a non-callable
-   *   `onTruncatedTail` or `onArchivedSegment`.
+   *   `options`, an unknown own key on it, or a TRUTHY non-callable
+   *   `onTruncatedTail` or `onArchivedSegment`. A falsy one (`null`, `0`,
+   *   `""`) is deliberately not rejected: it degrades to the absent-handler
+   *   path, which for both of these handlers is the THROWING one.
    * @throws {@link "./M3LAppendOnlyStreamReadError.js".M3LAppendOnlyStreamReadError} for a malformed/oversized
    *   line, a missing sequence, an intolerable fragment, or a read failure.
    * @throws {@link "./M3LAppendOnlyStreamManifestError.js".M3LAppendOnlyStreamManifestError} when the manifest
    *   states a seal for a segment no longer on disk and no
    *   `onArchivedSegment` was supplied, or when a `manifest.jsonl` that is
    *   present cannot be read or parsed at all.
+   * @throws {@link "./M3LAppendOnlyStreamIntegrityError.js".M3LAppendOnlyStreamIntegrityError} when a segment the
+   *   manifest SEALED is still on disk and the bytes read back do not
+   *   measure what the seal recorded — a distinct class from the manifest
+   *   error above, since these bytes are present and simply are not the
+   *   sealed ones. An unclaimed segment is never digested. See
+   *   `core/storage/append-only-integrity-contract.ts` for when in the
+   *   iteration this can and cannot fire.
    *
    * @example
    * ```ts

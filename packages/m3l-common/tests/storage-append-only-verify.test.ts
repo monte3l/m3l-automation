@@ -429,6 +429,57 @@ describe("C2 classification", () => {
     ]);
   });
 
+  test("a manifest seal whose sha256 is genuinely the segment's but whose entryCount is inflated classifies mismatched, never sealed", async () => {
+    // The only forgery in this file that leaves the SEGMENT UNTOUCHED. Every
+    // other mismatched fixture tampers the bytes, and all three measured
+    // numbers derive from those same bytes, so a byte change always moves
+    // `sha256` too — the case above says exactly that ("byteLength and
+    // sha256 both move"). That makes those fixtures blind to a comparison
+    // narrowed to `sha256` alone, since the hash disagrees in every one of
+    // them regardless. Here `sha256` AND `byteLength` are the true
+    // measurement of the bytes on disk and only `entryCount` lies, so a
+    // `sha256`-only comparison would report this doctored sidecar "sealed".
+    // That is the forgery an auditor reaches for `verify()` to detect once
+    // `read()` is already throwing.
+    const buffer = await writeSegment(SEG, '{"a":1}\n{"b":2}\n');
+    const trueMeasurement = measureBytes(buffer);
+    // Written as this segment's ONLY seal line rather than appended beside a
+    // genuine one: `admitSeal` refuses two disagreeing seals for one segment
+    // as a fatal manifest finding, which is a different path entirely and
+    // would never reach the comparison under test. INFLATED, not deflated —
+    // `entryCount` is unguarded in both directions, while a deflated
+    // `byteLength` is separately refused on the read path as an overrun, so
+    // an over-count is the single field that isolates the three-field
+    // comparison.
+    const forgedClaim: Measurement = {
+      ...trueMeasurement,
+      entryCount: trueMeasurement.entryCount + 1,
+    };
+    await writeManifestBytes(sealLine(SEG, forgedClaim));
+    const { options } = harness();
+
+    const result = await verifyAppendOnlySegments(options);
+
+    const verdict = definedOrThrow(result.verdicts[0], "the verdict");
+    // `verify()` never throws on a finding, so the verdict is the assertion.
+    if (verdict.status !== "mismatched") {
+      throw new Error(`expected status "mismatched", got "${verdict.status}"`);
+    }
+    // The two fields a `sha256`-only comparison would have accepted really
+    // do agree here — pinned so this case cannot pass for the wrong reason,
+    // such as a digest that drifted because the fixture disturbed the bytes.
+    expect(verdict.observed.sha256).toBe(trueMeasurement.sha256);
+    expect(verdict.observed.byteLength).toBe(trueMeasurement.byteLength);
+    // ...and the field that lies is the only one that lies: the segment still
+    // holds exactly the entries it was measured with, while the manifest
+    // claims one more.
+    expect(verdict.observed.entryCount).toBe(trueMeasurement.entryCount);
+    expect(verdict.sealed.entryCount).toBe(trueMeasurement.entryCount + 1);
+    expect(result.totals.mismatched).toBe(1);
+    expect(result.totals.sealed).toBe(0);
+    expect(result.failures).toEqual([]);
+  });
+
   test("a sealed segment absent from disk classifies archived, carrying the full claim including sha256, with observed undefined", async () => {
     const measurement = arbitraryMeasurement("a");
     await writeManifestBytes(sealLine(SEG, measurement));

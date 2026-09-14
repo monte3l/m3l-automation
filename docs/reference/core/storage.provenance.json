@@ -63,7 +63,7 @@
         {
           "file": "packages/m3l-common/src/core/storage/M3LAppendOnlyStream.ts",
           "symbol": "M3LAppendOnlyStream",
-          "blob": "5b7c29fa2d0da36f99192e1f0d2b3c0e8ab418d0"
+          "blob": "95a8d9c8445098905fd2a5b0b203af822b59670e"
         },
         {
           "file": "packages/m3l-common/src/core/storage/append-only-write-types.ts",
@@ -83,7 +83,7 @@
         {
           "file": "packages/m3l-common/src/core/storage/M3LAppendOnlyStreamIntegrityError.ts",
           "symbol": "M3LAppendOnlyStreamIntegrityError",
-          "blob": "8f569a5266240ddb8d0afb6efb50d773355d7e0a"
+          "blob": "3dbfb431a238b92ad669b34e91f8b9b2ef64ab37"
         },
         {
           "file": "packages/m3l-common/src/core/storage/append-only-manifest-types.ts",
@@ -93,7 +93,7 @@
         {
           "file": "packages/m3l-common/src/core/storage/append-only-integrity-contract.ts",
           "symbol": "M3LAppendOnlySegmentMeasurement",
-          "blob": "0a5280726102b4960100c164c633bdb55fc1cfef"
+          "blob": "2da354e596dda641e348ab8e00ebaf83ff731ca1"
         },
         {
           "file": "packages/m3l-common/src/core/storage/append-only-verify-types.ts",
@@ -204,7 +204,7 @@
         {
           "file": "packages/m3l-common/src/core/storage/M3LAppendOnlyStream.ts",
           "symbol": "M3LAppendOnlyStream",
-          "blob": "5b7c29fa2d0da36f99192e1f0d2b3c0e8ab418d0"
+          "blob": "95a8d9c8445098905fd2a5b0b203af822b59670e"
         },
         {
           "file": "packages/m3l-common/src/core/storage/M3LAppendOnlyStreamError.ts",

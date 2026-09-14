@@ -22,13 +22,16 @@ import { M3LError } from "../errors/index.js";
  */
 interface M3LAppendOnlyStreamIntegrityErrorOptions {
   /**
-   * Structured detail about the mismatch. The intended payload is the same
-   * pair `verify()`'s `"mismatched"` verdict already reports — `sealed` (the
-   * claim, an
+   * Structured detail about the mismatch. The payload `read()` builds is the
+   * same pair `verify()`'s `"mismatched"` verdict already reports — `sealed`
+   * (the claim, an
    * {@link "./append-only-verify-types.js".M3LAppendOnlySealedSegment}) and
    * `observed` (what re-digesting actually found, an
    * {@link "./append-only-integrity-contract.js".M3LAppendOnlySegmentMeasurement})
-   * — so an operator can see which of the three numbers moved. Operational
+   * — so an operator can see which of the three numbers moved. On the
+   * mid-read byte-overrun refusal `observed` holds `byteLength` alone; see
+   * this class's own TSDoc for why nothing more can be stated honestly
+   * there. Operational
    * facts the library computed itself only: **never** caller data, no
    * directory path, no entry key, no entry value. The segment file name a
    * seal carries is this library's own, derived from the rotation clock
@@ -61,18 +64,39 @@ interface M3LAppendOnlyStreamIntegrityErrorOptions {
  * `sha256` — a plain digest, reproducible with `sha256sum` alone — against
  * an archive copy, not a retry.
  *
- * **No code in this package raises it.** The reader-side digest check it
- * belongs to is
- * {@link "./M3LAppendOnlyStream.js".M3LAppendOnlyStream.read}'s, and that
- * check is not part of `M3LAppendOnlyStream`: `read()` verifies a sealed
- * segment's *presence*, not its digest, and
- * {@link "./M3LAppendOnlyStream.js".M3LAppendOnlyStream.verify} reports a
- * digest disagreement as a `"mismatched"` verdict in its resolved report
- * rather than by throwing, since it never rejects. So this class and its
- * code exist ahead of any thrower — registering the code, its catalog
- * classification and the `context` payload before a call site depends on all
- * three keeps that vocabulary settled rather than invented inside the reader
- * change.
+ * **What raises it.**
+ * {@link "./M3LAppendOnlyStream.js".M3LAppendOnlyStream.read} verifies every
+ * SEALED segment inline: the raw bytes it is already streaming are fed to the
+ * same digest implementation the sealer measured with — no second read of the
+ * file — and this error is thrown as soon as that measurement and the
+ * manifest's claim disagree. A segment the manifest does not claim is never
+ * digested, because an unclaimed segment has nothing to be compared against.
+ * {@link "./M3LAppendOnlyStream.js".M3LAppendOnlyStream.verify} reports the
+ * same disagreement as a `"mismatched"` verdict in its resolved report rather
+ * than by throwing, since it never rejects; the two entry points answer one
+ * contract in two registers.
+ *
+ * **Two limits on when `read()` raises it** — both tested, both deliberate
+ * contract limits rather than defects. A `sha256` or entry-count disagreement
+ * cannot be known until a segment's LAST byte has been read, and `read()`
+ * streams entries as it goes, so the caller has already received that
+ * segment's entries by the time this throws (the refusal still lands before
+ * the NEXT segment's entries, which is what bounds the damage). And a caller
+ * that abandons the iteration inside a segment never reaches the comparison
+ * at all, so no verdict is reached for the segment it stopped inside.
+ * `core/storage/append-only-integrity-contract.ts` states both in the
+ * caller's own terms.
+ *
+ * **`context` carries less on one of the two refusal points, on purpose.** At
+ * a segment's end it holds the full pair: the `sealed` claim and a complete
+ * `observed` triple. When the refusal is instead the cumulative byte count
+ * passing the claim MID-read — already proof the segment is not the sealed
+ * one, and refused there so bytes appended after the seal never reach the
+ * caller as entries — `observed` carries `byteLength` alone, and that figure
+ * is a lower bound rather than the file's size. The digest was never
+ * finished, so no `sha256` for the segment exists and the entry count so far
+ * is only a prefix's: reporting either would place a value this library never
+ * computed inside an audit error, which is worse than reporting less.
  *
  * Its message and `context` carry only operational facts the library
  * computed itself. The chained `cause` is the documented exception, in the

@@ -21,9 +21,19 @@
  * {@link readAppendOnlySegments} opens anything, so an incomplete or
  * unverifiable trail is refused on the consumer's first `next()` rather than
  * midway through a read; this module receives a settled list of segments and
- * does nothing but read them. The two error ports in the options mirror the
- * same split: a proof-layer refusal (`buildManifestError`) reads differently
- * from "this trail would not parse" (`buildError`).
+ * reads them.
+ *
+ * **What it does beyond reading is verify the claims planning handed it.** A
+ * segment the manifest SEALED arrives carrying that seal
+ * ({@link "./append-only-reader-types.js".DiscoveredSegment.seal}), and its
+ * bytes are re-digested from the very chunks this module is already streaming
+ * — no second read of the file — and refused when they disagree with the
+ * claim (`./append-only-read-digest.js`, and
+ * {@link startSealVerification} for why an unclaimed segment is simply
+ * skipped). The three error ports in the options mirror the three incidents:
+ * a proof-layer refusal (`buildManifestError`), "this trail would not parse"
+ * (`buildError`), and "these are not the bytes that were sealed"
+ * (`buildIntegrityError`).
  *
  * Every line read back is proven and rebuilt through the exact same
  * `projectAppendOnlyEntry` the writer serializes through
@@ -78,16 +88,18 @@ import {
 } from "./append-only-lines.js";
 import type { AppendOnlyProjectionFailure } from "./append-only-projection.js";
 import { projectAppendOnlyEntry } from "./append-only-projection.js";
-import type { DiscoveredSegment } from "./append-only-read-plan.js";
+import { SegmentSealVerification } from "./append-only-read-digest.js";
 import { planSegmentsToRead } from "./append-only-read-plan.js";
 import type {
   AppendOnlyReaderOptions,
   AppendOnlyTruncatedSegment,
+  DiscoveredSegment,
 } from "./append-only-reader-types.js";
 
 /**
  * Per-segment context threaded through {@link readSegmentEntries}: this
- * read's shared ceiling and callback, plus this segment's own position.
+ * read's shared ceiling, callback and error vocabularies, plus this segment's
+ * own position.
  */
 interface SegmentReadContext {
   readonly isLastSegment: boolean;
@@ -96,6 +108,7 @@ interface SegmentReadContext {
   readonly maxLineBytes: number;
   readonly onTruncatedTail?: (segment: AppendOnlyTruncatedSegment) => void;
   readonly buildError: AppendOnlyReadFailure;
+  readonly buildIntegrityError: AppendOnlyReadFailure;
 }
 
 /**
@@ -270,16 +283,111 @@ async function releaseAfterFailure(
 }
 
 /**
+ * Starts this segment's inline digest verification, or returns `undefined`
+ * when there is nothing to verify.
+ *
+ * **The whole rule is "has a seal? verify : skip", and the manifest's
+ * BASELINE is deliberately not consulted.** That looks like half of
+ * `./append-only-verify.js`'s rule C2 and is in fact all of it that this path
+ * can observe. C2 says a seal outranks the baseline — a CLAIMED segment is
+ * verified wherever the boundary falls — and testing for a claim alone
+ * satisfies that by construction, with no branch order for a later edit to
+ * invert. The other half of C2 separates `"legacy"` (at or before the
+ * boundary, unclaimed) from `"unsealed"` (after it, unclaimed), and that
+ * distinction cannot exist here: both are UNCLAIMED, an unclaimed segment has
+ * no claim to compare its bytes against, and `read()` never reports a
+ * per-segment verdict — it only ever decides whether to compare. `verify()`
+ * needs the two names because it publishes one verdict per segment; this
+ * function would gain a branch no behaviour could distinguish from its
+ * absence, which on a per-file coverage gate is a liability rather than a
+ * safeguard.
+ */
+function startSealVerification(
+  segment: DiscoveredSegment,
+  context: SegmentReadContext,
+): SegmentSealVerification | undefined {
+  if (segment.seal === undefined) {
+    return undefined;
+  }
+  return new SegmentSealVerification(segment.seal, context.buildIntegrityError);
+}
+
+/**
+ * Streams one already-opened, already-proven segment's complete lines, in file
+ * order, feeding the same raw chunks to `verification` when the manifest
+ * claims this segment — and RETURNS the byte length of the trailing fragment
+ * it ended on, for {@link readSegmentEntries} to resolve against the
+ * torn-tail policy.
+ *
+ * Extracted from {@link readSegmentEntries} when the inline verification
+ * pushed that function past its cyclomatic-complexity ceiling: the loop is
+ * the one part of it that is purely "bytes to entries", while everything left
+ * behind is the handle's lifecycle. Delegated with `yield*`, so the entries
+ * still reach the consumer one at a time and the trailing-fragment length
+ * arrives as the delegation's own value — nothing is buffered and no behaviour
+ * moved with the code. An early `break` by the consumer still resumes
+ * {@link readSegmentEntries}' `finally` through this generator's own
+ * `.return()`, which is why verification of an abandoned segment never
+ * happens: `finish()` below is simply never reached.
+ *
+ * The digest is fed the RAW chunk, before any line splitting and BEFORE this
+ * chunk's entries are yielded, for two separate reasons: the bytes a seal
+ * measured are the file's own, unsplit and undecoded, and a chunk that
+ * already overruns the claim has to be refused rather than handed over as
+ * entries.
+ *
+ * `finish()` runs before {@link assertMidStreamSegmentNotEmpty} deliberately.
+ * A seal is a claim about this segment's ENTIRE byte range, so once the bytes
+ * disagree with it, any later judgement about the segment's shape would be a
+ * judgement about bytes nobody sealed.
+ */
+async function* streamSegmentLines(
+  handle: FileHandle,
+  verification: SegmentSealVerification | undefined,
+  context: SegmentReadContext,
+): AsyncGenerator<Readonly<Record<string, unknown>>, number> {
+  let carry: Buffer = Buffer.alloc(0);
+  let lineCount = 0;
+
+  for await (const rawChunk of readChunks(handle, context.maxLineBytes)) {
+    verification?.observe(rawChunk);
+    const split = splitLines(
+      carry,
+      rawChunk,
+      context.maxLineBytes,
+      context.buildError,
+    );
+    for (const lineBytes of split.lines) {
+      lineCount += 1;
+      yield parseAndProjectLine(lineBytes, context.buildError);
+    }
+    carry = split.carry;
+  }
+
+  verification?.finish();
+  assertMidStreamSegmentNotEmpty(carry.length, lineCount, context);
+  return carry.length;
+}
+
+/**
  * Reads one segment's complete lines, in file order, and resolves its
  * trailing fragment (if any) against this read's torn-tail policy.
+ *
+ * Owns the segment's HANDLE and nothing else: the chunk loop, the inline
+ * digest verification and the empty-segment refusal are all delegated to
+ * {@link streamSegmentLines}, which runs inside the guard below.
  *
  * The whole lifecycle — `open`, the `fstat` tampering check, the chunked
  * `read`s, `close` — sits under one guard: any failure among them that isn't
  * already the owner's own typed error (thrown by this function itself, by
  * {@link "./append-only-fs.js".assertSegmentIsReadable},
  * {@link assertMidStreamSegmentNotEmpty},
- * {@link "./append-only-lines.js".splitLines}, or {@link resolveTornTail}) is
- * wrapped in it, so nothing leaks a raw Node error out of `read()`.
+ * {@link "./append-only-lines.js".splitLines},
+ * {@link "./append-only-read-digest.js".SegmentSealVerification}, or
+ * {@link resolveTornTail}) is wrapped in it, so nothing leaks a raw Node error
+ * out of `read()`. An integrity refusal is one of those already-typed errors,
+ * so it reaches the caller as itself rather than re-wrapped as a read
+ * failure — which is what keeps `instanceof` able to tell the two apart.
  *
  * That guard is also what gives {@link reportTornTail} its shape: the
  * owner's `onTruncatedTail` is caller code, so whatever it throws — or
@@ -307,26 +415,13 @@ async function* readSegmentEntries(
     handle = await open(segment.path, SEGMENT_READ_FLAGS);
     await assertSegmentIsReadable(handle, context.buildError);
 
-    let carry: Buffer = Buffer.alloc(0);
-    let lineCount = 0;
+    const carryLength = yield* streamSegmentLines(
+      handle,
+      startSealVerification(segment, context),
+      context,
+    );
 
-    for await (const rawChunk of readChunks(handle, context.maxLineBytes)) {
-      const split = splitLines(
-        carry,
-        rawChunk,
-        context.maxLineBytes,
-        context.buildError,
-      );
-      for (const lineBytes of split.lines) {
-        lineCount += 1;
-        yield parseAndProjectLine(lineBytes, context.buildError);
-      }
-      carry = split.carry;
-    }
-
-    assertMidStreamSegmentNotEmpty(carry.length, lineCount, context);
-
-    const tornTail = resolveTornTail(carry.length, context);
+    const tornTail = resolveTornTail(carryLength, context);
     if (tornTail !== undefined) {
       await reportTornTail(tornTail, context);
     }
@@ -370,7 +465,7 @@ async function* readSegmentEntries(
  * first `next()`. Everything below that line is reading.
  *
  * @param options - The directory, the two size ceilings, the torn-tail and
- *   archival policies, and the two error ports to read under.
+ *   archival policies, and the three error ports to read under.
  * @returns Every entry, as the library's own detached, null-prototype
  *   rebuild of what was parsed.
  */
@@ -393,6 +488,7 @@ export async function* readAppendOnlySegments(
         onTruncatedTail: options.onTruncatedTail,
       }),
       buildError: options.buildError,
+      buildIntegrityError: options.buildIntegrityError,
     });
   }
 }
