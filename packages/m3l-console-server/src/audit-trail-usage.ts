@@ -94,9 +94,9 @@ export interface M3LAuditTrailUsageOutcome {
    * this total. An operator comparing this number against `du` on the audit
    * root will therefore see a difference once the writer has sealed at least
    * one segment, and the sidecar is that difference: it gains roughly one
-   * line per sealed segment plus one fixed baseline line, an order of
-   * magnitude of a couple hundred bytes per line for the manifest's current
-   * record shape (observed, not a guaranteed size), and it is itself never
+   * line per sealed segment plus one fixed baseline line, on the order of a
+   * couple hundred bytes per line for the manifest's current record shape
+   * (observed, not a guaranteed size), and it is itself never
    * rotated — so the gap grows with the *segment count*, not with the
    * trail's byte size. That is negligible against the default 8 MiB segment
    * ceiling, but it is not zero, and a caller reconciling this field against
