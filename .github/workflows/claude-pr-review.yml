@@ -603,7 +603,7 @@ jobs:
           printf 'FAIL' > "$GITHUB_WORKSPACE/.claude-review-verdict"
           echo "::error title=Claude PR Review::Reviewable diff is ${REVIEWABLE_BYTES} chars, over the ${MAX_REVIEWABLE_BYTES} limit — split this PR."
 
-      - uses: anthropics/claude-code-action@d75b94d5ad426cb8546e6628b6f5f19b84e5cce1 # v1
+      - uses: anthropics/claude-code-action@56cf60fde42f7b19c3abfd5c9c48b69a1288461f # v1
         id: claude-review
         if: steps.guard.outputs.should_review == 'true' && steps.precompute.outputs.too_large != 'true'
         with:
