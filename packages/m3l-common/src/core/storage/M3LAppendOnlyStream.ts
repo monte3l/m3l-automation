@@ -21,7 +21,8 @@
  * - a failure of the **append itself**, including a well-formed entry that is
  *   simply larger than one atomic write can carry and a segment path that
  *   turns out to be a symlink or a hardlink, throws
- *   {@link M3LAppendOnlyStreamError} (`ERR_APPEND_ONLY_STREAM_WRITE`).
+ *   {@link "./M3LAppendOnlyStreamError.js".M3LAppendOnlyStreamError}
+ *   (`ERR_APPEND_ONLY_STREAM_WRITE`).
  *
  * No error message, and no `context` built here, ever carries a value read
  * out of the caller's input: they name the field and the violation kind only.
@@ -55,109 +56,33 @@
  * @packageDocumentation
  */
 
-import type { M3LError } from "../errors/index.js";
 import { isFunction } from "../utils/guards.js";
 import { readAppendOnlySegments } from "../../internal/storage/append-only-reader.js";
 import { renderEntryLine } from "../../internal/storage/append-only-render.js";
 import { listSegmentFiles } from "../../internal/storage/append-only-segments.js";
 import { AppendOnlySealer } from "../../internal/storage/append-only-sealer.js";
-import type { AppendOnlyWriterErrors } from "../../internal/storage/append-only-writer.js";
 import { AppendOnlyWriter } from "../../internal/storage/append-only-writer.js";
 import { DEFAULT_MAX_MANIFEST_BYTES } from "../../internal/storage/append-only-manifest.js";
 import {
   validateReadOptions,
   validateStreamOptions,
 } from "../../internal/storage/append-only-options.js";
+import { verifyAppendOnlySegments } from "../../internal/storage/append-only-verify.js";
+import type {
+  M3LAppendOnlyEntry,
+  M3LAppendOnlyValue,
+} from "./append-only-entry-types.js";
 import type {
   M3LAppendOnlyReadOptions,
   M3LAppendOnlySegmentListing,
 } from "./append-only-read-types.js";
+import type { M3LAppendOnlyVerification } from "./append-only-verify-types.js";
 import type { M3LAppendOnlyStreamOptions } from "./append-only-write-types.js";
-import { M3LAppendOnlyStreamError } from "./M3LAppendOnlyStreamError.js";
-import { M3LAppendOnlyStreamManifestError } from "./M3LAppendOnlyStreamManifestError.js";
-import { M3LAppendOnlyStreamReadError } from "./M3LAppendOnlyStreamReadError.js";
-
-/**
- * A value an append-only stream entry may carry. Closed on purpose: exactly
- * what JSON can carry back out unchanged, and nothing else.
- *
- * `undefined`, a `bigint`, a function, a symbol and a class instance (a
- * `Date`, a `Map`, an `Error`) are all excluded, because each would make the
- * persisted line disagree with the entry the caller handed over — silently
- * dropped, coerced to `null`, or serialized through whatever `toJSON` it
- * carries. Pass a `Date` as `date.toISOString()` and any richer collection as
- * the plain array or object you want recorded.
- *
- * @example
- * ```ts
- * import type { M3LAppendOnlyValue } from "@monte3l/m3l-common/core";
- *
- * const actor: M3LAppendOnlyValue = { id: "u-1", roles: ["reader"] };
- * ```
- */
-export type M3LAppendOnlyValue =
-  | string
-  | number
-  | boolean
-  | null
-  | readonly M3LAppendOnlyValue[]
-  | { readonly [key: string]: M3LAppendOnlyValue };
-
-/**
- * One entry: a JSON object of {@link M3LAppendOnlyValue}s, persisted as
- * exactly one line.
- *
- * The stream never serializes the caller's object — it rebuilds a detached,
- * null-prototype copy first — so an entry may be handed over and then
- * mutated without changing what was written.
- *
- * This is the **shape** an entry has — the type to annotate a value with. It
- * is not the constraint {@link M3LAppendOnlyStream.append} imposes: an
- * `interface` carries no index signature, so a record declared as one (the
- * normal way a consumer models an audit record) does not satisfy this alias
- * and would need a cast that throws away the closure the alias provides.
- * `append` constrains its own type parameter instead, admitting any object
- * type whose properties are all {@link M3LAppendOnlyValue}s. Everything
- * assignable to this alias satisfies that constraint.
- *
- * @example
- * ```ts
- * import type { M3LAppendOnlyEntry } from "@monte3l/m3l-common/core";
- *
- * const entry: M3LAppendOnlyEntry = {
- *   at: new Date().toISOString(),
- *   event: "approval.granted",
- *   actor: { id: "u-1" },
- * };
- * ```
- */
-export type M3LAppendOnlyEntry = { readonly [key: string]: M3LAppendOnlyValue };
-
-/**
- * This stream's half of the generic writer's error port: it turns the two
- * failures `AppendOnlyWriter` can report into {@link M3LAppendOnlyStreamError}.
- *
- * Only byte counts and a chained `cause` cross this boundary, so neither
- * error can carry a value read out of the caller's input — see this module's
- * header.
- */
-const APPEND_ONLY_STREAM_ERRORS: AppendOnlyWriterErrors = {
-  oversize(lineBytes: number, maxLineBytes: number): M3LError {
-    return new M3LAppendOnlyStreamError(
-      "append-only stream: serialized entry exceeds the maximum line size",
-      { context: { lineBytes, maxLineBytes } },
-    );
-  },
-  appendFailed(cause: unknown): M3LError {
-    // No `context`: everything worth naming here is the directory path,
-    // which is caller input. The chained `cause` is Node's own error and
-    // carries the operational detail — see this module's header.
-    return new M3LAppendOnlyStreamError(
-      "append-only stream: failed to append an entry",
-      { cause },
-    );
-  },
-};
+import {
+  APPEND_ONLY_STREAM_WRITE_ERRORS,
+  buildAppendOnlyStreamManifestError,
+  buildAppendOnlyStreamReadError,
+} from "../../internal/storage/append-only-stream-errors.js";
 
 /**
  * An append-only, segmented JSONL stream: one JSON object per line, appended
@@ -217,6 +142,8 @@ export class M3LAppendOnlyStream {
   private readonly streamDirectory: string;
   /** The resolved line ceiling `read()` enforces against a torn fragment. */
   private readonly streamMaxLineBytes: number;
+  /** The resolved segment-size ceiling `verify()` folds into its digest bound. */
+  private readonly streamMaxSegmentBytes: number;
   /** The generic writer this stream's rendering and errors are bound to. */
   private readonly writer: AppendOnlyWriter<unknown>;
 
@@ -237,20 +164,13 @@ export class M3LAppendOnlyStream {
     const resolved = validateStreamOptions(options);
     this.streamDirectory = resolved.directory;
     this.streamMaxLineBytes = resolved.maxLineBytes;
+    this.streamMaxSegmentBytes = resolved.maxSegmentBytes;
     const sealer = new AppendOnlySealer({
       directory: resolved.directory,
       maxSegmentBytes: resolved.maxSegmentBytes,
       maxLineBytes: resolved.maxLineBytes,
       maxManifestBytes: DEFAULT_MAX_MANIFEST_BYTES,
-      // The manifest is a storage-layer artifact shared by both owners of
-      // the append-only writer, so one direction-neutral error class makes a
-      // seal failure mean the same thing wherever it surfaces — this sealer
-      // previously built `M3LAppendOnlyStreamReadError`, so a failed
-      // manifest *write* was reported as a read error. This reaches a
-      // caller only through `onSealFailed` (still-unreleased 4.8.0), so no
-      // released behaviour changes.
-      buildError: (message, errorOptions) =>
-        new M3LAppendOnlyStreamManifestError(message, errorOptions),
+      buildError: buildAppendOnlyStreamManifestError,
       // Conditional spread, not a direct assignment: `exactOptionalPropertyTypes`
       // forbids setting an optional property to a value typed `T | undefined`.
       ...(resolved.onSealFailed !== undefined && {
@@ -263,7 +183,7 @@ export class M3LAppendOnlyStream {
       maxSegmentAgeMs: resolved.maxSegmentAgeMs,
       maxLineBytes: resolved.maxLineBytes,
       renderEntry: renderEntryLine,
-      errors: APPEND_ONLY_STREAM_ERRORS,
+      errors: APPEND_ONLY_STREAM_WRITE_ERRORS,
       sealer,
     });
   }
@@ -297,12 +217,13 @@ export class M3LAppendOnlyStream {
    * that crosses it rather than a whole batch late. A rejected append is
    * reported to its own caller only and never poisons the chain.
    *
-   * The parameter is constrained rather than typed {@link M3LAppendOnlyEntry}
-   * so an `interface`-declared record — the normal way a consumer models an
-   * audit record, and one that carries no index signature — is accepted
-   * without a cast. The closure is unchanged: every property still has to be
-   * an {@link M3LAppendOnlyValue}, so a `Date`- or `bigint`-valued field is
-   * still a compile error.
+   * The parameter is constrained rather than typed
+   * {@link "./append-only-entry-types.js".M3LAppendOnlyEntry} so an
+   * `interface`-declared record — the normal way a consumer models an audit
+   * record, and one that carries no index signature — is accepted without a
+   * cast. The closure is unchanged: every property still has to be an
+   * {@link "./append-only-entry-types.js".M3LAppendOnlyValue}, so a `Date`- or
+   * `bigint`-valued field is still a compile error.
    *
    * @remarks
    * Resolving means the entry is durable — it does not mean the directory is
@@ -317,9 +238,9 @@ export class M3LAppendOnlyStream {
    * recovers.
    *
    * @typeParam T - The caller's own record type; every property must be an
-   *   {@link M3LAppendOnlyValue}.
+   *   {@link "./append-only-entry-types.js".M3LAppendOnlyValue}.
    * @param entry - The record to append; a plain object of
-   *   {@link M3LAppendOnlyValue}s.
+   *   {@link "./append-only-entry-types.js".M3LAppendOnlyValue}s.
    * @throws {@link M3LError} with `code: "ERR_INVALID_ARGUMENT"` when `entry`
    *   is not a plain object, carries an own `__proto__` / `constructor` /
    *   `prototype` key, or holds a value JSON cannot carry back out unchanged
@@ -327,7 +248,8 @@ export class M3LAppendOnlyStream {
    *   `undefined`, a class instance) at any depth — including a structure
    *   nested past the documented depth cap, which is what bounds a circular
    *   entry. A caller-side violation, not a write failure.
-   * @throws {@link M3LAppendOnlyStreamError} when the entry exceeds the
+   * @throws {@link "./M3LAppendOnlyStreamError.js".M3LAppendOnlyStreamError}
+   *   when the entry exceeds the
    *   stream's `maxLineBytes` — well-formed, but larger than one atomic write
    *   can carry — or when the append itself fails for any reason, including a
    *   segment path that has been replaced by a symlink or hardlinked into a
@@ -376,7 +298,7 @@ export class M3LAppendOnlyStream {
    * @throws {@link M3LError} `ERR_INVALID_ARGUMENT` for a non-object
    *   `options`, an unknown own key on it, or a non-callable
    *   `onTruncatedTail`.
-   * @throws {@link M3LAppendOnlyStreamReadError} for a malformed/oversized
+   * @throws {@link "./M3LAppendOnlyStreamReadError.js".M3LAppendOnlyStreamReadError} for a malformed/oversized
    *   line, a missing sequence, an intolerable fragment, or a read failure.
    *
    * @example
@@ -401,8 +323,7 @@ export class M3LAppendOnlyStream {
       ...(isFunction(options?.onTruncatedTail) && {
         onTruncatedTail: options.onTruncatedTail,
       }),
-      buildError: (message, errorOptions) =>
-        new M3LAppendOnlyStreamReadError(message, errorOptions),
+      buildError: buildAppendOnlyStreamReadError,
     }) as AsyncIterable<M3LAppendOnlyEntry>;
   }
 
@@ -424,7 +345,7 @@ export class M3LAppendOnlyStream {
    * for it. Gap detection stays on `read()`, which hands entries back and
    * must vouch for the trail it hands them from.
    *
-   * @throws {@link M3LAppendOnlyStreamReadError} when listing the directory,
+   * @throws {@link "./M3LAppendOnlyStreamReadError.js".M3LAppendOnlyStreamReadError} when listing the directory,
    *   or inspecting one of its entries, fails for a reason other than the
    *   entry not existing.
    *
@@ -444,12 +365,80 @@ export class M3LAppendOnlyStream {
     try {
       listing = await listSegmentFiles(this.streamDirectory);
     } catch (cause) {
-      throw new M3LAppendOnlyStreamReadError(
+      throw buildAppendOnlyStreamReadError(
         "append-only stream: failed to list segments",
         { cause },
       );
     }
     return { segments: Array.from(listing.segments), skipped: listing.skipped };
+  }
+
+  /**
+   * Re-digests every segment the directory's `manifest.jsonl` sidecar makes
+   * a claim about, and classifies every segment — claimed or not — into one
+   * of five verdicts: `"sealed"`, `"mismatched"`, `"archived"`, `"legacy"`,
+   * or `"unsealed"` (see
+   * {@link "./append-only-verify-types.js".M3LAppendOnlyVerificationStatus}).
+   *
+   * **Never rejects.** That is the entire reason an operator reaches for
+   * this method: `read()` has typically already started throwing by the
+   * time `verify()` is called, and a verification that itself threw on a
+   * damaged trail would be useless exactly when the damage is why it was
+   * called. Every failure this stream can hit while verifying — the
+   * directory cannot be listed, the manifest cannot be read, a claimed
+   * segment cannot be re-digested — becomes an entry in the resolved
+   * report's `failures` array instead of a rejection. The classification
+   * rules themselves (the precedence between a seal and a baseline, the
+   * ordering, the boundary) are
+   * {@link "../../internal/storage/append-only-verify.js".verifyAppendOnlySegments}'s
+   * to state; this method only wires this stream's own directory and
+   * ceilings to that engine.
+   *
+   * **The returned report is not a simple pass/fail.** Read it through
+   * {@link "./append-only-verify-types.js".M3LAppendOnlyVerification}, which
+   * documents what each field can — and cannot — prove about this stream's
+   * directory; no single field on it is a clean bill of health by itself.
+   *
+   * The digest bound handed to the engine is `maxSegmentBytes + maxLineBytes`,
+   * never `maxSegmentBytes` alone: `shouldRotate` fires at
+   * `>= maxSegmentBytes`, so the line that crosses the ceiling is written
+   * before rotation, and a segment legitimately larger than
+   * `maxSegmentBytes` on its very first write would otherwise be refused as
+   * unreadable rather than reported `"sealed"`.
+   *
+   * @returns The full report: one verdict per segment this stream could
+   *   classify, one failure per thing it could not, totals, and the
+   *   manifest's stated boundary.
+   * @example
+   * ```ts
+   * import { M3LAppendOnlyStream } from "@monte3l/m3l-common/core";
+   *
+   * const stream = new M3LAppendOnlyStream({ directory: "data/output/audit" });
+   * const report = await stream.verify();
+   *
+   * // A positive finding, but not sufficient alone — see M3LAppendOnlyVerification.
+   * const disputed = report.verdicts.length === 0 && report.failures.length > 0;
+   * if (report.totals.mismatched > 0 || disputed) {
+   *   // escalate: at least one claim disagrees with its bytes, or the
+   *   // sidecar itself could not be read
+   * }
+   *
+   * // Absence of evidence is a finding too, judged against what this trail
+   * // is expected to hold — a record kept OUTSIDE this directory.
+   * if (report.unprovenBefore === undefined || report.skipped > 0) {
+   *   // escalate: the manifest is gone, or the directory holds entries
+   *   // this writer never left behind
+   * }
+   * ```
+   */
+  async verify(): Promise<M3LAppendOnlyVerification> {
+    return await verifyAppendOnlySegments({
+      directory: this.streamDirectory,
+      maxDigestBytes: this.streamMaxSegmentBytes + this.streamMaxLineBytes,
+      maxManifestBytes: DEFAULT_MAX_MANIFEST_BYTES,
+      buildManifestError: buildAppendOnlyStreamManifestError,
+      buildSegmentError: buildAppendOnlyStreamReadError,
+    });
   }
 
   /**

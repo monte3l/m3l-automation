@@ -1,9 +1,8 @@
 /**
  * `core/storage/append-only-manifest-types` — the public type surface for
- * the append-only stream's manifest sidecar: the payload a caller-supplied
- * seal-failure handler receives when a segment (or the manifest itself)
- * could not be sealed. Verification types for the manifest join this module
- * in a later slice.
+ * the append-only stream's manifest sidecar: its file name within a
+ * stream's directory, and the payload a caller-supplied seal-failure handler
+ * receives when a segment (or the manifest itself) could not be sealed.
  *
  * @packageDocumentation
  */
