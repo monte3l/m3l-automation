@@ -32,12 +32,12 @@
 
 ## Scope and sequencing
 
-| Stage | Contents                                                                | Shape                                                              |
-| ----- | ----------------------------------------------------------------------- | ------------------------------------------------------------------ |
-| **1** | The two ADR Updates + this plan doc                                     | Docs only; records the corrections before any code depends on them |
-| **2** | Package skeleton, governance registration, process port, empty registry | New package; no tool exists yet, by construction                   |
-| **3** | Policy + audit dispatch spine, and `fleet_health`                       | The first tool, reachable only through the gate                    |
-| **4** | Contract page, Tooling row, `check:mcp` scoping, tracker pointers       | Docs + one gate assertion; V10 row stays To Do                     |
+| Stage | Contents                                                              | Shape                                                              |
+| ----- | --------------------------------------------------------------------- | ------------------------------------------------------------------ |
+| **1** | The two ADR Updates + this plan doc                                   | Docs only; records the corrections before any code depends on them |
+| **2** | Package skeleton, governance registration, brand-gated empty registry | New package; no tool exists yet, by construction                   |
+| **3** | Policy + audit dispatch spine, and `fleet_health`                     | The first tool, reachable only through the gate                    |
+| **4** | Contract page, Tooling row, `check:mcp` scoping, tracker pointers     | Docs + one gate assertion; V10 row stays To Do                     |
 
 ## Landing plan
 
@@ -46,12 +46,12 @@ same `## Landing plan` heading and `| Slice | Branch | Scope | Status |`
 table a submodule's reference page carries, gated by
 `pnpm check:landing-plans`.
 
-| Slice | Branch                      | Scope                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | Status |
-| ----- | --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------ |
-| V10a  | `feat/v10-mcp-adr-updates`  | The ADR-0062 Update (tool grouping settled; `isError` redefinition; retired `m3l-cli`-internals clause; corrected library specifier; `zod` as a second own dependency) + the ADR-0057 Update (publish-set membership) + this plan doc                                                                                                                                                                                                                                                            | To Do  |
-| V10b  | `feat/v10-mcp-scaffold`     | `packages/m3l-mcp` skeleton: `package.json`, both tsconfigs, `bin/`, `README.md`, composition root, error type, env config, the narrow CLI process port, doctor argv/parser, and a brand-gated **empty** tool registry. Governance registration: root `tsconfig.json` reference, `knip.json` workspace, three `eslint.config.js` edits, matching `bin/check-eslint-zones.mjs` assertions (plus the missing reverse `packages/*` to `scripts/*` zone), the `mcp:serve` script and its catalog row | To Do  |
-| V10c  | `feat/v10-mcp-policy-spine` | `src/policy/{load,identity,recorder,session}.ts`, `src/tools/gate.ts`, `src/tools/health.ts`; the seven-step gate contract; the verdict-to-response mapping; `fleet_health` registered through `gateTool`                                                                                                                                                                                                                                                                                        | To Do  |
-| V10d  | `feat/v10-mcp-docs`         | `docs/reference/mcp.md`, the third `docs/reference/README.md` **Tooling** row, one new `bin/check-mcp.mjs` assertion (the runtime server is not self-registered) plus its dev-time relabelling, tracker pointers, work log                                                                                                                                                                                                                                                                       | To Do  |
+| Slice | Branch                      | Scope                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | Status            |
+| ----- | --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------- |
+| V10a  | `feat/v10-mcp-adr-updates`  | The ADR-0062 Update (tool grouping settled; `isError` redefinition; retired `m3l-cli`-internals clause; corrected library specifier; `zod` as a second own dependency) + the ADR-0057 Update (publish-set membership) + this plan doc                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | Landed (PR #1253) |
+| V10b  | `feat/v10-mcp-scaffold`     | `packages/m3l-mcp` skeleton: `package.json`, both tsconfigs, `bin/`, `README.md`, the composition root, the error type (on `Core.M3LError`, matching both sibling packages), and a brand-gated **empty** tool registry whose `unique symbol` key is never exported, so `gateTool` can be its only producer. Governance registration: root `tsconfig.json` reference, `knip.json` workspace, four `eslint.config.js` edits, matching `bin/check-eslint-zones.mjs` assertions (plus the missing reverse `packages/*` to `scripts/*` zone), the `mcp:serve` script and its catalog row. **Env config, the CLI process port and the doctor argv/parser moved to V10c**: `knip` flags an unreachable export, and none of them has a caller until a tool exists | To Do             |
+| V10c  | `feat/v10-mcp-policy-spine` | `src/policy/{load,identity,recorder,session}.ts`, `src/tools/gate.ts`, `src/tools/health.ts`; the seven-step gate contract; the verdict-to-response mapping; `fleet_health` registered through `gateTool`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | To Do             |
+| V10d  | `feat/v10-mcp-docs`         | `docs/reference/mcp.md`, the third `docs/reference/README.md` **Tooling** row, one new `bin/check-mcp.mjs` assertion (the runtime server is not self-registered) plus its dev-time relabelling, tracker pointers, work log                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | To Do             |
 
 ### Recorded as later slices, not built here
 
@@ -135,12 +135,94 @@ this paraphrase.
 - `bin/check-eslint-zones.mjs` asserts a hard-coded list of zones, so a new
   package zone is **unenforced** unless the gate gains a matching assertion
   in the same change. V10b adds both, and mutation-tests them.
+- **`knip` forces a dependency to land with its first importer, not before** —
+  it flags a declared-but-unimported workspace dependency as unused. This
+  fired on `@monte3l/m3l-common` during V10b, and the first answer (drop the
+  dependency until V10c's `src/policy/load.ts` needed it) was wrong for a
+  reason the code review then found independently: `M3LMcpError` was
+  extending the native `Error`, while **both** sibling packages that define
+  an error type extend `Core.M3LError`. Rebasing it on `Core.M3LError` fixes
+  that divergence _and_ makes the dependency genuinely used, so `knip` goes
+  green for the right reason. An `ignoreDependencies` exemption was rejected
+  either way: the `m3l-cli` precedent covers packages resolved dynamically at
+  runtime, a different reason from "not imported yet", and the exemption
+  would mute the signal permanently. The codes are deliberately **not**
+  registered in `m3l-common`'s `M3L_ERROR_CODES` tuple, matching the explicit
+  statement in `packages/m3l-console-server/src/errors/console-error.ts`.
 - `bin/check-mcp.mjs` currently validates the dev-time server only, and
   asserts `readOnlyHint: true` on every tool — true of all six ADR-0096
   tools, and false of `fleet_run`/`fleet_flow`. It is therefore **not**
   widened to cover both servers; V10d adds one assertion in the other
   direction (the runtime server is not self-registered in `.mcp.json`) and
   relabels the existing prose as dev-time.
+
+## Carried into V10c by V10b's review
+
+V10b's pre-push fan-out (`code-reviewer`, `type-design-analyzer`,
+`silent-failure-hunter`) raised five findings that are correct but not
+actionable until `gateTool` exists. They are recorded here rather than left
+in a review transcript, because each one is invisible in the code as it
+stands:
+
+- **Deep-freeze entries at mint time.** `GatedToolRegistration` promises
+  `config.annotations.readOnlyHint` is `readonly`, but `Object.freeze` on
+  `TOOL_REGISTRY` is shallow — so once entries exist, a JavaScript caller can
+  mutate a registered tool's annotations. `gateTool` should deep-freeze what
+  it mints.
+- **Add the runtime brand check at the registration boundary.** With the
+  brand now carrying a real (still unexported) symbol value,
+  `entries.every(isGatedToolRegistration)` becomes possible and is the only
+  thing that stops a _JavaScript_ caller — the type system stops only
+  TypeScript ones, and `bin/m3l-mcp.mjs` is unchecked `.mjs`. Deliberately
+  **not** added in V10b: the tests inject fakes through
+  `as unknown as GatedToolRegistration[]` because they cannot mint (no
+  producer exists yet and the brand is unexported by design), so the check
+  would break the seam it depends on. It lands with `gateTool`, at which
+  point the tests mint for real and the casts go away.
+- **Never parse external input into the branded type.** An `any`-typed
+  boundary launders straight through the brand cast-free — a
+  `JSON.parse(raw) as readonly GatedToolRegistration[]` compiles, and only
+  ESLint's `no-unsafe-return`/`no-unsafe-assignment` stand in the way. Policy
+  and tool config must be validated into their own shapes and then passed to
+  `gateTool`, never asserted into the registration type.
+- **`isM3LMcpError` is `instanceof`-based, so it is realm-sensitive.** Two
+  copies of the module (a `dist`-vs-`src` import, a duplicated install) would
+  make it return `false` for a genuine error, silently misclassifying it.
+  Inert today — nothing throws `M3LMcpError` or calls the guard yet — but
+  V10c adds both, so verify it at the first real call site.
+- **Re-verify the `process.exitCode` choice once boot grows steps.**
+  `bin/m3l-mcp.mjs` sets `process.exitCode = 1` rather than calling
+  `process.exit`, which is safe only because the single awaited step today
+  (`connect` → `StdioServerTransport.start`) registers its `stdin` listener
+  as its last synchronous, non-throwing act. V10c's policy load and
+  decision-log preflight add steps that can open a handle _before_ they can
+  throw, which would leave the process alive with a dangling handle.
+
+PR #1258's second CI review round added three more. Two were taken in that
+same PR — the missing `coversMcp` term in `bin/check-eslint-zones.mjs`'s
+no-cycle conjunction (which made the guard decorative for exactly the package
+the PR added) and the unguarded relative import into
+`packages/m3l-common/src/internal` (ADR-0004's own sealing zone is scoped
+`target: "./packages/m3l-common/src"` and is therefore blind to a consumer
+reaching in from outside). The remaining three land in V10c:
+
+- **Spawn-test the bin entry's two stderr branches.** `bin/m3l-mcp.mjs`
+  separates a missing `dist/` from a failed boot, and neither branch has a
+  regression test — `vitest.config.ts` scopes coverage to
+  `packages/*/src/**/*.ts`, so `bin/**/*.mjs` is outside the gate entirely
+  and its 100% figure says nothing about the entry. Both branches were
+  verified by hand before V10b's push (exit 1, one stderr line, zero
+  host-path occurrences), which is a one-off check, not a guard. A real test
+  spawns the entry as a child process.
+- **Directory-bound the SDK's `import-x/no-unresolved` ignore.** The entry is
+  `"^@modelcontextprotocol/sdk"`, which is repo-wide — it silences the rule
+  for every file, not just this package's. Narrowing it needs a second
+  block, so it belongs with a slice already editing that region.
+- **Annotate the empty registry's freeze.**
+  `Object.freeze<readonly GatedToolRegistration[]>([])` states the intended
+  type at the call site instead of relying on the declaration's annotation to
+  widen `never[]`. Cosmetic while the array is empty; worth doing in the
+  slice that first puts an entry in it.
 
 ## Definition of done for this wave
 

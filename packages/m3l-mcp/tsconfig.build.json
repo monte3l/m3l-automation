@@ -1,0 +1,13 @@
+{
+  "//": "Build project (declaration emit). Mirrors packages/m3l-console-server/tsconfig.build.json. `erasableSyntaxOnly` is deliberately NOT extended here: it is scripts/*-only (the 2026-09-08 refreshing-typescript-guidance sweep), and adopting it for this package would need its own investigation rather than a drive-by addition.",
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "dist",
+    "tsBuildInfoFile": "dist/.tsbuildinfo",
+    "isolatedDeclarations": true
+  },
+  "references": [{ "path": "../m3l-common/tsconfig.build.json" }],
+  "include": ["src/**/*.ts"],
+  "exclude": ["dist", "node_modules", "tests"]
+}

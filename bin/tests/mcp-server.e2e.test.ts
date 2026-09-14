@@ -12,10 +12,10 @@ import { fileURLToPath } from "node:url";
 // at runtime and under `pnpm typecheck`, same mechanism bin/mcp-server.mjs
 // already relies on for @modelcontextprotocol/sdk/server/mcp.js) —
 // eslint-import-resolver-typescript does not follow this subpath-pattern
-// export when linting a .ts file, so both need a narrow disable.
-// eslint-disable-next-line import-x/no-unresolved -- see rationale above.
+// export when linting a .ts file, which is why eslint.config.js carries a
+// bounded ^@modelcontextprotocol/sdk entry in import-x/no-unresolved's
+// ignore list rather than a per-line disable here.
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-// eslint-disable-next-line import-x/no-unresolved -- see rationale above.
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 
