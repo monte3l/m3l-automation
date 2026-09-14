@@ -337,6 +337,58 @@ deliberately does not have.
   subpath is added — the new symbols reach consumers through the existing
   Core namespace barrel. `4.7.0` becomes `4.8.0`.
 
+## Update (2026-09-14) — the Semver-impact census is retired in favour of the generated surface, having rotted four ways in nine days
+
+X8b4d shipped the read side's inline digest check and, with it, a public
+symbol this ADR's own census does not name. That census turned out to be
+wrong in four independent ways, only one of which X8b4d caused:
+
+1. It omits `M3LAppendOnlyStreamIntegrityError` and its code
+   `ERR_APPEND_ONLY_STREAM_INTEGRITY`, added by X8b4d so a caller can tell a
+   date archived by ADR-0070's sanctioned procedure from a segment whose
+   bytes were altered. Those demand opposite operator responses, and
+   `M3LAppendOnlyStreamManifestError`'s `code` is fixed and unoverridable, so
+   one class could not carry both without forcing discrimination on message
+   text.
+2. It omits `M3LAppendOnlySegmentMeasurement`, which X8b4d re-homed into
+   `core/storage/append-only-integrity-contract.ts` once `read()` and
+   `verify()` both needed the "sealed claim versus observed bytes"
+   vocabulary.
+3. `` `4.7.0` becomes `4.8.0` `` was true when written and is not now. The
+   package passed through 4.8.0, 4.8.1 and 4.9.0 on unrelated slices while
+   this wave was in flight; X8b4d lands 4.10.0.
+4. It calls the package `@m3l-automation/m3l-common`. It is
+   `@monte3l/m3l-common`, and has been throughout.
+
+**The fix is to stop keeping a symbol census here at all**, not to correct
+this one. A hand-maintained list of exported symbols in a decision record has
+no gate behind it and no reason to stay current: `check:api` guards the
+`exports` map, `gen:index` derives the symbol map, and
+`docs/reference/core/storage.md` documents every public symbol under a gate
+that fails when one is undocumented. Three artifacts already own this
+question and all three are checked; a fourth, unchecked copy is pure decay
+surface. Consider the enumeration above superseded by those, and read the
+reference page rather than this section for what the implementation exports.
+
+**What the Semver-impact claim still asserts, because it is a decision rather
+than a census:** the whole of ADR-0102 is additive and **minor**. No existing
+signature changed, and no `exports` subpath was added — every new symbol
+reaches consumers through the existing Core namespace barrel, which is the
+constraint that keeps it minor. That claim has held across every slice and is
+the one worth having here.
+
+One nuance the original wording missed, recorded because it caught a reviewer
+mid-wave: "additive" describes the _surface_, not the _behaviour_. X8b4c made
+`read()` throw for a directory that previously read clean, and X8b4d makes it
+throw for a sealed segment whose bytes no longer match. Both are additive in
+signature and neither is additive in effect — the in-repo caller had to change
+for the first. Nothing has ever been published from this package (no `v4.*`
+tag, no release, both npm listings empty, and `release.yml` is
+`workflow_dispatch`-only), so no consumer can have been broken; but #1217 added
+a real publish workflow, which makes "unpublished" a statement about state
+rather than intent. Whether this wave should have landed a major under
+ADR-0020's manual-versioning rule is a maintainer call that stays open.
+
 ## Links
 
 - Trigger: [ADR-0070](./0070-console-audit-and-observability.md)'s 2026-09-05

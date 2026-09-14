@@ -68,7 +68,7 @@
       },
       {
         "path": "packages/m3l-common/package.json",
-        "blob": "8ef22a238728b9d0fd0598f61f8f4a31da92f575"
+        "blob": "7d1d834ab2b389ed5ea7ba1184c6038d0843ce42"
       },
       {
         "path": "tsconfig.base.json",
@@ -125,7 +125,7 @@
       },
       {
         "path": "packages/m3l-common/package.json",
-        "blob": "8ef22a238728b9d0fd0598f61f8f4a31da92f575"
+        "blob": "7d1d834ab2b389ed5ea7ba1184c6038d0843ce42"
       },
       {
         "path": "packages/m3l-console-server/tests/stream-writer.test.ts",
@@ -158,7 +158,7 @@
       },
       {
         "path": "packages/m3l-common/package.json",
-        "blob": "8ef22a238728b9d0fd0598f61f8f4a31da92f575"
+        "blob": "7d1d834ab2b389ed5ea7ba1184c6038d0843ce42"
       },
       {
         "path": "packages/m3l-console-web/src/errors/console-web-error.ts",
@@ -200,7 +200,7 @@
       },
       {
         "path": "packages/m3l-common/package.json",
-        "blob": "8ef22a238728b9d0fd0598f61f8f4a31da92f575"
+        "blob": "7d1d834ab2b389ed5ea7ba1184c6038d0843ce42"
       }
     ],
     "verifiedAt": "2026-09-14"
@@ -1043,7 +1043,7 @@
       },
       {
         "path": "packages/m3l-common/package.json",
-        "blob": "8ef22a238728b9d0fd0598f61f8f4a31da92f575"
+        "blob": "7d1d834ab2b389ed5ea7ba1184c6038d0843ce42"
       },
       {
         "path": "packages/m3l-common/src/aws/clients/provider.ts",
@@ -1106,7 +1106,7 @@
       },
       {
         "path": "packages/m3l-common/package.json",
-        "blob": "8ef22a238728b9d0fd0598f61f8f4a31da92f575"
+        "blob": "7d1d834ab2b389ed5ea7ba1184c6038d0843ce42"
       }
     ],
     "verifiedAt": "2026-09-14"
@@ -1123,7 +1123,7 @@
       },
       {
         "path": "packages/m3l-common/package.json",
-        "blob": "8ef22a238728b9d0fd0598f61f8f4a31da92f575"
+        "blob": "7d1d834ab2b389ed5ea7ba1184c6038d0843ce42"
       },
       {
         "path": "pnpm-workspace.yaml",
@@ -1708,7 +1708,7 @@
       },
       {
         "path": "packages/m3l-common/package.json",
-        "blob": "8ef22a238728b9d0fd0598f61f8f4a31da92f575"
+        "blob": "7d1d834ab2b389ed5ea7ba1184c6038d0843ce42"
       },
       {
         "path": "packages/m3l-console-server/src/errors/errno.ts",
@@ -2673,6 +2673,10 @@
       {
         "path": "docs/plans/2026-08-20-m3l-console.md",
         "blob": "1f0511776dae4f258e8be01b77c507558220418c"
+      },
+      {
+        "path": "docs/reference/core/storage.md",
+        "blob": "55bb452260a737b7e773b930df3d0f9bdfb8e53d"
       },
       {
         "path": "packages/m3l-console-server/src/boot/audit-rebuild.ts",
