@@ -51,6 +51,7 @@
  */
 
 import type { SegmentDigestResult } from "./append-only-digest.js";
+import { measurementsMatch } from "./append-only-digest.js";
 import type { AppendOnlyReadFailure } from "./append-only-lines.js";
 import {
   ownDigest,
@@ -433,18 +434,6 @@ function parseManifestLine(
   return undefined;
 }
 
-/** `true` when two seals state the same measurement of one segment. */
-function statesSameMeasurement(
-  first: SegmentDigestResult,
-  second: SegmentDigestResult,
-): boolean {
-  return (
-    first.entryCount === second.entryCount &&
-    first.byteLength === second.byteLength &&
-    first.sha256 === second.sha256
-  );
-}
-
 /**
  * Admits one seal into the index, tolerating an agreeing duplicate and
  * refusing a disagreeing one.
@@ -455,6 +444,11 @@ function statesSameMeasurement(
  * comparison would manufacture a disagreement out of two identical claims.
  * Only the measurement — `entryCount`, `byteLength`, `sha256` — says anything
  * about the segment's bytes, and only disagreement there is a real conflict.
+ * The three field tests are not written out here:
+ * {@link "./append-only-digest.js".measurementsMatch} is the one definition
+ * every path asking "do these numbers agree" shares, so this rule cannot
+ * drift from the one the reader, the verifier and the sealer's own
+ * corroboration apply.
  *
  * A real disagreement throws rather than picking a winner: there is no
  * version of "the manifest cannot say what the segment held" worth continuing
@@ -467,7 +461,7 @@ function admitSeal(
   buildError: AppendOnlyReadFailure,
 ): void {
   const existing = seals.get(record.segment);
-  if (existing !== undefined && !statesSameMeasurement(existing, record)) {
+  if (existing !== undefined && !measurementsMatch(existing, record)) {
     throw buildError(CONFLICTING_SEAL_MESSAGE, {
       // A segment NAME is the sanctioned exception to the no-caller-data
       // rule — but only because `ownSealSegment` (above) has already

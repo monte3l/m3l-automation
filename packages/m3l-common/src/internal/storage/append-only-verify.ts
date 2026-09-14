@@ -63,7 +63,7 @@ import type {
 import type { M3LAppendOnlySegment } from "../../core/storage/append-only-read-types.js";
 import { isEnoentError } from "../../core/utils/guards.js";
 import type { SegmentDigestResult } from "./append-only-digest.js";
-import { digestSegmentFile } from "./append-only-digest.js";
+import { digestSegmentFile, measurementsMatch } from "./append-only-digest.js";
 import type { AppendOnlyReadFailure } from "./append-only-lines.js";
 import type { ManifestContents } from "./append-only-manifest.js";
 import { readManifest } from "./append-only-manifest.js";
@@ -211,18 +211,6 @@ function emptyReport(
     unprovenBefore: undefined,
     skipped,
   };
-}
-
-/** `true` when `claim` and `observed` agree on all three measured fields. */
-function measurementsMatch(
-  claim: SegmentDigestResult,
-  observed: SegmentDigestResult,
-): boolean {
-  return (
-    claim.entryCount === observed.entryCount &&
-    claim.byteLength === observed.byteLength &&
-    claim.sha256 === observed.sha256
-  );
 }
 
 /** `"sealed"` when the re-digest agrees with the claim, else `"mismatched"`. */

@@ -1,10 +1,11 @@
 /**
- * `internal/storage/append-only-reader-types` — the option bags the
- * append-only READ path runs on: the planning stage's base
+ * `internal/storage/append-only-reader-types` — the shapes the append-only
+ * READ path runs on: the planning stage's option base
  * ({@link AppendOnlyReadPlanOptions}), the streaming stage's extension of it
- * ({@link AppendOnlyReaderOptions}), and the torn-tail payload that stage
- * reports through (ADR-0061 for the segment layout, ADR-0102 for the manifest
- * sidecar; X8b slice 4c).
+ * ({@link AppendOnlyReaderOptions}), the torn-tail payload that stage reports
+ * through, and the discovered-segment shape the first stage hands the second
+ * ({@link DiscoveredSegment}) (ADR-0061 for the segment layout, ADR-0102 for
+ * the manifest sidecar; X8b slices 4c and 4d).
  *
  * Library-internal; never re-exported through a public barrel. Mirrors the
  * `./append-only-writer-types.js` / `./append-only-sealer-types.js` split the
@@ -23,16 +24,43 @@
  * the archival policy between reporting and throwing.
  *
  * Holding both here also keeps the dependency edge one-way. This module
- * imports neither stage — only the sealed-segment payload
- * (`./append-only-sealed-payload.js`) and the error port its fields are typed
- * on — so planning can read the base without pointing an edge at the reader,
- * which is the cycle the read seam exists to avoid.
+ * imports neither stage — only the shapes its own fields are typed on (the
+ * sealed-segment payload, the manifest seal record, the parsed segment name
+ * and the error port) — so planning can read the base without pointing an
+ * edge at the reader, which is the cycle the read seam exists to avoid.
  *
  * @packageDocumentation
  */
 
 import type { AppendOnlyReadFailure } from "./append-only-lines.js";
+import type { ManifestSealRecord } from "./append-only-manifest-records.js";
 import type { AppendOnlySealedSegmentPayload } from "./append-only-sealed-payload.js";
+import type { ParsedSegmentName } from "./append-only-segments.js";
+
+/**
+ * One segment the planning stage discovered on disk, in the order lines will
+ * be read from it, plus the manifest's claim about it when there is one.
+ *
+ * **Homed here rather than in `./append-only-read-plan.js`, which produces
+ * it, because `./append-only-reader.js` CONSUMES it** — the same reason this
+ * module holds the two option bags: a shape both stages name belongs where
+ * neither has to point a dependency edge at the other. It moved here when the
+ * seal claim was added to it, which is the field that made the shape genuinely
+ * shared rather than merely handed over.
+ */
+export interface DiscoveredSegment extends ParsedSegmentName {
+  /** The file name exactly as `readdir` reported it. */
+  readonly name: string;
+  /** The path the reader will open the segment at. */
+  readonly path: string;
+  /**
+   * The manifest's seal for this segment, when it claims one — the claim
+   * `./append-only-reader.js` verifies the bytes it streams against. ABSENT
+   * for a segment the manifest does not claim, which is the whole of the read
+   * path's rule: nothing is claimed, so there is nothing to compare.
+   */
+  readonly seal?: ManifestSealRecord;
+}
 
 /**
  * Reported for a trailing, unterminated fragment
@@ -103,4 +131,26 @@ export interface AppendOnlyReaderOptions extends AppendOnlyReadPlanOptions {
   readonly maxLineBytes: number;
   /** Invoked once for a tolerated torn tail on the last segment only. */
   readonly onTruncatedTail?: (segment: AppendOnlyTruncatedSegment) => void;
+  /**
+   * The owner's vocabulary for an INTEGRITY refusal: a sealed segment still
+   * on disk whose bytes, re-digested as they are streamed, disagree with the
+   * seal the manifest recorded for it
+   * (`./append-only-read-digest.js`).
+   *
+   * A third port rather than a reuse of either existing one, because the
+   * three incidents demand different operator responses and a caller tells
+   * them apart by `instanceof`, never by message text:
+   * {@link AppendOnlyReadPlanOptions.buildError} says the trail would not
+   * parse, {@link AppendOnlyReadPlanOptions.buildManifestError} says the trail
+   * is no longer provable (a sealed segment archived away by the sanctioned
+   * procedure), and this one says the bytes are still there and are not the
+   * bytes that were sealed.
+   *
+   * REQUIRED, and belonging to the STREAMING stage alone: planning never
+   * re-digests anything, so the field sits here rather than on the base bag.
+   * Not optional for the reason the other required fields of this path are
+   * not — a verification a call site can forget to wire is a verification
+   * that silently does not run.
+   */
+  readonly buildIntegrityError: AppendOnlyReadFailure;
 }

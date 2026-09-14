@@ -151,6 +151,60 @@ export interface SegmentDigestResult {
 }
 
 /**
+ * `true` when two measurements of one segment agree on all three measured
+ * fields.
+ *
+ * **The single definition of "these numbers agree", shared by every path that
+ * asks it.** Four do: `./append-only-verify.js` decides `"sealed"` against
+ * `"mismatched"`, `./append-only-read-digest.js` decides whether `read()` may
+ * hand a claimed segment's entries back, `./append-only-manifest-records.js`
+ * decides whether a second seal for one segment is an agreeing duplicate or a
+ * conflict, and `./append-only-seal-attempt.js` decides whether a rotated
+ * segment's fresh measurement corroborates the claim already recorded for it.
+ * It lives here, beside the one measurement implementation all four are
+ * comparing values of, for the reason this module's header already gives for
+ * that implementation: a seal written by one path and checked by another has
+ * to agree field for field, and a second copy of the comparison is a second
+ * place for that agreement to rot — one path could start tolerating a
+ * difference the others refuse, and nothing would fail.
+ *
+ * **The comparison is symmetric; the parameter names describe the common case
+ * only.** Three of the four callers do compare a recorded claim against a
+ * freshly derived measurement, but the manifest's duplicate-seal rule
+ * compares two recorded claims, neither of which is "observed". Nothing here
+ * reads one side differently from the other, so argument order carries no
+ * meaning — the names say what most call sites pass, not what this function
+ * requires.
+ *
+ * Typed on {@link SegmentDigestResult} at BOTH parameters rather than on a
+ * seal record, so it can never read a field only a manifest record carries
+ * (`kind`, `formatVersion`, `at`): those describe the claim, not the bytes,
+ * and a seal stamped at a different instant still measures the same segment.
+ *
+ * @param claim - One measurement to compare, typically the one a seal
+ *   recorded.
+ * @param observed - The other, typically one a digest just re-derived — or a
+ *   second recorded claim for the same segment.
+ * @returns `true` when the entry count, byte length and `sha256` all match.
+ * @example
+ * ```ts
+ * const verdict = measurementsMatch(seal, digest.finish())
+ *   ? "sealed"
+ *   : "mismatched";
+ * ```
+ */
+export function measurementsMatch(
+  claim: SegmentDigestResult,
+  observed: SegmentDigestResult,
+): boolean {
+  return (
+    claim.entryCount === observed.entryCount &&
+    claim.byteLength === observed.byteLength &&
+    claim.sha256 === observed.sha256
+  );
+}
+
+/**
  * The incremental half of the measurement: fed whatever chunks a caller
  * already has, in file order, then finished exactly once.
  *

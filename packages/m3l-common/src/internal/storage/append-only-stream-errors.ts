@@ -6,7 +6,7 @@
  * single readable table instead of four separate construction sites scattered
  * across the class.
  *
- * Three classes, three incidents, told apart by `instanceof` rather than by
+ * Four classes, four incidents, told apart by `instanceof` rather than by
  * parsing a message string:
  *
  * - {@link M3LAppendOnlyStreamError} — the trail is **unwritable**: a
@@ -17,6 +17,9 @@
  * - `M3LAppendOnlyStreamManifestError` — the trail is **unprovable**: the
  *   `manifest.jsonl` sidecar itself could not be read or appended to, while
  *   the entries it would have covered are already durable.
+ * - `M3LAppendOnlyStreamIntegrityError` — the trail is **disproven**: a sealed
+ *   segment is still on disk and its bytes no longer measure what the seal
+ *   recorded, found by `read()`'s inline digest check.
  *
  * This module exists so that mapping is decided in one place: every port the
  * class hands out — to `AppendOnlyWriter`, to `AppendOnlySealer`, to
@@ -51,6 +54,7 @@
 
 import type { M3LError } from "../../core/errors/index.js";
 import { M3LAppendOnlyStreamError } from "../../core/storage/M3LAppendOnlyStreamError.js";
+import { M3LAppendOnlyStreamIntegrityError } from "../../core/storage/M3LAppendOnlyStreamIntegrityError.js";
 import { M3LAppendOnlyStreamManifestError } from "../../core/storage/M3LAppendOnlyStreamManifestError.js";
 import { M3LAppendOnlyStreamReadError } from "../../core/storage/M3LAppendOnlyStreamReadError.js";
 import type { AppendOnlyReadFailure } from "./append-only-lines.js";
@@ -115,3 +119,27 @@ export const buildAppendOnlyStreamReadError: AppendOnlyReadFailure = (
   message,
   options,
 ) => new M3LAppendOnlyStreamReadError(message, options);
+
+/**
+ * Builds {@link M3LAppendOnlyStreamIntegrityError} — the trail's bytes are
+ * **not the bytes that were sealed** — for
+ * `M3LAppendOnlyStream.read`'s `buildIntegrityError` port, the one
+ * `./append-only-read-digest.js` raises an inline digest disagreement
+ * through.
+ *
+ * The third of the READER's three refusal classes — fewer than the FOUR this
+ * module's header tables, which additionally counts
+ * `M3LAppendOnlyStreamError` on the write path, a class no read port ever
+ * builds. A class of its own rather than a reuse of either of the two above,
+ * because the reader's three incidents demand opposite operator responses and
+ * are told apart by `instanceof`: a segment the manifest claims and which is
+ * GONE is expected housekeeping under ADR-0070's archival procedure
+ * ({@link M3LAppendOnlyStreamManifestError}), while a segment that is still
+ * there and no longer measures what was sealed is evidence of a change nobody
+ * sanctioned. Reporting the second as the first would file tamper evidence as
+ * routine archival.
+ */
+export const buildAppendOnlyStreamIntegrityError: AppendOnlyReadFailure = (
+  message,
+  options,
+) => new M3LAppendOnlyStreamIntegrityError(message, options);

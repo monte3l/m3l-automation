@@ -1,7 +1,8 @@
 /**
  * `core/storage/append-only-verify-types` — the public type surface for what
  * {@link "./M3LAppendOnlyStream.js".M3LAppendOnlyStream.verify} returns: the
- * per-segment measurement and sealed-claim shapes it compares, the five
+ * sealed-claim shape it compares against the measurement vocabulary in
+ * `./append-only-integrity-contract.ts`, the five
  * verdicts a segment can receive, the failure shape for what could not be
  * checked at all, and the whole report those roll up into.
  *
@@ -9,48 +10,12 @@
  */
 
 import type { M3LError } from "../errors/index.js";
-
-/**
- * The three numbers a seal records, and the same three numbers a
- * verification re-derives by digesting the segment again: how many
- * newline-terminated entries it holds, how many raw bytes it occupies, and
- * the `sha256` of those bytes.
- *
- * This is the public mirror of
- * {@link "../../internal/storage/append-only-digest.js".SegmentDigestResult}
- * — the internal shape a seal is written from and a verification is computed
- * against — kept as a single field-for-field copy rather than re-exported
- * directly, because this module never imports from `internal/`.
- *
- * `entryCount` counts newline-TERMINATED lines only: a trailing fragment
- * with no terminator was never a completed entry and is not counted, on
- * exactly the same rule the reader itself applies while parsing.
- * `byteLength` is raw bytes measured off disk, never characters and never a
- * count of decoded entries — a multi-byte character inflates the two
- * differently, so only the byte figure can ever agree with a filesystem
- * `stat`. `sha256` is 64 lowercase hex characters: a **plain** `sha256` of
- * those raw bytes, with no framing, no salt and no canonicalization added by
- * this library. That plainness is a contract, not an incidental
- * implementation choice: it is what lets `sha256sum <archived-segment>`
- * reproduce the exact same value off-host, with no library involved, which
- * is the entire reason an archived date can be checked at all once it has
- * left this trail's directory.
- */
-export interface M3LAppendOnlySegmentMeasurement {
-  /** Newline-terminated entries counted while digesting. */
-  readonly entryCount: number;
-  /** Raw bytes measured, not characters and not decoded entries. */
-  readonly byteLength: number;
-  /**
-   * 64 lowercase hex characters: plain `sha256` of the raw bytes, with no
-   * framing, salt or canonicalization — reproducible with `sha256sum` alone.
-   */
-  readonly sha256: string;
-}
+import type { M3LAppendOnlySegmentMeasurement } from "./append-only-integrity-contract.js";
 
 /**
  * One segment's sealed claim, exactly as the manifest states it: a
- * {@link M3LAppendOnlySegmentMeasurement} plus which segment it measures and
+ * {@link "./append-only-integrity-contract.js".M3LAppendOnlySegmentMeasurement}
+ * plus which segment it measures and
  * when the seal was stamped.
  *
  * Extends the measurement rather than restating its three fields, for the
@@ -371,10 +336,14 @@ export interface M3LAppendOnlyVerification {
    * `skipped` for any segment-shaped entry that is not a plain, single-link
    * regular file — a symlink or a hardlink planted at that name — before
    * this report ever learns whether the manifest claims that name. When it
-   * does (see this module's header for why a CLAIMED name is re-checked
-   * directly rather than trusted to the inventory's filter), the same entry
-   * *also* becomes a `failures` entry naming it, because a refusal to read a
-   * claimed name is a finding, not silence. `verify()` cannot subtract those
+   * does, the same entry *also* becomes a `failures` entry naming it,
+   * because a refusal to read a claimed name is a finding, not silence: a
+   * CLAIMED name's on-disk presence is checked directly rather than trusted
+   * to that inventory's filter, since the manifest says something was sealed
+   * there, so "not a regular single-link file" is itself the finding and
+   * never a silent `"archived"` (see
+   * {@link "../../internal/storage/append-only-verify.js".verifyAppendOnlySegments}'s
+   * module header for that argument in full). `verify()` cannot subtract those
    * overlapping names out of `skipped` — `listSegmentFiles` returns a count,
    * not the names it refused — so `verdicts`, `failures` and `skipped` are
    * **not** a partition of the directory listing; treat `skipped` as an

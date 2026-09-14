@@ -20,23 +20,26 @@
  *
  * **Why the error builders live on this side.** `./append-only-reader.js` is
  * deliberately ignorant of which error class a failure should wear: it raises
- * everything through the `buildError` / `buildManifestError` callables its
- * options carry, so the OWNER of the trail names its own failures. The stream
- * owns `M3LAppendOnlyStreamReadError` and `M3LAppendOnlyStreamManifestError`,
- * and this module is where that ownership is spent — one place the pairing is
- * decided, rather than a choice each call site into the reader could make
- * differently. A second reader entry point wired up somewhere else with only
- * `buildError` would silently downgrade every manifest-level refusal.
+ * everything through the `buildError` / `buildManifestError` /
+ * `buildIntegrityError` callables its options carry, so the OWNER of the trail
+ * names its own failures. The stream owns `M3LAppendOnlyStreamReadError`,
+ * `M3LAppendOnlyStreamManifestError` and
+ * `M3LAppendOnlyStreamIntegrityError`, and this module is where that
+ * ownership is spent — one place the pairing is decided, rather than a choice
+ * each call site into the reader could make differently. A second reader entry
+ * point wired up somewhere else with only `buildError` would silently
+ * downgrade every manifest-level and every integrity-level refusal.
  *
- * This is a seam rather than a dodge: read-time wiring is expected to grow
- * (inline digest verification brings its own), and it lands here rather than
- * back inside `read()`.
+ * This is a seam rather than a dodge, and it has already earned it: X8b slice
+ * 4d's inline digest verification brought a third error vocabulary, and it
+ * landed here rather than back inside `read()`.
  */
 
 import { isFunction } from "../../core/utils/guards.js";
 import type { M3LAppendOnlyReadOptions } from "../../core/storage/append-only-read-types.js";
 import type { AppendOnlyReaderOptions } from "./append-only-reader-types.js";
 import {
+  buildAppendOnlyStreamIntegrityError,
   buildAppendOnlyStreamManifestError,
   buildAppendOnlyStreamReadError,
 } from "./append-only-stream-errors.js";
@@ -79,8 +82,10 @@ export interface AppendOnlyReadWiringRequest {
 
 /**
  * Builds the reader's options from the stream's own configuration plus the
- * caller's read policy, pairing the stream's two error vocabularies with the
- * two kinds of refusal the reader can raise.
+ * caller's read policy, pairing each of the reader's three error ports —
+ * `buildError`, `buildManifestError`, `buildIntegrityError` — with the stream
+ * class that names that kind of refusal. Why that pairing is decided here
+ * rather than at each call site is this module's header's argument.
  *
  * Each tolerance is carried by a CONDITIONAL SPREAD, not a direct assignment,
  * for two separate reasons:
@@ -120,5 +125,6 @@ export function buildReaderOptions(
     }),
     buildError: buildAppendOnlyStreamReadError,
     buildManifestError: buildAppendOnlyStreamManifestError,
+    buildIntegrityError: buildAppendOnlyStreamIntegrityError,
   };
 }

@@ -67,6 +67,7 @@
  * @packageDocumentation
  */
 
+import { createHash } from "node:crypto";
 import type * as FsPromises from "node:fs/promises";
 import {
   link,
@@ -331,6 +332,45 @@ function sealLine(overrides: Readonly<Record<string, unknown>> = {}): string {
   })}\n`;
 }
 
+/**
+ * The seal fields that tell the TRUTH about exactly the bytes `content`
+ * holds: the newline-byte count the sealer's digest counts as entries, the raw
+ * byte length, and the plain lowercase `sha256` of those bytes.
+ *
+ * Measured here by hand, with `node:crypto` and a byte loop, never by calling
+ * the library's own digest — a fixture's expectation and the module's own
+ * computation must not share one source. Computed rather than pasted as a
+ * literal hash for the same reason the sibling verify suite computes its
+ * measurements: a constant rots the moment a fixture's bytes change, and
+ * since `read()` re-digests a sealed segment inline, that rot would surface
+ * as an integrity refusal far from the edit that caused it.
+ *
+ * Handed to {@link sealLine} as OVERRIDES rather than becoming its defaults.
+ * Every other caller in this file leans on the fabricated
+ * 128/8_388_012/`SHA_A` claim, and several are ABOUT a claim nothing on disk
+ * backs — the torn tails, the disagreeing duplicates, the ceiling refusals —
+ * so moving the helper's defaults to satisfy one test would quietly change
+ * what those assert.
+ */
+function honestSealFor(
+  segment: string,
+  content: string,
+): Readonly<Record<string, unknown>> {
+  const buffer = Buffer.from(content, "utf8");
+  let entryCount = 0;
+  for (const byte of buffer) {
+    if (byte === 0x0a) {
+      entryCount += 1;
+    }
+  }
+  return {
+    segment,
+    entryCount,
+    byteLength: buffer.byteLength,
+    sha256: createHash("sha256").update(buffer).digest("hex"),
+  };
+}
+
 /** A seal claim as the sealer would hand one to {@link appendSeal}. */
 function sealClaim(
   overrides: Partial<SegmentSealClaim> = {},
@@ -493,10 +533,29 @@ describe("M3L_APPEND_ONLY_MANIFEST_NAME", () => {
   });
 
   test("is not read as a segment by the public read(), so its records are never yielded", async () => {
-    await touchSegment("2026-09-11-0001.jsonl", '{"entry":"kept"}\n');
-    // A manifest whose records would decode as perfectly valid JSON entries.
-    // If `discoverSegmentsInOrder` ever matched the name, they would appear.
-    await writeManifestBytes(`${baselineLine(null)}${sealLine()}`);
+    const kept = '{"entry":"kept"}\n';
+    await touchSegment(SEGMENT_NEW, kept);
+    // The seal states the TRUTH about the segment actually on disk, and that
+    // is load-bearing in both directions: `read()` re-digests every SEALED
+    // segment inline against the manifest's claim, so a FABRICATED claim here
+    // would be refused as tampering before this test could say anything about
+    // the manifest's invisibility — and an honest one makes this test
+    // STRONGER than a fabricated one ever was, because it now also guards
+    // `read()` against spuriously refusing a trail whose seal agrees.
+    const manifest = `${baselineLine(null)}${sealLine(honestSealFor(SEGMENT_NEW, kept))}`;
+    // A manifest whose records would decode as perfectly valid JSON entries —
+    // asserted, not assumed, because it is the whole reason this test can
+    // still fail in its original direction. If `discoverSegmentsInOrder` ever
+    // matched the manifest's name, these records would be yielded as entries
+    // and the assertion below would fail. A manifest holding bytes no reader
+    // could decode would be skipped instead, and this test would then pass
+    // even under a widened SEGMENT_NAME_PATTERN.
+    for (const line of manifest.split("\n").filter((one) => one.length > 0)) {
+      const decoded = parseJsonValue(line);
+      expect(decoded).toBeTypeOf("object");
+      expect(decoded).not.toBeNull();
+    }
+    await writeManifestBytes(manifest);
     const stream = new M3LAppendOnlyStream({ directory: sandbox });
 
     const entries = await collect(stream.read());

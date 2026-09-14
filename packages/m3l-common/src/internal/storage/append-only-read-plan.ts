@@ -80,7 +80,8 @@
  *
  * Dependency direction is one-way: this module imports the archival, manifest,
  * segment-name and line-failure-port layers plus the shared read option bags
- * (`./append-only-reader-types.js`), and `./append-only-reader.js` imports
+ * and discovered-segment shape (`./append-only-reader-types.js`), and
+ * `./append-only-reader.js` imports
  * this module. Nothing here ever imports the reader.
  *
  * @packageDocumentation
@@ -93,18 +94,14 @@ import { isEnoentError, isPromise } from "../../core/utils/guards.js";
 import { resolveArchivedSegments } from "./append-only-archival.js";
 import type { AppendOnlyReadFailure } from "./append-only-lines.js";
 import { readManifest } from "./append-only-manifest.js";
-import type { AppendOnlyReadPlanOptions } from "./append-only-reader-types.js";
+import type { ManifestSealRecord } from "./append-only-manifest-records.js";
+import type {
+  AppendOnlyReadPlanOptions,
+  DiscoveredSegment,
+} from "./append-only-reader-types.js";
 import type { AppendOnlySealedSegmentPayload } from "./append-only-sealed-payload.js";
 import type { ParsedSegmentName } from "./append-only-segments.js";
 import { parseSegmentName } from "./append-only-segments.js";
-
-/** One segment discovered on disk, in the order lines will be read from it. */
-export interface DiscoveredSegment extends ParsedSegmentName {
-  /** The file name exactly as `readdir` reported it. */
-  readonly name: string;
-  /** The path the reader will open the segment at. */
-  readonly path: string;
-}
 
 /**
  * A directory listing's outcome: the segments it held, plus whether the
@@ -124,7 +121,8 @@ interface SegmentInventory {
  * entries in, and the order {@link assertNoSequenceGap} walks.
  *
  * Typed on {@link "./append-only-segments.js".ParsedSegmentName}, not
- * {@link DiscoveredSegment}, so the on-disk listing and the
+ * {@link "./append-only-reader-types.js".DiscoveredSegment}, so the on-disk
+ * listing and the
  * listed-plus-archived union sort through one comparator rather than two. The
  * sequence is compared NUMERICALLY, never inside a file name:
  * `segmentFileName` pads to width four, so a five-digit sequence would sort
@@ -217,16 +215,22 @@ async function discoverSegmentsInOrder(
  *   That half of the old concession stands unchanged.
  *
  * An actor able to write the directory can still renumber the survivors to
- * close a gap before this check runs, and nothing on the read path notices.
- * Renaming `0002` to `0001` over a deleted `0001` does contradict the digest
- * the manifest sealed for that name, but `read()` never re-digests a segment,
- * so the read returns cleanly; a plain regular file planted at a sealed name
- * reads clean the same way (an EMPTY one is refused, by the mid-stream-empty
- * check in `./append-only-reader.js`, not by this walk). That contradiction is
- * detectable only by `./append-only-verify.js`, which re-digests each segment
- * against its seal — as the module header above already scopes it. This walk
- * raises the bar against accidental and casual tampering; it does not prove
- * the directory's contents are complete.
+ * close a gap before this check runs, and THIS WALK does not notice — but the
+ * read no longer returns cleanly on that account alone. Renaming `0002` to
+ * `0001` over a deleted `0001` contradicts the digest the manifest sealed for
+ * that name, and `./append-only-reader.js` now re-digests a claimed segment
+ * from the very chunks it streams, so the contradiction is refused one stage
+ * later as an integrity failure; a plain regular file planted at a sealed name
+ * is refused the same way (an EMPTY one at a CLAIMED name is refused by that
+ * same digest check, which runs first; at an unclaimed name the
+ * mid-stream-empty check in that module is what catches it, never this walk).
+ * What stays
+ * invisible to the read path entirely is the same renumbering at a name the
+ * manifest never claimed: there is no claim to contradict, so nothing compares
+ * anything. `./append-only-verify.js` remains the surface that reports on
+ * every claim at once rather than refusing at the first one, as the module
+ * header above scopes it. This walk raises the bar against accidental and
+ * casual tampering; it does not prove the directory's contents are complete.
  */
 function assertNoSequenceGap(
   segments: readonly ParsedSegmentName[],
@@ -407,8 +411,32 @@ function createArchivalReporter(
 }
 
 /**
+ * Pairs each on-disk segment with the manifest's seal for it, when the
+ * manifest states one — the point at which a claim crosses from the sidecar
+ * into the list the streaming stage runs on. `./append-only-reader.js`
+ * verifies a segment's bytes against that claim and leaves a segment carrying
+ * none alone; the BASELINE is deliberately not consulted in reaching that
+ * rule, for the reason stated where the rule lives (that module's
+ * `startSealVerification`).
+ *
+ * An unclaimed segment is returned AS IS rather than respread with an absent
+ * field: under `exactOptionalPropertyTypes` a copy could not carry an explicit
+ * `undefined` anyway, and absence is what "nothing to verify" means here.
+ */
+function withSealClaims(
+  segments: readonly DiscoveredSegment[],
+  seals: ReadonlyMap<string, ManifestSealRecord>,
+): readonly DiscoveredSegment[] {
+  return segments.map((segment) => {
+    const seal = seals.get(segment.name);
+    return seal === undefined ? segment : { ...segment, seal };
+  });
+}
+
+/**
  * Settles a whole directory's accounting BEFORE a single entry is yielded, and
- * hands back only the segments actually on disk.
+ * hands back only the segments actually on disk, each carrying the manifest's
+ * seal for it when the manifest states one.
  *
  * In order: list and parse the directory's segment names; read the manifest;
  * resolve which of its seals name a segment that is gone; settle whatever the
@@ -427,7 +455,8 @@ function createArchivalReporter(
  *
  * @param options - The directory, the manifest ceiling, the archival policy,
  *   and the two error ports a refusal is raised through.
- * @returns The segments to read, oldest `(date, sequence)` first.
+ * @returns The segments to read, oldest `(date, sequence)` first, each with
+ *   the manifest's seal for it when one is stated ({@link withSealClaims}).
  * @example
  * ```ts
  * import { M3LError } from "@monte3l/m3l-common/core";
@@ -488,5 +517,5 @@ export async function planSegmentsToRead(
     [...segments, ...archived].sort(bySegmentOrder),
     options.buildError,
   );
-  return segments;
+  return withSealClaims(segments, contents.seals);
 }

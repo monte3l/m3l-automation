@@ -31,7 +31,7 @@
 
 import path from "node:path";
 
-import { digestSegmentFile } from "./append-only-digest.js";
+import { digestSegmentFile, measurementsMatch } from "./append-only-digest.js";
 import type { AppendOnlyReadFailure } from "./append-only-lines.js";
 import { appendSeal } from "./append-only-manifest.js";
 import type { SegmentSealClaim } from "./append-only-manifest.js";
@@ -138,7 +138,9 @@ export interface CorroborateClaimOptions {
  * into the comparison (or comparing serialized whole records) would make
  * every corroboration report a disagreement, an automatic false positive —
  * exactly the trap `./append-only-manifest.js` already documents for the
- * duplicate-seal rule on the read side.
+ * duplicate-seal rule on the read side. The three field tests are
+ * {@link "./append-only-digest.js".measurementsMatch}'s, the one definition
+ * every path asking that question shares, not a copy taken here.
  */
 export async function corroborateClaim(
   options: CorroborateClaimOptions,
@@ -161,11 +163,7 @@ export async function corroborateClaim(
   if (!measurement.ok) {
     return { ok: false, failure: measurement.failure };
   }
-  const agrees =
-    existing.entryCount === measurement.value.entryCount &&
-    existing.byteLength === measurement.value.byteLength &&
-    existing.sha256 === measurement.value.sha256;
-  return agrees
+  return measurementsMatch(existing, measurement.value)
     ? { ok: true, value: undefined }
     : { ok: false, failure: buildError(SEAL_DISAGREEMENT_MESSAGE) };
 }

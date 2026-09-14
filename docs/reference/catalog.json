@@ -681,6 +681,7 @@
       "M3LAppendOnlyStreamOptions",
       "M3LAppendOnlySealFailure",
       "M3LAppendOnlyStreamManifestError",
+      "M3LAppendOnlyStreamIntegrityError",
       "M3L_APPEND_ONLY_MANIFEST_NAME",
       "M3LAppendOnlySegmentMeasurement",
       "M3LAppendOnlySealedSegment",
