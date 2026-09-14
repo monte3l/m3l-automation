@@ -343,22 +343,6 @@ export function writeDiscoveryCache(
 }
 
 /**
- * Checks whether `error` is a Node `ErrnoException` carrying the given
- * `code`.
- *
- * @param error - The caught value to check.
- * @param code - The `errno` code to match, e.g. `"ENOENT"`.
- * @returns Whether `error` is an `ErrnoException` with a matching `code`.
- */
-function isErrnoCode(error: unknown, code: string): boolean {
-  return (
-    error instanceof Error &&
-    "code" in error &&
-    (error as NodeJS.ErrnoException).code === code
-  );
-}
-
-/**
  * Resolves a single file's mtime in milliseconds, or `null` when the file
  * does not exist.
  *
@@ -371,7 +355,7 @@ function statMtimeOrNull(path: string): number | null {
   try {
     return statSync(path).mtimeMs;
   } catch (error) {
-    if (isErrnoCode(error, "ENOENT")) {
+    if (Core.isEnoentError(error)) {
       return null;
     }
     throw error;

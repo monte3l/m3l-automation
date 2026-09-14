@@ -177,12 +177,8 @@ const PERMISSION_ERRNO_CODES: ReadonlySet<string> = new Set([
  * @returns Whether `error` is an `ErrnoException` with a matching `code`.
  */
 function hasErrnoCode(error: unknown, codes: ReadonlySet<string>): boolean {
-  return (
-    error instanceof Error &&
-    "code" in error &&
-    typeof (error as NodeJS.ErrnoException).code === "string" &&
-    codes.has((error as NodeJS.ErrnoException).code ?? "")
-  );
+  const code = Core.errnoCodeOf(error);
+  return code !== undefined && codes.has(code);
 }
 
 /**
