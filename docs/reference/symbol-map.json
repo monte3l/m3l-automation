@@ -2605,6 +2605,12 @@
     "file": "packages/m3l-common/src/core/utils/guards.ts",
     "lines": "63-78"
   },
+  "errnoCodeOf": {
+    "submodule": "utils",
+    "namespace": "core",
+    "file": "packages/m3l-common/src/core/utils/guards.ts",
+    "lines": "71-115"
+  },
   "isNodeError": {
     "submodule": "utils",
     "namespace": "core",

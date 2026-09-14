@@ -751,6 +751,7 @@
       "isNullish",
       "isPrimitive",
       "isError",
+      "errnoCodeOf",
       "isNodeError",
       "isEnoentError",
       "isPlainObject",
