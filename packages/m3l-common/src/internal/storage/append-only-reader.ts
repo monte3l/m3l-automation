@@ -11,13 +11,19 @@
  * `M3LAgentDecisionLog`'s segments, say) reuses this security-critical read
  * path instead of forking a second copy of it.
  *
- * This module reuses the exact segment-name parser the writer's own
- * cold-start discovery uses (`./append-only-segments.js`'s
- * {@link parseSegmentName}), rather than a second regex that could drift
- * from it. Unlike the writer, which only ever scans **today's** date prefix,
- * this module enumerates every date a segment exists under — a fresh
- * process reading back a stream that has lived across midnight has to see
- * all of it, not just today's slice.
+ * **Which segments a read covers — and whether that set is the whole trail —
+ * is not this module's question.** `./append-only-read-plan.js` owns it, and
+ * owns the reasoning behind it: enumerating every date a segment exists
+ * under, consulting the directory-wide `manifest.jsonl` sidecar (ADR-0102),
+ * escalating a sealed segment that is no longer on disk, and walking
+ * sequence continuity over the union of what is present and what the
+ * manifest still accounts for. That planning runs to completion before
+ * {@link readAppendOnlySegments} opens anything, so an incomplete or
+ * unverifiable trail is refused on the consumer's first `next()` rather than
+ * midway through a read; this module receives a settled list of segments and
+ * does nothing but read them. The two error ports in the options mirror the
+ * same split: a proof-layer refusal (`buildManifestError`) reads differently
+ * from "this trail would not parse" (`buildError`).
  *
  * Every line read back is proven and rebuilt through the exact same
  * `projectAppendOnlyEntry` the writer serializes through
@@ -55,12 +61,11 @@
  */
 
 import type { FileHandle } from "node:fs/promises";
-import { open, readdir } from "node:fs/promises";
-import path from "node:path";
+import { open } from "node:fs/promises";
 
 import { M3LError } from "../../core/errors/index.js";
-import { isEnoentError } from "../../core/utils/guards.js";
 import { chainSecondaryFailure } from "../errors/chain-secondary-failure.js";
+import type { AppendOnlyArchivedSegment } from "./append-only-archival.js";
 import {
   assertSegmentIsReadable,
   SEGMENT_READ_FLAGS,
@@ -73,8 +78,8 @@ import {
 } from "./append-only-lines.js";
 import type { AppendOnlyProjectionFailure } from "./append-only-projection.js";
 import { projectAppendOnlyEntry } from "./append-only-projection.js";
-import type { ParsedSegmentName } from "./append-only-segments.js";
-import { parseSegmentName } from "./append-only-segments.js";
+import type { DiscoveredSegment } from "./append-only-read-plan.js";
+import { planSegmentsToRead } from "./append-only-read-plan.js";
 
 /**
  * Reported for a trailing, unterminated fragment `read()` tolerates rather
@@ -98,15 +103,33 @@ export interface AppendOnlyReaderOptions {
   readonly directory: string;
   /** The ceiling an unterminated trailing fragment is measured against. */
   readonly maxLineBytes: number;
+  /**
+   * The hard ceiling the directory's `manifest.jsonl` sidecar is read under.
+   *
+   * REQUIRED, like {@link AppendOnlyReaderOptions.buildManifestError} beside
+   * it, and not for want of a default: one owner constructs these options,
+   * and an archival check a call site can forget to switch on is a check
+   * that silently does not run — the defect this slice exists to remove.
+   */
+  readonly maxManifestBytes: number;
   /** Invoked once for a tolerated torn tail on the last segment only. */
   readonly onTruncatedTail?: (segment: AppendOnlyTruncatedSegment) => void;
+  /**
+   * Invoked once per sealed-but-absent segment, oldest first. Omitting it is
+   * a policy, not a convenience — with no handler the archival layer throws
+   * for the first such segment rather than reading short in silence.
+   */
+  readonly onArchivedSegment?: (segment: AppendOnlyArchivedSegment) => void;
   /** The owner's error vocabulary for every failure this reader raises. */
   readonly buildError: AppendOnlyReadFailure;
-}
-
-/** One segment discovered on disk, in the order lines will be read from it. */
-interface DiscoveredSegment extends ParsedSegmentName {
-  readonly path: string;
+  /**
+   * The owner's vocabulary for a MANIFEST-level refusal — an unreadable
+   * sidecar, or a sealed segment no longer on disk. Kept apart from
+   * {@link AppendOnlyReaderOptions.buildError} so a proof-layer failure can
+   * carry its own class, letting a caller tell "this trail is incomplete"
+   * from "this trail would not parse".
+   */
+  readonly buildManifestError: AppendOnlyReadFailure;
 }
 
 /**
@@ -120,91 +143,6 @@ interface SegmentReadContext {
   readonly maxLineBytes: number;
   readonly onTruncatedTail?: (segment: AppendOnlyTruncatedSegment) => void;
   readonly buildError: AppendOnlyReadFailure;
-}
-
-/**
- * Lists every segment under `directory`, oldest `(date, sequence)` first.
- *
- * A missing directory yields an empty list rather than throwing — a rebuild
- * against a stream that has never been written to is a normal, empty case.
- * Any other failure (`EACCES`, …) is a real problem with a directory that
- * does exist and propagates as the owner's typed error.
- */
-async function discoverSegmentsInOrder(
-  directory: string,
-  buildError: AppendOnlyReadFailure,
-): Promise<readonly DiscoveredSegment[]> {
-  let names: string[];
-  try {
-    names = await readdir(directory);
-  } catch (cause) {
-    if (isEnoentError(cause)) {
-      return [];
-    }
-    throw buildError("append-only stream: failed to list segments", {
-      cause,
-    });
-  }
-
-  const segments: DiscoveredSegment[] = [];
-  for (const name of names) {
-    const parsed = parseSegmentName(name);
-    if (parsed !== undefined) {
-      segments.push({ ...parsed, path: path.join(directory, name) });
-    }
-  }
-  segments.sort((left, right) =>
-    left.datePrefix === right.datePrefix
-      ? left.sequence - right.sequence
-      : left.datePrefix < right.datePrefix
-        ? -1
-        : 1,
-  );
-  assertNoSequenceGap(segments, buildError);
-  return segments;
-}
-
-/**
- * Rejects a gap in `(datePrefix, sequence)` within one date: the writer
- * always starts a date's segments at sequence 1 and increments by exactly
- * one on every rotation (`./append-only-segments.js`), so a missing sequence
- * number between two segments this reader DID find is either an already-
- * deleted segment or one truncated all the way to zero bytes before this
- * date's numbering could roll forward past it — either way, entries this
- * stream once held are unaccounted for.
- *
- * Deliberately scoped: this proves continuity only among the segments
- * actually present on disk. It cannot detect the deletion of a date's own
- * LAST segment (the remaining ones are still perfectly contiguous starting
- * at 1), and an actor able to write the stream directory could rename the
- * remaining segments to close a gap before this check ever runs. It raises
- * the bar against accidental and casual tampering; it does not prove the
- * directory's contents are complete.
- */
-function assertNoSequenceGap(
-  segments: readonly DiscoveredSegment[],
-  buildError: AppendOnlyReadFailure,
-): void {
-  let previous: DiscoveredSegment | undefined;
-  for (const segment of segments) {
-    const expectedSequence =
-      previous !== undefined && previous.datePrefix === segment.datePrefix
-        ? previous.sequence + 1
-        : 1;
-    if (segment.sequence !== expectedSequence) {
-      throw buildError(
-        "append-only stream: a segment sequence number is missing",
-        {
-          context: {
-            datePrefix: segment.datePrefix,
-            expectedSequence,
-            foundSequence: segment.sequence,
-          },
-        },
-      );
-    }
-    previous = segment;
-  }
 }
 
 /**
@@ -417,18 +355,20 @@ async function* readSegmentEntries(
  * `(date, sequence)` ascending order — the exact order `append()` produced
  * them in.
  *
- * @param options - The directory, line-length ceiling, torn-tail policy, and
- *   error port to read under.
+ * `./append-only-read-plan.js` settles which segments that is, and whether
+ * they account for the whole trail, before the first segment is opened — so a
+ * directory whose accounting does not add up is refused on the consumer's
+ * first `next()`. Everything below that line is reading.
+ *
+ * @param options - The directory, the two size ceilings, the torn-tail and
+ *   archival policies, and the two error ports to read under.
  * @returns Every entry, as the library's own detached, null-prototype
  *   rebuild of what was parsed.
  */
 export async function* readAppendOnlySegments(
   options: AppendOnlyReaderOptions,
 ): AsyncGenerator<Readonly<Record<string, unknown>>> {
-  const segments = await discoverSegmentsInOrder(
-    options.directory,
-    options.buildError,
-  );
+  const segments = await planSegmentsToRead(options);
   const segmentCount = segments.length;
   for (const [segmentIndex, segment] of segments.entries()) {
     yield* readSegmentEntries(segment, {

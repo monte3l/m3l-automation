@@ -55,7 +55,6 @@ import path from "node:path";
 
 import type { M3LError } from "../../core/errors/index.js";
 import type {
-  M3LAppendOnlySealedSegment,
   M3LAppendOnlySegmentVerdict,
   M3LAppendOnlyVerification,
   M3LAppendOnlyVerificationFailure,
@@ -63,6 +62,7 @@ import type {
 } from "../../core/storage/append-only-verify-types.js";
 import type { M3LAppendOnlySegment } from "../../core/storage/append-only-read-types.js";
 import { isEnoentError } from "../../core/utils/guards.js";
+import { toArchivedSegment } from "./append-only-archival.js";
 import type { SegmentDigestResult } from "./append-only-digest.js";
 import { digestSegmentFile } from "./append-only-digest.js";
 import type { AppendOnlyReadFailure } from "./append-only-lines.js";
@@ -225,32 +225,6 @@ function measurementsMatch(
   );
 }
 
-/**
- * Projects an internal `ManifestSealRecord` down to the public
- * `M3LAppendOnlySealedSegment`'s five fields.
- *
- * `ManifestSealRecord` is a structural superset (it also carries `kind` and
- * `formatVersion` — the manifest's own wire-format version). Assigning the
- * record straight into a `sealed` field would type-check, because structural
- * typing accepts a superset wherever the subset is expected, but it would
- * hand every caller those extra fields at runtime too — including
- * `formatVersion`, which `M3LAppendOnlySealedSegment`'s own TSDoc explicitly
- * chose a field-for-field copy to keep private, so the internal format can
- * change without a public (semver) break. This helper is what makes that
- * choice true at runtime, not just at the type level.
- */
-function toPublicSealedSegment(
-  claim: ManifestSealRecord,
-): M3LAppendOnlySealedSegment {
-  return {
-    segment: claim.segment,
-    at: claim.at,
-    entryCount: claim.entryCount,
-    byteLength: claim.byteLength,
-    sha256: claim.sha256,
-  };
-}
-
 /** `"sealed"` when the re-digest agrees with the claim, else `"mismatched"`. */
 function sealedOrMismatchedVerdict(
   segment: string,
@@ -260,7 +234,7 @@ function sealedOrMismatchedVerdict(
   return {
     segment,
     status: measurementsMatch(claim, observed) ? "sealed" : "mismatched",
-    sealed: toPublicSealedSegment(claim),
+    sealed: toArchivedSegment(claim),
     observed,
   };
 }
@@ -270,7 +244,7 @@ function archivedVerdict(
   segment: string,
   claim: ManifestSealRecord,
 ): M3LAppendOnlySegmentVerdict {
-  return { segment, status: "archived", sealed: toPublicSealedSegment(claim) };
+  return { segment, status: "archived", sealed: toArchivedSegment(claim) };
 }
 
 /** At or before the baseline, unclaimed: deliberately never digested. */

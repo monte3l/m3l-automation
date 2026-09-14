@@ -49,7 +49,10 @@ const STREAM_OPTIONS_KEYS: ReadonlySet<string> = new Set([
  * believe they had redirected the read, and get the constructor's directory
  * back instead.
  */
-const READ_OPTIONS_KEYS: ReadonlySet<string> = new Set(["onTruncatedTail"]);
+const READ_OPTIONS_KEYS: ReadonlySet<string> = new Set([
+  "onTruncatedTail",
+  "onArchivedSegment",
+]);
 
 /**
  * Builds the caller-side boundary error: a bare {@link M3LError} carrying
@@ -243,7 +246,7 @@ export function validateStreamOptions(options: unknown): ResolvedStreamOptions {
 /**
  * Validates the read-options bag at the public boundary: rejects a
  * non-object, rejects an unknown own key, and rejects a truthy
- * non-callable `onTruncatedTail`.
+ * non-callable `onTruncatedTail` or `onArchivedSegment`.
  *
  * `undefined` is the documented "no options" call (`read()`) and returns
  * without complaint. Anything else non-object throws, matching
@@ -251,22 +254,29 @@ export function validateStreamOptions(options: unknown): ResolvedStreamOptions {
  * returning silently would let it read under the default torn-tail policy —
  * the throwing one — while the caller believed they had set a callback.
  *
- * The `onTruncatedTail` check exists because `options` is typed but a JS
- * caller (or one bypassing the type) can still hand `read()` a truthy
- * non-function there. Left unchecked, that value silently disables the
- * torn-tail throw at the exact call site meant to invoke it
- * (`context.onTruncatedTail?.(tornTail)`), which is too close to the
- * invariant the whole feature exists to enforce to fail any way but loudly
- * and immediately. Only a TRUTHY non-function throws: a falsy one (`null`,
- * `0`) degrades to the absent-callback path, which still throws on a torn
- * tail and so cannot hide one.
+ * Both handler checks exist because `options` is typed but a JS caller (or
+ * one bypassing the type) can still hand `read()` a truthy non-function
+ * there. Left unchecked, that value silently disables the escalation at the
+ * exact call site meant to invoke it — `context.onTruncatedTail?.(tornTail)`
+ * for a torn tail, the equivalent optional call for a sealed-but-absent
+ * segment — which is too close to the invariant each feature exists to
+ * enforce to fail any way but loudly and immediately. Only a TRUTHY
+ * non-function throws: a falsy one (`null`, `0`) degrades to the
+ * absent-callback path, which still throws on a torn tail or an archived
+ * segment respectively and so cannot hide either. That polarity is why the
+ * guard is `value && !isFunction(value)` rather than
+ * `value !== undefined && !isFunction(value)`: the tighter form would accept
+ * `null` as a PRESENT handler, and since the reader invokes it with `?.()`,
+ * an archived — or wholly deleted — date would then read back clean and
+ * silent.
  *
  * @param options - The read options bag exactly as the caller supplied it,
  *   `unknown` because a public method's own static parameter type is never a
  *   runtime guarantee.
  * @throws {@link M3LError} `ERR_INVALID_ARGUMENT` — `"not-an-object"` for a
  *   non-object non-`undefined` bag, `"unknown-key"` for an unrecognised own
- *   key, `"not-a-function"` for a truthy non-callable `onTruncatedTail`.
+ *   key, `"not-a-function"` for a truthy non-callable `onTruncatedTail` or
+ *   `onArchivedSegment`.
  */
 export function validateReadOptions(options: unknown): void {
   if (options === undefined) {
@@ -279,5 +289,9 @@ export function validateReadOptions(options: unknown): void {
   const onTruncatedTail = options["onTruncatedTail"];
   if (onTruncatedTail && !isFunction(onTruncatedTail)) {
     throw invalidArgument("onTruncatedTail", "not-a-function");
+  }
+  const onArchivedSegment = options["onArchivedSegment"];
+  if (onArchivedSegment && !isFunction(onArchivedSegment)) {
+    throw invalidArgument("onArchivedSegment", "not-a-function");
   }
 }
