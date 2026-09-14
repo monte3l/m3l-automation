@@ -19,6 +19,14 @@ describe("hasShellDetach: nohup / disown", () => {
       expect(hasShellDetach(command)).toBe(true);
     },
   );
+
+  test("detects nohup right after a && separator", () => {
+    expect(hasShellDetach("true && nohup cmd &")).toBe(true);
+  });
+
+  test("detects nohup right after a ; separator", () => {
+    expect(hasShellDetach("cmd1; nohup cmd2")).toBe(true);
+  });
 });
 
 describe("hasShellDetach: trailing background &", () => {
@@ -46,6 +54,9 @@ describe("hasShellDetach: false positives it must NOT flag", () => {
     "pnpm build &> build.log",
     "cmd &>/dev/null",
     "cmd &>> log.txt",
+    "grep -n nohup docs/logs/*.md",
+    "grep -n disown docs/logs/*.md",
+    'gh api "repos/o/r/pulls?per_page=100&page=2"',
   ])("does not flag %s", (command) => {
     expect(hasShellDetach(command)).toBe(false);
   });

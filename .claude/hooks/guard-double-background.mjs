@@ -41,22 +41,35 @@ import { fileURLToPath } from "node:url";
  * Does `command` contain a shell-level detach construct: `nohup`, `disown`,
  * or a trailing background `&`?
  *
- * The `&` check excludes `&&` (logical AND) and both fd-duplication redirect
- * spellings — `2>&1` (a `&` immediately preceded by `>`) and `&>`/`&>>` (a
- * `&` immediately FOLLOWED by `>`, bash's combined-redirect shorthand for
- * `> file 2>&1`) — all extremely common in ordinary non-backgrounding
- * commands and would otherwise make this check fire on nearly everything,
- * including a plain `run_in_background: true` call using `&>`.
+ * Both checks are anchored to avoid matching ordinary argument text, not
+ * just shell operators:
+ *
+ * - `nohup`/`disown` only count in COMMAND POSITION — the start of the
+ *   whole string, or right after a command separator (`;`, `&`, `|`, `(`).
+ *   An unanchored `\bnohup\b` would also fire on `grep -n nohup
+ *   docs/logs/*.md` (searching FOR the word) or `gh api
+ *   "...&page=2"`-adjacent text mentioning it — matching argument text, not
+ *   an invocation, and fail-CLOSED on a perfectly ordinary call.
+ * - the bare `&` check excludes `&&` (logical AND), both fd-duplication
+ *   redirect spellings — `2>&1` (a `&` immediately preceded by `>`) and
+ *   `&>`/`&>>` (a `&` immediately FOLLOWED by `>`, bash's combined-redirect
+ *   shorthand for `> file 2>&1`) — and now also requires the `&` to sit at
+ *   a command boundary (end-of-command or followed by whitespace), so an
+ *   embedded query-string `&` (`...100&page=2`) isn't misread as
+ *   backgrounding. All of these are extremely common in ordinary
+ *   non-backgrounding commands and would otherwise make this check fire on
+ *   nearly everything.
  *
  * @param {string} command
  * @returns {boolean}
  */
 export function hasShellDetach(command) {
-  if (/\bnohup\b/.test(command)) return true;
-  if (/\bdisown\b/.test(command)) return true;
-  // A bare backgrounding `&`: not part of `&&`, and not part of a `>&`/`2>&1`
-  // or `&>`/`&>>` fd-duplication redirect on either side.
-  return /(?<![&>])&(?![&>])/.test(command);
+  if (/(?:^|[;&|(])\s*(?:nohup|disown)\b/.test(command)) return true;
+  // A bare backgrounding `&`: not part of `&&`, not part of a `>&`/`2>&1` or
+  // `&>`/`&>>` fd-duplication redirect on either side, and only counted when
+  // it actually terminates a command (end-of-string or followed by
+  // whitespace) rather than sitting inside ordinary text.
+  return /(?<![&>])&(?![&>\S])/.test(command);
 }
 
 /**
