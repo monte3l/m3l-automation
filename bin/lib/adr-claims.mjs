@@ -182,6 +182,48 @@ function probeHostResourceGateExists(root) {
 }
 
 /**
+ * Every `package.json` script that invokes `eslint` directly must carry a
+ * raised `--max-old-space-size`. ESLint's measured per-process footprint on
+ * this repo is ~3.4 GiB (`bin/lib/host-profile.mjs`'s `perWorkerGiB` note),
+ * well above Node's ~2 GiB default heap, so an unflagged script dies with
+ * `FATAL ERROR: Ineffective mark-compacts near heap limit` (exit 134) rather
+ * than reporting a lint finding.
+ *
+ * This probe exists because the narrower prose claim it replaces rotted
+ * silently. ADR-0080 shipped the ceiling on `lint:workspace` alone, recording
+ * that `lint:library` "was confirmed **not** to cross the default ceiling on
+ * its own" — true when measured on 2026-09-08, false by 2026-09-15 as
+ * `packages/m3l-common` grew. Nothing caught it: a docs-only PR path-skips
+ * the `Lint (library)` CI job, so CI stayed green while `pnpm verify` failed
+ * locally. A measured exemption is a dated claim, and this gate is what
+ * re-checks it.
+ *
+ * Returning the offenders rather than a count keeps the guard
+ * self-maintaining: a fifth eslint script added without the flag fails with
+ * its own name in the message, and no expected total needs updating.
+ *
+ * Composite scripts (`lint`, `lint:fast`) only delegate, so they need no flag
+ * of their own and are not matched. `lint:md` runs rumdl. `check:zones` names
+ * `bin/check-eslint-zones.mjs` but never invokes the binary — hence the
+ * leading-boundary + trailing-whitespace anchors rather than a bare
+ * `includes("eslint")`.
+ *
+ * @param {string} root
+ * @returns {string[]} names of eslint-invoking scripts WITHOUT a heap
+ *   ceiling, sorted. `[]` when every one carries it.
+ */
+function probeEslintHeapCeilings(root) {
+  const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
+  /** @type {Record<string, string>} */
+  const scripts = pkg.scripts ?? {};
+  return Object.entries(scripts)
+    .filter(([, cmd]) => /(?:^|\s|")eslint\s/.test(cmd))
+    .filter(([, cmd]) => !cmd.includes("--max-old-space-size="))
+    .map(([name]) => name)
+    .sort();
+}
+
+/**
  * The load-bearing ADRs' probeable claims. Not exported directly — tests
  * exercise `checkAdrClaims` with their own small override array via its
  * `claims` parameter, the same pattern `deriveIntegrationStanceIssues` uses
@@ -256,6 +298,14 @@ const ADR_CLAIMS = [
     claim: "bin/check-host-resources.mjs exists",
     probe: probeHostResourceGateExists,
     expect: true,
+  },
+  {
+    id: "eslint-heap-ceilings",
+    adr: "0080",
+    claim:
+      "every package.json script invoking eslint carries a raised --max-old-space-size, per ADR-0080's 2026-09-15 Update",
+    probe: probeEslintHeapCeilings,
+    expect: [],
   },
   {
     id: "package-manager-pin",

@@ -110,7 +110,7 @@ These land as part of the checked-in repo, not the per-host setup script:
   `check:context-budget`) run as one chained lane instead of eight separate
   concurrent lefthook processes — 13 pre-push lanes down to 6, at no wall-clock
   cost (none of the eight was ever on the critical path).
-- **`lint:workspace`'s `NODE_OPTIONS=--max-old-space-size=8192`** — Node's
+- **Every eslint script's `NODE_OPTIONS=--max-old-space-size=8192`** — Node's
   default V8 old-space ceiling on a 4-core ARM64 host measured at ~4.3 GB
   (`require("v8").getHeapStatistics().heap_size_limit`), regardless of the
   23 GB of system RAM actually available — it is a fixed V8 default, not a
@@ -120,8 +120,17 @@ These land as part of the checked-in repo, not the per-host setup script:
 ... JavaScript heap out of memory` (exit 134) — reproducible alone on an
   otherwise idle box, so it is not resource contention. CI's identical job
   runs on `ubuntu-latest` (x86_64) and had not hit this, which is why it went
-  unnoticed until run on this architecture. `lint:library` alone does not
-  cross the ceiling and is left unchanged.
+  unnoticed until run on this architecture. **As of 2026-09-15 all four
+  eslint-invoking scripts carry the ceiling** — `lint:library` and
+  `lint:library:fast` were originally exempted on a 2026-09-08 measurement
+  showing they stayed under it, but `packages/m3l-common` grew past it and
+  `lint:library` began crashing the same way. Since `lint` is
+  `lint:library && lint:workspace`, the exempted script was the one that ran
+  first, so `pnpm verify` could not pass unaided. `bin/lib/adr-claims.mjs`'s
+  `eslint-heap-ceilings` probe now asserts the ceiling is present on every
+  eslint script and names any that lack it, so this cannot silently rot again
+  (ADR-0080's 2026-09-15 Update). Raising a ceiling costs nothing on a host
+  that never reaches it.
 
   **Known tension with `CLAUDE_CODE_TOOL_MEMORY_LIMIT` on a small host.**
   Measured peak RSS for `lint:workspace` under the 8 GiB ceiling: ~5.7 GiB
