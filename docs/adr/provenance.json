@@ -1014,7 +1014,7 @@
       },
       {
         "path": "docs/logs/README.md",
-        "blob": "3f0e4e1d29a3af1aea0127f72b89f4d5ebe06bfc"
+        "blob": "0c427fa55ea9aaaf175ded8a9587f71c81628a16"
       },
       {
         "path": "docs/plans/IMPLEMENTATION.md",
@@ -2581,10 +2581,10 @@
       },
       {
         "path": "docs/logs/README.md",
-        "blob": "3f0e4e1d29a3af1aea0127f72b89f4d5ebe06bfc"
+        "blob": "0c427fa55ea9aaaf175ded8a9587f71c81628a16"
       }
     ],
-    "verifiedAt": "2026-09-14"
+    "verifiedAt": "2026-09-15"
   },
   "0100": {
     "sourceFiles": [
@@ -2709,7 +2709,7 @@
       },
       {
         "path": "docs/plans/2026-09-15-testing-technique-adoption.md",
-        "blob": "abf347eeb4803d669717469b63d1f7e8849d1c30"
+        "blob": "eb3e8c3e0393c67db56878aa55f68787e93d3b93"
       }
     ],
     "verifiedAt": "2026-09-15"
