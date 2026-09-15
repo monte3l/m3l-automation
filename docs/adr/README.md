@@ -235,5 +235,6 @@ surface).
 | 0101 | [Pre-flight parameter-resolution check for `m3l flow run`](./0101-flow-preflight-parameter-resolution-check.md)                                           | Accepted             |
 | 0102 | [Sealed-segment manifest: the append-only audit trail becomes boundable and provable](./0102-sealed-segment-manifest.md)                                  | Accepted             |
 | 0103 | [Rename the publish scope to `@monte3l` and stage U13's first release to `m3l-common` alone](./0103-publish-scope-rename-and-staged-first-release.md)     | Accepted             |
+| 0104 | [Mutation testing and property-based testing are adopted; the SAST-platform bar is not reopened](./0104-testing-technique-adoption.md)                    | Accepted             |
 
 <!-- END GENERATED ADR INDEX -->

@@ -1,9 +1,33 @@
 # 0034. Sonar/Act-Podman re-assessment: OSS complexity/duplication gates, Act/Podman declined
 
 - **Status:** Accepted
-- **Relations:** amended-by: 0091
+- **Relations:** amended-by: 0091, re-affirmed-by: 0104
 - **Date:** 2026-07-19
 - **Deciders:** Enrico Lionello
+
+> **Update (2026-09-15).** One stale factual claim is struck, and the decision
+> itself is untouched — the same treatment, for the same class of defect, that
+> [ADR-0015](./0015-code-scanning-tooling-evaluation.md)'s 2026-08-13 Update
+> applied to its own surviving stale claims.
+>
+> - The decision driver "Contributor prerequisites stay minimal — today:
+>   corepack, pnpm, Node 24" **named a prerequisite that was never actually
+>   in use.** ADR-0001's 2026-08-31 Update establishes that Corepack "is not
+>   in use, in either CI or local development" and "is not installed on the
+>   maintainer's machine at all" — so ADR-0001's original decision-4 wording
+>   was wrong when written on 2026-06-27, and this ADR copied it on
+>   2026-07-19. This is inherited doc rot, **not** a prerequisite that was
+>   real at the time and dropped later. The driver now reads `pnpm` and Node
+>   24, which is what it always meant.
+> - `docs/adr/0003-node-24-floor.md` also mentions Corepack, and is
+>   deliberately **left alone**: it _quotes_ ADR-0001's original decision-4
+>   text and explicitly flags it as amended, which is correct historical
+>   record rather than a live claim.
+>
+> The driver's substance — that this repo refuses new contributor
+> prerequisites — is unchanged and load-bearing. It is re-used, not weakened,
+> by [ADR-0104](./0104-testing-technique-adoption.md), which declines
+> Toxiproxy on exactly this ADR's Act/Podman ground.
 
 ## Context and problem statement
 
@@ -41,7 +65,9 @@ workflow file to feed `act` at all).
   when both fill the same gap (this repo's "minimal deps" constraint,
   ADR-0001/0009).
 - Findings should be able to block a merge, not merely be advisory (ADR-0015).
-- Contributor prerequisites stay minimal — today: corepack, pnpm, Node 24.
+- Contributor prerequisites stay minimal — today: pnpm, Node 24. (Corrected
+  2026-09-15: this line originally also named `corepack`, inherited from
+  ADR-0001's since-struck decision-4 wording. See the Update above.)
 
 ## Considered options
 

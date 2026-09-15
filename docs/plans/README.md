@@ -25,12 +25,13 @@ by `pnpm check:landing-plans` (blocking). This list is the set that gate
 scans — a plan doc that's finished belongs in [`archive/`](./archive/)
 instead of carrying a stale table.
 
-| Plan                                                                               | Wave / issue                                                                    |
-| ---------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
-| [`2026-08-20-agent-operator.md`](./2026-08-20-agent-operator.md)                   | Agent-operator programme (V-series) — V10/V11/V14 remaining                     |
-| [`2026-08-20-cli-evolution.md`](./2026-08-20-cli-evolution.md)                     | CLI-first evolution programme (U-series) — U1–U13 landed; only U14 (Gated) left |
-| [`2026-08-20-m3l-console.md`](./2026-08-20-m3l-console.md)                         | m3l console programme (X-series) — X8b-d remaining                              |
-| [`2026-09-14-v10-runtime-mcp-surface.md`](./2026-09-14-v10-runtime-mcp-surface.md) | V10 runtime MCP surface (`packages/m3l-mcp`), issue 547 — skeleton half: V10a-d |
+| Plan                                                                                     | Wave / issue                                                                       |
+| ---------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| [`2026-08-20-agent-operator.md`](./2026-08-20-agent-operator.md)                         | Agent-operator programme (V-series) — V10/V11/V14 remaining                        |
+| [`2026-08-20-cli-evolution.md`](./2026-08-20-cli-evolution.md)                           | CLI-first evolution programme (U-series) — U1–U13 landed; only U14 (Gated) left    |
+| [`2026-08-20-m3l-console.md`](./2026-08-20-m3l-console.md)                               | m3l console programme (X-series) — X8b-d remaining                                 |
+| [`2026-09-14-v10-runtime-mcp-surface.md`](./2026-09-14-v10-runtime-mcp-surface.md)       | V10 runtime MCP surface (`packages/m3l-mcp`), issue 547 — skeleton half: V10a-d    |
+| [`2026-09-15-testing-technique-adoption.md`](./2026-09-15-testing-technique-adoption.md) | Testing-technique adoption (ADR-0104) — mutation testing, PBT, determinism: T1-T11 |
 
 ## Archive
 
