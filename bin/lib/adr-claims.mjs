@@ -204,23 +204,76 @@ function probeHostResourceGateExists(root) {
  *
  * Composite scripts (`lint`, `lint:fast`) only delegate, so they need no flag
  * of their own and are not matched. `lint:md` runs rumdl. `check:zones` names
- * `bin/check-eslint-zones.mjs` but never invokes the binary — hence the
- * leading-boundary + trailing-whitespace anchors rather than a bare
- * `includes("eslint")`.
+ * `bin/check-eslint-zones.mjs` but never invokes the binary — the
+ * word-boundary anchors in {@link segmentInvokesEslint} are what exclude it,
+ * not a bare `includes("eslint")`.
+ *
+ * **The check is per command segment, not per script.** A whole-string
+ * substring test credits a flag that belongs to a different binary in a
+ * chained command — `NODE_OPTIONS="…" node bin/x.mjs && eslint .` would read
+ * as compliant while the `eslint` process still runs on the default heap,
+ * which is the exact false negative this probe exists to prevent.
  *
  * @param {string} root
- * @returns {string[]} names of eslint-invoking scripts WITHOUT a heap
- *   ceiling, sorted. `[]` when every one carries it.
+ * @returns {string[]} names of scripts with at least one eslint-invoking
+ *   segment lacking a heap ceiling, sorted. `[]` when every one carries it.
  */
 function probeEslintHeapCeilings(root) {
   const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
   /** @type {Record<string, string>} */
   const scripts = pkg.scripts ?? {};
   return Object.entries(scripts)
-    .filter(([, cmd]) => /(?:^|\s|")eslint\s/.test(cmd))
-    .filter(([, cmd]) => !cmd.includes("--max-old-space-size="))
+    .filter(([, cmd]) =>
+      splitShellSegments(cmd).some(
+        (segment) =>
+          segmentInvokesEslint(segment) && !segmentHasHeapCeiling(segment),
+      ),
+    )
     .map(([name]) => name)
     .sort();
+}
+
+/**
+ * Split a `package.json` script into the command segments a shell would run
+ * separately. Regex-based by house convention (see
+ * {@link extractYamlListKey}) — a real shell parser is unwarranted for this
+ * one caller. The known limitation is that an operator inside a quoted
+ * string would split wrongly; no script in this repo has one, and the
+ * consequence would be a spurious finding (loud), never a missed one (silent).
+ *
+ * @param {string} cmd
+ * @returns {string[]}
+ */
+function splitShellSegments(cmd) {
+  return cmd.split(/&&|\|\||[;|]/);
+}
+
+/**
+ * Whether `segment` runs the `eslint` binary as a command word. The trailing
+ * boundary accepts end-of-segment as well as whitespace: ESLint 9+ lints the
+ * current directory when given no patterns, so a bare `eslint` is a real —
+ * and maximally expensive — full-workspace invocation, not a no-op to skip.
+ *
+ * @param {string} segment
+ * @returns {boolean}
+ */
+function segmentInvokesEslint(segment) {
+  return /(?:^|\s|")eslint(?:\s|$)/.test(segment.trim());
+}
+
+/**
+ * Whether `segment` raises the heap for the process it runs. The flag is
+ * credited only when it appears *inside* a `NODE_OPTIONS=` assignment in this
+ * same segment — a bare occurrence of the flag text elsewhere (a `--cache-location`
+ * path, an echoed diagnostic) must not count.
+ *
+ * @param {string} segment
+ * @returns {boolean}
+ */
+function segmentHasHeapCeiling(segment) {
+  const assignments =
+    segment.match(/NODE_OPTIONS=(?:"[^"]*"|'[^']*'|\S+)/g) ?? [];
+  return assignments.some((a) => a.includes("--max-old-space-size="));
 }
 
 /**
