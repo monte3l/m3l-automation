@@ -75,7 +75,7 @@ Two behaviours that look like bugs and are not:
 
 ## What exists today
 
-This package is mid-wave, and **still exposes no tools**. Two slices have
+This package is mid-wave, and **still exposes no tools**. Three slices have
 landed:
 
 - **V10b — the skeleton.** The stdio composition root
@@ -84,13 +84,32 @@ landed:
 - **V10c — the CLI facade's two leaves.** `src/config/settings.ts` resolves
   boot configuration from the environment; `src/cli/envelopes.ts` parses the
   `m3l` CLI's `doctor --json` output into typed rows.
+- **V10c2 — the bounded subprocess port.** `src/cli/process.ts` runs a
+  command under `shell: false` with an argv array, a per-stream byte cap, an
+  own-timer timeout, and an injectable `spawn` seam.
 
-Be precise about what V10c does not mean. It adds no ability to _run_
-anything: the bounded subprocess port and the argv/invocation facade are
-V10c2, and no tool exists until V10c3. Nothing in `src/cli/` or
-`src/config/` is imported by `src/main.ts`, so a client connecting today
-still sees an empty tool list — these modules' only callers are their own
-tests.
+Be precise about what V10c2 does and does not mean. It is the first slice
+containing code that could spawn the `m3l` CLI — but nothing invokes it.
+`src/main.ts` imports nothing from `src/cli/` or `src/config/`, and no
+module composes the port yet: the argv table and invocation facade are
+V10c2b, and no tool exists until V10c3. So a client connecting today still
+sees an empty tool list and the server spawns no process at all — these
+modules' only callers are their own tests.
+
+The bounded-kill invariants are deliberately **incomplete** here. The port
+enforces a timeout, a per-stream byte cap and `shell: false`; it does
+**not** do process-group teardown or SIGKILL escalation, so a grandchild
+outliving its parent is out of scope. That is why V10c3's one tool is
+`m3l doctor --json` — read-only, no preset, no grandchild — and why
+promoting the existing `cli-process.ts` into a `Core` `core/process` leaf is
+recorded as a hard precondition of the run and flow slices rather than as an
+aspiration.
+
+The byte cap bounds every chunk, not just growth across chunks: a chunk is
+sliced to the remaining budget before it is decoded, so retained bytes never
+exceed `M3L_MCP_MAX_OUTPUT_BYTES`. A cut landing mid-character strands a
+partial UTF-8 sequence that `StringDecoder`'s flush emits as one U+FFFD —
+pinned by a test, so the truncation edge is a decision and not an accident.
 
 One thing worth knowing if you set the environment yourself:
 `M3L_MCP_CLI_ENTRYPOINT` is validated at load (non-empty, absolute, no NUL
@@ -126,7 +145,7 @@ Update) and bind the slice that implements them.
   not buy. What it buys: the type is keyed off a `unique symbol` that
   `src/tools/registry.ts` never exports, so no code outside that module can
   name the brand, and therefore no object literal can satisfy the type no
-  matter how exactly it copies the field shape. Slice V10c's `gateTool` mints
+  matter how exactly it copies the field shape. Slice V10c3's `gateTool` mints
   entries from inside that module, which is what makes it the only possible
   producer of a registry entry. What it does **not** buy: it is not a
   guarantee that no ungated tool can ever reach the SDK. The SDK's
@@ -135,15 +154,15 @@ Update) and bind the slice that implements them.
   `M3LMcpServerHandle` narrows that method away from the _type_, which stops
   it happening by accident, but a JavaScript caller or a cast still reaches
   it. The brand governs what can be put **in the registry**; enforcing the
-  boundary at registration time needs the runtime check recorded for V10c.
+  boundary at registration time needs the runtime check recorded for V10c3.
   The brand deliberately is **not** exported: exporting it would let
   any caller hand-build a "gated" entry and would reduce this guarantee to a
   naming convention.
-- **A refusal must be returned, never thrown** (binds slice V10c).
+- **A refusal must be returned, never thrown** (binds slice V10c3).
   `McpServer` converts every handler throw into `{ isError: true }` itself,
   discarding any structured payload — so refusals have to be constructed and
   returned, carrying `structuredContent: { verdict, rule }` for a client to
   branch on programmatically rather than by parsing prose.
-- **Refusal messages must be module constants** (binds slice V10c). The text
+- **Refusal messages must be module constants** (binds slice V10c3). The text
   reaches the model verbatim with no redaction, so it must never interpolate a
   script name, a filesystem path, or a caught error's message.
