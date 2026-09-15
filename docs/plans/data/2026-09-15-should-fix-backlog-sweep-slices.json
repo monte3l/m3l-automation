@@ -1,0 +1,1908 @@
+[
+  {
+    "sliceId": "SL-001",
+    "unit": "bin",
+    "theme": "doc-comment-inaccuracy",
+    "part": "1/4",
+    "count": 7,
+    "fileCount": 6,
+    "findingIds": [
+      "SF-0552",
+      "SF-0735",
+      "SF-0794",
+      "SF-0695",
+      "SF-0468",
+      "SF-0619",
+      "SF-0621"
+    ],
+    "status": "To Do"
+  },
+  {
+    "sliceId": "SL-002",
+    "unit": "bin",
+    "theme": "doc-comment-inaccuracy",
+    "part": "2/4",
+    "count": 7,
+    "fileCount": 7,
+    "findingIds": [
+      "SF-0294",
+      "SF-0756",
+      "SF-0810",
+      "SF-0781",
+      "SF-0036",
+      "SF-0775",
+      "SF-0870"
+    ],
+    "status": "To Do"
+  },
+  {
+    "sliceId": "SL-003",
+    "unit": "bin",
+    "theme": "doc-comment-inaccuracy",
+    "part": "3/4",
+    "count": 7,
+    "fileCount": 5,
+    "findingIds": [
+      "SF-0852",
+      "SF-0853",
+      "SF-0150",
+      "SF-0192",
+      "SF-0811",
+      "SF-0318",
+      "SF-0882"
+    ],
+    "status": "To Do"
+  },
+  {
+    "sliceId": "SL-004",
+    "unit": "bin",
+    "theme": "doc-comment-inaccuracy",
+    "part": "4/4",
+    "count": 5,
+    "fileCount": 4,
+    "findingIds": ["SF-0365", "SF-0480", "SF-0482", "SF-0059", "SF-0368"],
+    "status": "To Do"
+  },
+  {
+    "sliceId": "SL-005",
+    "unit": "bin",
+    "theme": "drift-hardcoded-count",
+    "part": null,
+    "count": 4,
+    "fileCount": 3,
+    "findingIds": ["SF-0320", "SF-0241", "SF-0243", "SF-0875"],
+    "status": "To Do"
+  },
+  {
+    "sliceId": "SL-006",
+    "unit": "bin",
+    "theme": "error-swallowed",
+    "part": "1/2",
+    "count": 5,
+    "fileCount": 4,
+    "findingIds": ["SF-0284", "SF-0286", "SF-0288", "SF-0620", "SF-0755"],
+    "status": "To Do"
+  },
+  {
+    "sliceId": "SL-007",
+    "unit": "bin",
+    "theme": "error-swallowed",
+    "part": "2/2",
+    "count": 5,
+    "fileCount": 5,
+    "findingIds": ["SF-0462", "SF-0846", "SF-0449", "SF-0670", "SF-0479"],
+    "status": "To Do"
+  },
+  {
+    "sliceId": "SL-008",
+    "unit": "bin",
+    "theme": "export-untested",
+    "part": null,
+    "count": 1,
+    "fileCount": 1,
+    "findingIds": ["SF-0590"],
+    "status": "To Do"
+  },
+  {
+    "sliceId": "SL-009",
+    "unit": "bin",
+    "theme": "missing-test-coverage",
+    "part": "1/8",
+    "count": 8,
+    "fileCount": 7,
+    "findingIds": [
+      "SF-0553",
+      "SF-0446",
+      "SF-0448",
+      "SF-0156",
+      "SF-0029",
+      "SF-0283",
+      "SF-0774",
+      "SF-0295"
+    ],
+    "status": "To Do"
+  },
+  {
+    "sliceId": "SL-010",
+    "unit": "bin",
+    "theme": "missing-test-coverage",
+    "part": "2/8",
+    "count": 8,
+    "fileCount": 5,
+    "findingIds": [
+      "SF-0634",
+      "SF-0635",
+      "SF-0636",
+      "SF-0637",
+      "SF-0849",
+      "SF-0424",
+      "SF-0262",
+      "SF-0871"
+    ],
+    "status": "To Do"
+  },
+  {
+    "sliceId": "SL-011",
+    "unit": "bin",
+    "theme": "missing-test-coverage",
+    "part": "3/8",
+    "count": 8,
+    "fileCount": 4,
+    "findingIds": [
+      "SF-0868",
+      "SF-0549",
+      "SF-0551",
+      "SF-0257",
+      "SF-0118",
+      "SF-0119",
+      "SF-0190",
+      "SF-0247"
+    ],
+    "status": "To Do"
+  },
+  {
+    "sliceId": "SL-012",
+    "unit": "bin",
+    "theme": "missing-test-coverage",
+    "part": "4/8",
+    "count": 8,
+    "fileCount": 7,
+    "findingIds": [
+      "SF-0196",
+      "SF-0847",
+      "SF-0385",
+      "SF-0242",
+      "SF-0135",
+      "SF-0850",
+      "SF-0146",
+      "SF-0266"
+    ],
+    "status": "To Do"
+  },
+  {
+    "sliceId": "SL-013",
+    "unit": "bin",
+    "theme": "missing-test-coverage",
+    "part": "5/8",
+    "count": 8,
+    "fileCount": 7,
+    "findingIds": [
+      "SF-0453",
+      "SF-0454",
+      "SF-0667",
+      "SF-0332",
+      "SF-0866",
+      "SF-0379",
+      "SF-0823",
+      "SF-0666"
+    ],
+    "status": "To Do"
+  },
+  {
+    "sliceId": "SL-014",
+    "unit": "bin",
+    "theme": "missing-test-coverage",
+    "part": "6/8",
+    "count": 8,
+    "fileCount": 6,
+    "findingIds": [
+      "SF-0423",
+      "SF-0351",
+      "SF-0058",
+      "SF-0191",
+      "SF-0126",
+      "SF-0334",
+      "SF-0037",
+      "SF-0030"
+    ],
+    "status": "To Do"
+  },
+  {
+    "sliceId": "SL-015",
+    "unit": "bin",
+    "theme": "missing-test-coverage",
+    "part": "7/8",
+    "count": 8,
+    "fileCount": 5,
+    "findingIds": [
+      "SF-0062",
+      "SF-0884",
+      "SF-0733",
+      "SF-0154",
+      "SF-0420",
+      "SF-0438",
+      "SF-0692",
+      "SF-0855"
+    ],
+    "status": "To Do"
+  },
+  {
+    "sliceId": "SL-016",
+    "unit": "bin",
+    "theme": "missing-test-coverage",
+    "part": "8/8",
+    "count": 1,
+    "fileCount": 1,
+    "findingIds": ["SF-0147"],
+    "status": "To Do"
+  },
+  {
+    "sliceId": "SL-017",
+    "unit": "bin",
+    "theme": "other",
+    "part": "1/7",
+    "count": 7,
+    "fileCount": 6,
+    "findingIds": [
+      "SF-0681",
+      "SF-0869",
+      "SF-0447",
+      "SF-0734",
+      "SF-0336",
+      "SF-0512",
+      "SF-0773"
+    ],
+    "status": "To Do"
+  },
+  {
+    "sliceId": "SL-018",
+    "unit": "bin",
+    "theme": "other",
+    "part": "2/7",
+    "count": 7,
+    "fileCount": 4,
+    "findingIds": [
+      "SF-0469",
+      "SF-0470",
+      "SF-0495",
+      "SF-0253",
+      "SF-0664",
+      "SF-0665",
+      "SF-0152"
+    ],
+    "status": "To Do"
+  },
+  {
+    "sliceId": "SL-019",
+    "unit": "bin",
+    "theme": "other",
+    "part": "3/7",
+    "count": 7,
+    "fileCount": 7,
+    "findingIds": [
+      "SF-0740",
+      "SF-0848",
+      "SF-0599",
+      "SF-0757",
+      "SF-0742",
+      "SF-0077",
+      "SF-0760"
+    ],
+    "status": "To Do"
+  },
+  {
+    "sliceId": "SL-020",
+    "unit": "bin",
+    "theme": "other",
+    "part": "4/7",
+    "count": 7,
+    "fileCount": 5,
+    "findingIds": [
+      "SF-0737",
+      "SF-0450",
+      "SF-0452",
+      "SF-0040",
+      "SF-0041",
+      "SF-0612",
+      "SF-0613"
+    ],
+    "status": "To Do"
+  },
+  {
+    "sliceId": "SL-021",
+    "unit": "bin",
+    "theme": "other",
+    "part": "5/7",
+    "count": 7,
+    "fileCount": 3,
+    "findingIds": [
+      "SF-0614",
+      "SF-0624",
+      "SF-0758",
+      "SF-0759",
+      "SF-0730",
+      "SF-0476",
+      "SF-0478"
+    ],
+    "status": "To Do"
+  },
+  {
+    "sliceId": "SL-022",
+    "unit": "bin",
+    "theme": "other",
+    "part": "6/7",
+    "count": 7,
+    "fileCount": 2,
+    "findingIds": [
+      "SF-0481",
+      "SF-0483",
+      "SF-0487",
+      "SF-0488",
+      "SF-0489",
+      "SF-0492",
+      "SF-0459"
+    ],
+    "status": "To Do"
+  },
+  {
+    "sliceId": "SL-023",
+    "unit": "bin",
+    "theme": "other",
+    "part": "7/7",
+    "count": 7,
+    "fileCount": 5,
+    "findingIds": [
+      "SF-0319",
+      "SF-0289",
+      "SF-0333",
+      "SF-0854",
+      "SF-0776",
+      "SF-0038",
+      "SF-0039"
+    ],
+    "status": "To Do"
+  },
+  {
+    "sliceId": "SL-024",
+    "unit": "bin",
+    "theme": "silent-cap-truncation",
+    "part": "1/4",
+    "count": 7,
+    "fileCount": 3,
+    "findingIds": [
+      "SF-0680",
+      "SF-0736",
+      "SF-0625",
+      "SF-0297",
+      "SF-0352",
+      "SF-0353",
+      "SF-0354"
+    ],
+    "status": "To Do"
+  },
+  {
+    "sliceId": "SL-025",
+    "unit": "bin",
+    "theme": "silent-cap-truncation",
+    "part": "2/4",
+    "count": 7,
+    "fileCount": 4,
+    "findingIds": [
+      "SF-0355",
+      "SF-0356",
+      "SF-0357",
+      "SF-0358",
+      "SF-0494",
+      "SF-0287",
+      "SF-0171"
+    ],
+    "status": "To Do"
+  },
+  {
+    "sliceId": "SL-026",
+    "unit": "bin",
+    "theme": "silent-cap-truncation",
+    "part": "3/4",
+    "count": 7,
+    "fileCount": 7,
+    "findingIds": [
+      "SF-0741",
+      "SF-0598",
+      "SF-0754",
+      "SF-0864",
+      "SF-0883",
+      "SF-0876",
+      "SF-0366"
+    ],
+    "status": "To Do"
+  },
+  {
+    "sliceId": "SL-027",
+    "unit": "bin",
+    "theme": "silent-cap-truncation",
+    "part": "4/4",
+    "count": 5,
+    "fileCount": 5,
+    "findingIds": ["SF-0623", "SF-0669", "SF-0491", "SF-0460", "SF-0369"],
+    "status": "To Do"
+  },
+  {
+    "sliceId": "SL-028",
+    "unit": "bin",
+    "theme": "unvalidated-input",
+    "part": "1/2",
+    "count": 6,
+    "fileCount": 6,
+    "findingIds": [
+      "SF-0682",
+      "SF-0378",
+      "SF-0157",
+      "SF-0812",
+      "SF-0485",
+      "SF-0766"
+    ],
+    "status": "To Do"
+  },
+  {
+    "sliceId": "SL-029",
+    "unit": "bin",
+    "theme": "unvalidated-input",
+    "part": "2/2",
+    "count": 5,
+    "fileCount": 3,
+    "findingIds": ["SF-0671", "SF-0877", "SF-0878", "SF-0473", "SF-0063"],
+    "status": "To Do"
+  },
+  {
+    "sliceId": "SL-030",
+    "unit": "bin",
+    "theme": "weak-type",
+    "part": null,
+    "count": 7,
+    "fileCount": 7,
+    "findingIds": [
+      "SF-0865",
+      "SF-0197",
+      "SF-0471",
+      "SF-0663",
+      "SF-0550",
+      "SF-0316",
+      "SF-0474"
+    ],
+    "status": "To Do"
+  },
+  {
+    "sliceId": "SL-031",
+    "unit": "packages/m3l-common",
+    "theme": "doc-comment-inaccuracy",
+    "part": "1/2",
+    "count": 7,
+    "fileCount": 7,
+    "findingIds": [
+      "SF-0565",
+      "SF-0567",
+      "SF-0212",
+      "SF-0169",
+      "SF-0414",
+      "SF-0166",
+      "SF-0113"
+    ],
+    "status": "To Do"
+  },
+  {
+    "sliceId": "SL-032",
+    "unit": "packages/m3l-common",
+    "theme": "doc-comment-inaccuracy",
+    "part": "2/2",
+    "count": 6,
+    "fileCount": 5,
+    "findingIds": [
+      "SF-0128",
+      "SF-0035",
+      "SF-0160",
+      "SF-0194",
+      "SF-0251",
+      "SF-0303"
+    ],
+    "status": "To Do"
+  },
+  {
+    "sliceId": "SL-033",
+    "unit": "packages/m3l-common",
+    "theme": "error-swallowed",
+    "part": null,
+    "count": 4,
+    "fileCount": 4,
+    "findingIds": ["SF-0165", "SF-0350", "SF-0361", "SF-0161"],
+    "status": "To Do"
+  },
+  {
+    "sliceId": "SL-034",
+    "unit": "packages/m3l-common",
+    "theme": "export-untested",
+    "part": null,
+    "count": 2,
+    "fileCount": 2,
+    "findingIds": ["SF-0012", "SF-0298"],
+    "status": "To Do"
+  },
+  {
+    "sliceId": "SL-035",
+    "unit": "packages/m3l-common",
+    "theme": "missing-test-coverage",
+    "part": "1/7",
+    "count": 8,
+    "fileCount": 7,
+    "findingIds": [
+      "SF-0174",
+      "SF-0538",
+      "SF-0185",
+      "SF-0340",
+      "SF-0412",
+      "SF-0413",
+      "SF-0114",
+      "SF-0121"
+    ],
+    "status": "To Do"
+  },
+  {
+    "sliceId": "SL-036",
+    "unit": "packages/m3l-common",
+    "theme": "missing-test-coverage",
+    "part": "2/7",
+    "count": 8,
+    "fileCount": 8,
+    "findingIds": [
+      "SF-0013",
+      "SF-0555",
+      "SF-0363",
+      "SF-0177",
+      "SF-0660",
+      "SF-0569",
+      "SF-0127",
+      "SF-0644"
+    ],
+    "status": "To Do"
+  },
+  {
+    "sliceId": "SL-037",
+    "unit": "packages/m3l-common",
+    "theme": "missing-test-coverage",
+    "part": "3/7",
+    "count": 8,
+    "fileCount": 7,
+    "findingIds": [
+      "SF-0364",
+      "SF-0274",
+      "SF-0301",
+      "SF-0302",
+      "SF-0314",
+      "SF-0310",
+      "SF-0645",
+      "SF-0603"
+    ],
+    "status": "To Do"
+  },
+  {
+    "sliceId": "SL-038",
+    "unit": "packages/m3l-common",
+    "theme": "missing-test-coverage",
+    "part": "4/7",
+    "count": 8,
+    "fileCount": 8,
+    "findingIds": [
+      "SF-0585",
+      "SF-0583",
+      "SF-0539",
+      "SF-0175",
+      "SF-0087",
+      "SF-0094",
+      "SF-0576",
+      "SF-0168"
+    ],
+    "status": "To Do"
+  },
+  {
+    "sliceId": "SL-039",
+    "unit": "packages/m3l-common",
+    "theme": "missing-test-coverage",
+    "part": "5/7",
+    "count": 8,
+    "fileCount": 7,
+    "findingIds": [
+      "SF-0097",
+      "SF-0003",
+      "SF-0027",
+      "SF-0221",
+      "SF-0182",
+      "SF-0183",
+      "SF-0086",
+      "SF-0068"
+    ],
+    "status": "To Do"
+  },
+  {
+    "sliceId": "SL-040",
+    "unit": "packages/m3l-common",
+    "theme": "missing-test-coverage",
+    "part": "6/7",
+    "count": 8,
+    "fileCount": 5,
+    "findingIds": [
+      "SF-0019",
+      "SF-0439",
+      "SF-0102",
+      "SF-0105",
+      "SF-0178",
+      "SF-0179",
+      "SF-0659",
+      "SF-0299"
+    ],
+    "status": "To Do"
+  },
+  {
+    "sliceId": "SL-041",
+    "unit": "packages/m3l-common",
+    "theme": "missing-test-coverage",
+    "part": "7/7",
+    "count": 6,
+    "fileCount": 5,
+    "findingIds": [
+      "SF-0300",
+      "SF-0780",
+      "SF-0347",
+      "SF-0188",
+      "SF-0120",
+      "SF-0195"
+    ],
+    "status": "To Do"
+  },
+  {
+    "sliceId": "SL-042",
+    "unit": "packages/m3l-common",
+    "theme": "other",
+    "part": "1/2",
+    "count": 6,
+    "fileCount": 5,
+    "findingIds": [
+      "SF-0249",
+      "SF-0533",
+      "SF-0535",
+      "SF-0566",
+      "SF-0095",
+      "SF-0170"
+    ],
+    "status": "To Do"
+  },
+  {
+    "sliceId": "SL-043",
+    "unit": "packages/m3l-common",
+    "theme": "other",
+    "part": "2/2",
+    "count": 5,
+    "fileCount": 5,
+    "findingIds": ["SF-0209", "SF-0107", "SF-0581", "SF-0381", "SF-0646"],
+    "status": "To Do"
+  },
+  {
+    "sliceId": "SL-044",
+    "unit": "packages/m3l-common",
+    "theme": "silent-cap-truncation",
+    "part": "1/2",
+    "count": 7,
+    "fileCount": 6,
+    "findingIds": [
+      "SF-0051",
+      "SF-0384",
+      "SF-0556",
+      "SF-0184",
+      "SF-0348",
+      "SF-0349",
+      "SF-0362"
+    ],
+    "status": "To Do"
+  },
+  {
+    "sliceId": "SL-045",
+    "unit": "packages/m3l-common",
+    "theme": "silent-cap-truncation",
+    "part": "2/2",
+    "count": 7,
+    "fileCount": 6,
+    "findingIds": [
+      "SF-0018",
+      "SF-0380",
+      "SF-0272",
+      "SF-0273",
+      "SF-0312",
+      "SF-0642",
+      "SF-0602"
+    ],
+    "status": "To Do"
+  },
+  {
+    "sliceId": "SL-046",
+    "unit": "packages/m3l-common",
+    "theme": "unvalidated-input",
+    "part": "1/2",
+    "count": 5,
+    "fileCount": 5,
+    "findingIds": ["SF-0534", "SF-0574", "SF-0173", "SF-0311", "SF-0568"],
+    "status": "To Do"
+  },
+  {
+    "sliceId": "SL-047",
+    "unit": "packages/m3l-common",
+    "theme": "unvalidated-input",
+    "part": "2/2",
+    "count": 5,
+    "fileCount": 4,
+    "findingIds": ["SF-0285", "SF-0313", "SF-0307", "SF-0308", "SF-0306"],
+    "status": "To Do"
+  },
+  {
+    "sliceId": "SL-048",
+    "unit": "packages/m3l-common",
+    "theme": "weak-type",
+    "part": null,
+    "count": 5,
+    "fileCount": 5,
+    "findingIds": ["SF-0622", "SF-0662", "SF-0304", "SF-0586", "SF-0305"],
+    "status": "To Do"
+  },
+  {
+    "sliceId": "SL-049",
+    "unit": "scripts/agent-operator",
+    "theme": "doc-comment-inaccuracy",
+    "part": null,
+    "count": 2,
+    "fileCount": 2,
+    "findingIds": ["SF-0607", "SF-0650"],
+    "status": "To Do"
+  },
+  {
+    "sliceId": "SL-050",
+    "unit": "scripts/agent-operator",
+    "theme": "missing-test-coverage",
+    "part": null,
+    "count": 6,
+    "fileCount": 6,
+    "findingIds": [
+      "SF-0859",
+      "SF-0651",
+      "SF-0863",
+      "SF-0860",
+      "SF-0617",
+      "SF-0858"
+    ],
+    "status": "To Do"
+  },
+  {
+    "sliceId": "SL-051",
+    "unit": "scripts/agent-operator",
+    "theme": "other",
+    "part": null,
+    "count": 1,
+    "fileCount": 1,
+    "findingIds": ["SF-0862"],
+    "status": "To Do"
+  },
+  {
+    "sliceId": "SL-052",
+    "unit": "scripts/agent-operator",
+    "theme": "silent-cap-truncation",
+    "part": null,
+    "count": 1,
+    "fileCount": 1,
+    "findingIds": ["SF-0861"],
+    "status": "To Do"
+  },
+  {
+    "sliceId": "SL-053",
+    "unit": "scripts/api-gateway-client",
+    "theme": "missing-test-coverage",
+    "part": null,
+    "count": 1,
+    "fileCount": 1,
+    "findingIds": ["SF-0108"],
+    "status": "To Do"
+  },
+  {
+    "sliceId": "SL-054",
+    "unit": "scripts/api-gateway-client",
+    "theme": "silent-cap-truncation",
+    "part": null,
+    "count": 1,
+    "fileCount": 1,
+    "findingIds": ["SF-0374"],
+    "status": "To Do"
+  },
+  {
+    "sliceId": "SL-055",
+    "unit": "scripts/api-gateway-client",
+    "theme": "unvalidated-input",
+    "part": null,
+    "count": 1,
+    "fileCount": 1,
+    "findingIds": ["SF-0064"],
+    "status": "To Do"
+  },
+  {
+    "sliceId": "SL-056",
+    "unit": "scripts/athena-query",
+    "theme": "missing-test-coverage",
+    "part": null,
+    "count": 1,
+    "fileCount": 1,
+    "findingIds": ["SF-0377"],
+    "status": "To Do"
+  },
+  {
+    "sliceId": "SL-057",
+    "unit": "scripts/athena-query",
+    "theme": "other",
+    "part": null,
+    "count": 1,
+    "fileCount": 1,
+    "findingIds": ["SF-0136"],
+    "status": "To Do"
+  },
+  {
+    "sliceId": "SL-058",
+    "unit": "scripts/cloudformation-stacks",
+    "theme": "drift-hardcoded-count",
+    "part": null,
+    "count": 1,
+    "fileCount": 1,
+    "findingIds": ["SF-0228"],
+    "status": "To Do"
+  },
+  {
+    "sliceId": "SL-059",
+    "unit": "scripts/cloudformation-stacks",
+    "theme": "missing-test-coverage",
+    "part": null,
+    "count": 2,
+    "fileCount": 2,
+    "findingIds": ["SF-0367", "SF-0400"],
+    "status": "To Do"
+  },
+  {
+    "sliceId": "SL-060",
+    "unit": "scripts/cloudformation-stacks",
+    "theme": "unreachable-arg",
+    "part": null,
+    "count": 1,
+    "fileCount": 1,
+    "findingIds": ["SF-0089"],
+    "status": "To Do"
+  },
+  {
+    "sliceId": "SL-061",
+    "unit": "scripts/cloudwatch-logs-analysis",
+    "theme": "missing-test-coverage",
+    "part": null,
+    "count": 2,
+    "fileCount": 2,
+    "findingIds": ["SF-0396", "SF-0339"],
+    "status": "To Do"
+  },
+  {
+    "sliceId": "SL-062",
+    "unit": "scripts/cloudwatch-logs-analysis",
+    "theme": "other",
+    "part": null,
+    "count": 1,
+    "fileCount": 1,
+    "findingIds": ["SF-0338"],
+    "status": "To Do"
+  },
+  {
+    "sliceId": "SL-063",
+    "unit": "scripts/cloudwatch-logs-analysis",
+    "theme": "unvalidated-input",
+    "part": null,
+    "count": 1,
+    "fileCount": 1,
+    "findingIds": ["SF-0397"],
+    "status": "To Do"
+  },
+  {
+    "sliceId": "SL-064",
+    "unit": "scripts/cloudwatch-logs-insights",
+    "theme": "doc-comment-inaccuracy",
+    "part": null,
+    "count": 2,
+    "fileCount": 1,
+    "findingIds": ["SF-0124", "SF-0125"],
+    "status": "To Do"
+  },
+  {
+    "sliceId": "SL-065",
+    "unit": "scripts/cloudwatch-logs-insights",
+    "theme": "missing-test-coverage",
+    "part": null,
+    "count": 4,
+    "fileCount": 4,
+    "findingIds": ["SF-0111", "SF-0219", "SF-0116", "SF-0117"],
+    "status": "To Do"
+  },
+  {
+    "sliceId": "SL-066",
+    "unit": "scripts/codepipeline-ops",
+    "theme": "missing-test-coverage",
+    "part": null,
+    "count": 1,
+    "fileCount": 1,
+    "findingIds": ["SF-0235"],
+    "status": "To Do"
+  },
+  {
+    "sliceId": "SL-067",
+    "unit": "scripts/dynamodb-crud",
+    "theme": "missing-test-coverage",
+    "part": null,
+    "count": 3,
+    "fileCount": 2,
+    "findingIds": ["SF-0404", "SF-0370", "SF-0371"],
+    "status": "To Do"
+  },
+  {
+    "sliceId": "SL-068",
+    "unit": "scripts/dynamodb-crud",
+    "theme": "other",
+    "part": null,
+    "count": 1,
+    "fileCount": 1,
+    "findingIds": ["SF-0415"],
+    "status": "To Do"
+  },
+  {
+    "sliceId": "SL-069",
+    "unit": "scripts/ecs-ops",
+    "theme": "doc-comment-inaccuracy",
+    "part": null,
+    "count": 1,
+    "fileCount": 1,
+    "findingIds": ["SF-0373"],
+    "status": "To Do"
+  },
+  {
+    "sliceId": "SL-070",
+    "unit": "scripts/ecs-ops",
+    "theme": "missing-test-coverage",
+    "part": null,
+    "count": 2,
+    "fileCount": 2,
+    "findingIds": ["SF-0103", "SF-0223"],
+    "status": "To Do"
+  },
+  {
+    "sliceId": "SL-071",
+    "unit": "scripts/eks-ops",
+    "theme": "doc-comment-inaccuracy",
+    "part": null,
+    "count": 5,
+    "fileCount": 1,
+    "findingIds": ["SF-0229", "SF-0230", "SF-0231", "SF-0232", "SF-0233"],
+    "status": "To Do"
+  },
+  {
+    "sliceId": "SL-072",
+    "unit": "scripts/eks-ops",
+    "theme": "missing-test-coverage",
+    "part": null,
+    "count": 2,
+    "fileCount": 2,
+    "findingIds": ["SF-0098", "SF-0234"],
+    "status": "To Do"
+  },
+  {
+    "sliceId": "SL-073",
+    "unit": "scripts/eks-ops",
+    "theme": "silent-cap-truncation",
+    "part": null,
+    "count": 1,
+    "fileCount": 1,
+    "findingIds": ["SF-0099"],
+    "status": "To Do"
+  },
+  {
+    "sliceId": "SL-074",
+    "unit": "scripts/eventbridge-schedules",
+    "theme": "doc-comment-inaccuracy",
+    "part": null,
+    "count": 1,
+    "fileCount": 1,
+    "findingIds": ["SF-0382"],
+    "status": "To Do"
+  },
+  {
+    "sliceId": "SL-075",
+    "unit": "scripts/eventbridge-schedules",
+    "theme": "missing-test-coverage",
+    "part": null,
+    "count": 1,
+    "fileCount": 1,
+    "findingIds": ["SF-0110"],
+    "status": "To Do"
+  },
+  {
+    "sliceId": "SL-076",
+    "unit": "scripts/json-etl",
+    "theme": "doc-comment-inaccuracy",
+    "part": null,
+    "count": 1,
+    "fileCount": 1,
+    "findingIds": ["SF-0133"],
+    "status": "To Do"
+  },
+  {
+    "sliceId": "SL-077",
+    "unit": "scripts/json-etl",
+    "theme": "missing-test-coverage",
+    "part": null,
+    "count": 1,
+    "fileCount": 1,
+    "findingIds": ["SF-0123"],
+    "status": "To Do"
+  },
+  {
+    "sliceId": "SL-078",
+    "unit": "scripts/json-etl",
+    "theme": "silent-cap-truncation",
+    "part": null,
+    "count": 1,
+    "fileCount": 1,
+    "findingIds": ["SF-0034"],
+    "status": "To Do"
+  },
+  {
+    "sliceId": "SL-079",
+    "unit": "scripts/lambda-ops",
+    "theme": "missing-test-coverage",
+    "part": null,
+    "count": 1,
+    "fileCount": 1,
+    "findingIds": ["SF-0226"],
+    "status": "To Do"
+  },
+  {
+    "sliceId": "SL-080",
+    "unit": "scripts/rds-data-sql",
+    "theme": "doc-comment-inaccuracy",
+    "part": null,
+    "count": 1,
+    "fileCount": 1,
+    "findingIds": ["SF-0218"],
+    "status": "To Do"
+  },
+  {
+    "sliceId": "SL-081",
+    "unit": "scripts/rds-data-sql",
+    "theme": "missing-test-coverage",
+    "part": null,
+    "count": 4,
+    "fileCount": 3,
+    "findingIds": ["SF-0214", "SF-0376", "SF-0217", "SF-0375"],
+    "status": "To Do"
+  },
+  {
+    "sliceId": "SL-082",
+    "unit": "scripts/rds-data-sql",
+    "theme": "other",
+    "part": null,
+    "count": 2,
+    "fileCount": 2,
+    "findingIds": ["SF-0220", "SF-0213"],
+    "status": "To Do"
+  },
+  {
+    "sliceId": "SL-083",
+    "unit": "scripts/s3-objects",
+    "theme": "other",
+    "part": null,
+    "count": 1,
+    "fileCount": 1,
+    "findingIds": ["SF-0072"],
+    "status": "To Do"
+  },
+  {
+    "sliceId": "SL-084",
+    "unit": "scripts/sqs-dead-letter-triage",
+    "theme": "missing-test-coverage",
+    "part": null,
+    "count": 3,
+    "fileCount": 2,
+    "findingIds": ["SF-0345", "SF-0398", "SF-0399"],
+    "status": "To Do"
+  },
+  {
+    "sliceId": "SL-085",
+    "unit": "scripts/sqs-dead-letter-triage",
+    "theme": "other",
+    "part": null,
+    "count": 2,
+    "fileCount": 2,
+    "findingIds": ["SF-0343", "SF-0342"],
+    "status": "To Do"
+  },
+  {
+    "sliceId": "SL-086",
+    "unit": "scripts/sqs-dead-letter-triage",
+    "theme": "silent-cap-truncation",
+    "part": null,
+    "count": 1,
+    "fileCount": 1,
+    "findingIds": ["SF-0344"],
+    "status": "To Do"
+  },
+  {
+    "sliceId": "SL-087",
+    "unit": "scripts/sqs-dead-letter-triage",
+    "theme": "unvalidated-input",
+    "part": null,
+    "count": 1,
+    "fileCount": 1,
+    "findingIds": ["SF-0341"],
+    "status": "To Do"
+  },
+  {
+    "sliceId": "SL-088",
+    "unit": "scripts/sqs-etl",
+    "theme": "missing-test-coverage",
+    "part": null,
+    "count": 2,
+    "fileCount": 2,
+    "findingIds": ["SF-0052", "SF-0461"],
+    "status": "To Do"
+  },
+  {
+    "sliceId": "SL-089",
+    "unit": "scripts/sqs-etl",
+    "theme": "other",
+    "part": null,
+    "count": 1,
+    "fileCount": 1,
+    "findingIds": ["SF-0246"],
+    "status": "To Do"
+  },
+  {
+    "sliceId": "SL-090",
+    "unit": "packages/m3l-cli",
+    "theme": "doc-comment-inaccuracy",
+    "part": null,
+    "count": 4,
+    "fileCount": 4,
+    "findingIds": ["SF-0674", "SF-0701", "SF-0784", "SF-0422"],
+    "status": "To Do"
+  },
+  {
+    "sliceId": "SL-091",
+    "unit": "packages/m3l-cli",
+    "theme": "drift-hardcoded-count",
+    "part": null,
+    "count": 2,
+    "fileCount": 1,
+    "findingIds": ["SF-0793", "SF-0799"],
+    "status": "To Do"
+  },
+  {
+    "sliceId": "SL-092",
+    "unit": "packages/m3l-cli",
+    "theme": "missing-test-coverage",
+    "part": "1/3",
+    "count": 6,
+    "fileCount": 5,
+    "findingIds": [
+      "SF-0208",
+      "SF-0800",
+      "SF-0700",
+      "SF-0726",
+      "SF-0401",
+      "SF-0200"
+    ],
+    "status": "To Do"
+  },
+  {
+    "sliceId": "SL-093",
+    "unit": "packages/m3l-cli",
+    "theme": "missing-test-coverage",
+    "part": "2/3",
+    "count": 6,
+    "fileCount": 5,
+    "findingIds": [
+      "SF-0201",
+      "SF-0656",
+      "SF-0431",
+      "SF-0785",
+      "SF-0657",
+      "SF-0442"
+    ],
+    "status": "To Do"
+  },
+  {
+    "sliceId": "SL-094",
+    "unit": "packages/m3l-cli",
+    "theme": "missing-test-coverage",
+    "part": "3/3",
+    "count": 6,
+    "fileCount": 5,
+    "findingIds": [
+      "SF-0738",
+      "SF-0687",
+      "SF-0688",
+      "SF-0696",
+      "SF-0704",
+      "SF-0655"
+    ],
+    "status": "To Do"
+  },
+  {
+    "sliceId": "SL-095",
+    "unit": "packages/m3l-cli",
+    "theme": "other",
+    "part": "1/2",
+    "count": 5,
+    "fileCount": 3,
+    "findingIds": ["SF-0658", "SF-0428", "SF-0429", "SF-0430", "SF-0198"],
+    "status": "To Do"
+  },
+  {
+    "sliceId": "SL-096",
+    "unit": "packages/m3l-cli",
+    "theme": "other",
+    "part": "2/2",
+    "count": 5,
+    "fileCount": 4,
+    "findingIds": ["SF-0440", "SF-0441", "SF-0426", "SF-0427", "SF-0421"],
+    "status": "To Do"
+  },
+  {
+    "sliceId": "SL-097",
+    "unit": "packages/m3l-cli",
+    "theme": "silent-cap-truncation",
+    "part": null,
+    "count": 5,
+    "fileCount": 5,
+    "findingIds": ["SF-0402", "SF-0199", "SF-0792", "SF-0432", "SF-0675"],
+    "status": "To Do"
+  },
+  {
+    "sliceId": "SL-098",
+    "unit": "packages/m3l-cli",
+    "theme": "unvalidated-input",
+    "part": null,
+    "count": 2,
+    "fileCount": 2,
+    "findingIds": ["SF-0204", "SF-0798"],
+    "status": "To Do"
+  },
+  {
+    "sliceId": "SL-099",
+    "unit": "packages/m3l-cli",
+    "theme": "weak-type",
+    "part": null,
+    "count": 2,
+    "fileCount": 2,
+    "findingIds": ["SF-0202", "SF-0203"],
+    "status": "To Do"
+  },
+  {
+    "sliceId": "SL-100",
+    "unit": "packages/m3l-console-server",
+    "theme": "doc-comment-inaccuracy",
+    "part": "1/2",
+    "count": 6,
+    "fileCount": 6,
+    "findingIds": [
+      "SF-0545",
+      "SF-0767",
+      "SF-0548",
+      "SF-0410",
+      "SF-0839",
+      "SF-0519"
+    ],
+    "status": "To Do"
+  },
+  {
+    "sliceId": "SL-101",
+    "unit": "packages/m3l-console-server",
+    "theme": "doc-comment-inaccuracy",
+    "part": "2/2",
+    "count": 6,
+    "fileCount": 6,
+    "findingIds": [
+      "SF-0648",
+      "SF-0542",
+      "SF-0705",
+      "SF-0466",
+      "SF-0782",
+      "SF-0498"
+    ],
+    "status": "To Do"
+  },
+  {
+    "sliceId": "SL-102",
+    "unit": "packages/m3l-console-server",
+    "theme": "drift-hardcoded-count",
+    "part": null,
+    "count": 1,
+    "fileCount": 1,
+    "findingIds": ["SF-0564"],
+    "status": "To Do"
+  },
+  {
+    "sliceId": "SL-103",
+    "unit": "packages/m3l-console-server",
+    "theme": "missing-test-coverage",
+    "part": "1/4",
+    "count": 7,
+    "fileCount": 5,
+    "findingIds": [
+      "SF-0601",
+      "SF-0796",
+      "SF-0411",
+      "SF-0844",
+      "SF-0710",
+      "SF-0711",
+      "SF-0783"
+    ],
+    "status": "To Do"
+  },
+  {
+    "sliceId": "SL-104",
+    "unit": "packages/m3l-console-server",
+    "theme": "missing-test-coverage",
+    "part": "2/4",
+    "count": 7,
+    "fileCount": 7,
+    "findingIds": [
+      "SF-0524",
+      "SF-0770",
+      "SF-0500",
+      "SF-0608",
+      "SF-0610",
+      "SF-0685",
+      "SF-0768"
+    ],
+    "status": "To Do"
+  },
+  {
+    "sliceId": "SL-105",
+    "unit": "packages/m3l-console-server",
+    "theme": "missing-test-coverage",
+    "part": "3/4",
+    "count": 7,
+    "fileCount": 6,
+    "findingIds": [
+      "SF-0769",
+      "SF-0707",
+      "SF-0708",
+      "SF-0407",
+      "SF-0717",
+      "SF-0584",
+      "SF-0706"
+    ],
+    "status": "To Do"
+  },
+  {
+    "sliceId": "SL-106",
+    "unit": "packages/m3l-console-server",
+    "theme": "missing-test-coverage",
+    "part": "4/4",
+    "count": 5,
+    "fileCount": 5,
+    "findingIds": ["SF-0778", "SF-0820", "SF-0828", "SF-0809", "SF-0815"],
+    "status": "To Do"
+  },
+  {
+    "sliceId": "SL-107",
+    "unit": "packages/m3l-console-server",
+    "theme": "other",
+    "part": "1/2",
+    "count": 8,
+    "fileCount": 6,
+    "findingIds": [
+      "SF-0843",
+      "SF-0544",
+      "SF-0435",
+      "SF-0516",
+      "SF-0521",
+      "SF-0509",
+      "SF-0510",
+      "SF-0513"
+    ],
+    "status": "To Do"
+  },
+  {
+    "sliceId": "SL-108",
+    "unit": "packages/m3l-console-server",
+    "theme": "other",
+    "part": "2/2",
+    "count": 8,
+    "fileCount": 8,
+    "findingIds": [
+      "SF-0838",
+      "SF-0837",
+      "SF-0467",
+      "SF-0505",
+      "SF-0559",
+      "SF-0563",
+      "SF-0497",
+      "SF-0845"
+    ],
+    "status": "To Do"
+  },
+  {
+    "sliceId": "SL-109",
+    "unit": "packages/m3l-console-server",
+    "theme": "silent-cap-truncation",
+    "part": "1/2",
+    "count": 6,
+    "fileCount": 5,
+    "findingIds": [
+      "SF-0609",
+      "SF-0611",
+      "SF-0804",
+      "SF-0546",
+      "SF-0547",
+      "SF-0570"
+    ],
+    "status": "To Do"
+  },
+  {
+    "sliceId": "SL-110",
+    "unit": "packages/m3l-console-server",
+    "theme": "silent-cap-truncation",
+    "part": "2/2",
+    "count": 6,
+    "fileCount": 6,
+    "findingIds": [
+      "SF-0572",
+      "SF-0795",
+      "SF-0540",
+      "SF-0508",
+      "SF-0465",
+      "SF-0499"
+    ],
+    "status": "To Do"
+  },
+  {
+    "sliceId": "SL-111",
+    "unit": "packages/m3l-console-server",
+    "theme": "unvalidated-input",
+    "part": null,
+    "count": 1,
+    "fileCount": 1,
+    "findingIds": ["SF-0571"],
+    "status": "To Do"
+  },
+  {
+    "sliceId": "SL-112",
+    "unit": "packages/m3l-console-server",
+    "theme": "weak-type",
+    "part": null,
+    "count": 2,
+    "fileCount": 2,
+    "findingIds": ["SF-0709", "SF-0753"],
+    "status": "To Do"
+  },
+  {
+    "sliceId": "SL-113",
+    "unit": "packages/m3l-console-web",
+    "theme": "doc-comment-inaccuracy",
+    "part": null,
+    "count": 7,
+    "fileCount": 6,
+    "findingIds": [
+      "SF-0532",
+      "SF-0802",
+      "SF-0593",
+      "SF-0807",
+      "SF-0813",
+      "SF-0808",
+      "SF-0537"
+    ],
+    "status": "To Do"
+  },
+  {
+    "sliceId": "SL-114",
+    "unit": "packages/m3l-console-web",
+    "theme": "missing-test-coverage",
+    "part": null,
+    "count": 4,
+    "fileCount": 4,
+    "findingIds": ["SF-0806", "SF-0791", "SF-0588", "SF-0789"],
+    "status": "To Do"
+  },
+  {
+    "sliceId": "SL-115",
+    "unit": "packages/m3l-console-web",
+    "theme": "other",
+    "part": null,
+    "count": 3,
+    "fileCount": 3,
+    "findingIds": ["SF-0790", "SF-0801", "SF-0592"],
+    "status": "To Do"
+  },
+  {
+    "sliceId": "SL-116",
+    "unit": "packages/m3l-console-web",
+    "theme": "unvalidated-input",
+    "part": null,
+    "count": 4,
+    "fileCount": 3,
+    "findingIds": ["SF-0529", "SF-0530", "SF-0595", "SF-0803"],
+    "status": "To Do"
+  },
+  {
+    "sliceId": "SL-117",
+    "unit": "packages/m3l-console-web",
+    "theme": "weak-type",
+    "part": null,
+    "count": 3,
+    "fileCount": 3,
+    "findingIds": ["SF-0528", "SF-0594", "SF-0814"],
+    "status": "To Do"
+  },
+  {
+    "sliceId": "SL-118",
+    "unit": ".claude",
+    "theme": "doc-comment-inaccuracy",
+    "part": null,
+    "count": 1,
+    "fileCount": 1,
+    "findingIds": ["SF-0835"],
+    "status": "To Do"
+  },
+  {
+    "sliceId": "SL-119",
+    "unit": ".claude",
+    "theme": "error-swallowed",
+    "part": null,
+    "count": 1,
+    "fileCount": 1,
+    "findingIds": ["SF-0748"],
+    "status": "To Do"
+  },
+  {
+    "sliceId": "SL-120",
+    "unit": ".claude",
+    "theme": "export-untested",
+    "part": null,
+    "count": 1,
+    "fileCount": 1,
+    "findingIds": ["SF-0745"],
+    "status": "To Do"
+  },
+  {
+    "sliceId": "SL-121",
+    "unit": ".claude",
+    "theme": "missing-test-coverage",
+    "part": "1/2",
+    "count": 5,
+    "fileCount": 4,
+    "findingIds": ["SF-0048", "SF-0057", "SF-0702", "SF-0715", "SF-0749"],
+    "status": "To Do"
+  },
+  {
+    "sliceId": "SL-122",
+    "unit": ".claude",
+    "theme": "missing-test-coverage",
+    "part": "2/2",
+    "count": 5,
+    "fileCount": 5,
+    "findingIds": ["SF-0829", "SF-0744", "SF-0764", "SF-0628", "SF-0824"],
+    "status": "To Do"
+  },
+  {
+    "sliceId": "SL-123",
+    "unit": ".claude",
+    "theme": "other",
+    "part": "1/3",
+    "count": 7,
+    "fileCount": 6,
+    "findingIds": [
+      "SF-0722",
+      "SF-0836",
+      "SF-0693",
+      "SF-0714",
+      "SF-0746",
+      "SF-0765",
+      "SF-0276"
+    ],
+    "status": "To Do"
+  },
+  {
+    "sliceId": "SL-124",
+    "unit": ".claude",
+    "theme": "other",
+    "part": "2/3",
+    "count": 7,
+    "fileCount": 4,
+    "findingIds": [
+      "SF-0278",
+      "SF-0279",
+      "SF-0606",
+      "SF-0750",
+      "SF-0627",
+      "SF-0629",
+      "SF-0638"
+    ],
+    "status": "To Do"
+  },
+  {
+    "sliceId": "SL-125",
+    "unit": ".claude",
+    "theme": "other",
+    "part": "3/3",
+    "count": 7,
+    "fileCount": 5,
+    "findingIds": [
+      "SF-0639",
+      "SF-0725",
+      "SF-0825",
+      "SF-0633",
+      "SF-0630",
+      "SF-0631",
+      "SF-0600"
+    ],
+    "status": "To Do"
+  },
+  {
+    "sliceId": "SL-126",
+    "unit": ".claude",
+    "theme": "silent-cap-truncation",
+    "part": null,
+    "count": 3,
+    "fileCount": 3,
+    "findingIds": ["SF-0721", "SF-0694", "SF-0723"],
+    "status": "To Do"
+  },
+  {
+    "sliceId": "SL-127",
+    "unit": ".claude",
+    "theme": "unvalidated-input",
+    "part": null,
+    "count": 6,
+    "fileCount": 3,
+    "findingIds": [
+      "SF-0044",
+      "SF-0046",
+      "SF-0047",
+      "SF-0049",
+      "SF-0104",
+      "SF-0626"
+    ],
+    "status": "To Do"
+  },
+  {
+    "sliceId": "SL-128",
+    "unit": ".claude",
+    "theme": "weak-type",
+    "part": null,
+    "count": 3,
+    "fileCount": 3,
+    "findingIds": ["SF-0132", "SF-0093", "SF-0697"],
+    "status": "To Do"
+  },
+  {
+    "sliceId": "SL-129",
+    "unit": ".github",
+    "theme": "doc-comment-inaccuracy",
+    "part": null,
+    "count": 4,
+    "fileCount": 2,
+    "findingIds": ["SF-0270", "SF-0443", "SF-0445", "SF-0153"],
+    "status": "To Do"
+  },
+  {
+    "sliceId": "SL-130",
+    "unit": ".github",
+    "theme": "drift-hardcoded-count",
+    "part": null,
+    "count": 1,
+    "fileCount": 1,
+    "findingIds": ["SF-0444"],
+    "status": "To Do"
+  },
+  {
+    "sliceId": "SL-131",
+    "unit": ".github",
+    "theme": "missing-test-coverage",
+    "part": null,
+    "count": 4,
+    "fileCount": 1,
+    "findingIds": ["SF-0255", "SF-0258", "SF-0259", "SF-0268"],
+    "status": "To Do"
+  },
+  {
+    "sliceId": "SL-132",
+    "unit": ".github",
+    "theme": "other",
+    "part": null,
+    "count": 3,
+    "fileCount": 1,
+    "findingIds": ["SF-0267", "SF-0293", "SF-0536"],
+    "status": "To Do"
+  },
+  {
+    "sliceId": "SL-133",
+    "unit": ".github",
+    "theme": "silent-cap-truncation",
+    "part": null,
+    "count": 1,
+    "fileCount": 1,
+    "findingIds": ["SF-0256"],
+    "status": "To Do"
+  },
+  {
+    "sliceId": "SL-134",
+    "unit": "CLASS",
+    "theme": "missing-test-coverage",
+    "part": null,
+    "count": 1,
+    "fileCount": 0,
+    "findingIds": ["SF-0162"],
+    "status": "To Do"
+  },
+  {
+    "sliceId": "SL-135",
+    "unit": "CLASS",
+    "theme": "other",
+    "part": null,
+    "count": 1,
+    "fileCount": 0,
+    "findingIds": ["SF-0158"],
+    "status": "To Do"
+  },
+  {
+    "sliceId": "SL-136",
+    "unit": "CLASS",
+    "theme": "silent-cap-truncation",
+    "part": null,
+    "count": 2,
+    "fileCount": 0,
+    "findingIds": ["SF-0237", "SF-0239"],
+    "status": "To Do"
+  },
+  {
+    "sliceId": "SL-137",
+    "unit": "docs",
+    "theme": "doc-comment-inaccuracy",
+    "part": "1/2",
+    "count": 6,
+    "fileCount": 5,
+    "findingIds": [
+      "SF-0050",
+      "SF-0092",
+      "SF-0211",
+      "SF-0076",
+      "SF-0101",
+      "SF-0206"
+    ],
+    "status": "To Do"
+  },
+  {
+    "sliceId": "SL-138",
+    "unit": "docs",
+    "theme": "doc-comment-inaccuracy",
+    "part": "2/2",
+    "count": 6,
+    "fileCount": 6,
+    "findingIds": [
+      "SF-0026",
+      "SF-0252",
+      "SF-0109",
+      "SF-0084",
+      "SF-0106",
+      "SF-0222"
+    ],
+    "status": "To Do"
+  },
+  {
+    "sliceId": "SL-139",
+    "unit": "docs",
+    "theme": "drift-hardcoded-count",
+    "part": null,
+    "count": 5,
+    "fileCount": 5,
+    "findingIds": ["SF-0210", "SF-0236", "SF-0083", "SF-0085", "SF-0096"],
+    "status": "To Do"
+  },
+  {
+    "sliceId": "SL-140",
+    "unit": "docs",
+    "theme": "error-swallowed",
+    "part": null,
+    "count": 2,
+    "fileCount": 2,
+    "findingIds": ["SF-0207", "SF-0082"],
+    "status": "To Do"
+  },
+  {
+    "sliceId": "SL-141",
+    "unit": "docs",
+    "theme": "missing-test-coverage",
+    "part": "1/2",
+    "count": 5,
+    "fileCount": 5,
+    "findingIds": ["SF-0078", "SF-0265", "SF-0159", "SF-0163", "SF-0224"],
+    "status": "To Do"
+  },
+  {
+    "sliceId": "SL-142",
+    "unit": "docs",
+    "theme": "missing-test-coverage",
+    "part": "2/2",
+    "count": 4,
+    "fileCount": 4,
+    "findingIds": ["SF-0079", "SF-0021", "SF-0100", "SF-0071"],
+    "status": "To Do"
+  },
+  {
+    "sliceId": "SL-143",
+    "unit": "docs",
+    "theme": "other",
+    "part": "1/2",
+    "count": 6,
+    "fileCount": 5,
+    "findingIds": [
+      "SF-0248",
+      "SF-0142",
+      "SF-0264",
+      "SF-0245",
+      "SF-0067",
+      "SF-0254"
+    ],
+    "status": "To Do"
+  },
+  {
+    "sliceId": "SL-144",
+    "unit": "docs",
+    "theme": "other",
+    "part": "2/2",
+    "count": 6,
+    "fileCount": 6,
+    "findingIds": [
+      "SF-0187",
+      "SF-0172",
+      "SF-0074",
+      "SF-0090",
+      "SF-0033",
+      "SF-0070"
+    ],
+    "status": "To Do"
+  },
+  {
+    "sliceId": "SL-145",
+    "unit": "docs",
+    "theme": "unvalidated-input",
+    "part": null,
+    "count": 2,
+    "fileCount": 2,
+    "findingIds": ["SF-0115", "SF-0122"],
+    "status": "To Do"
+  },
+  {
+    "sliceId": "SL-146",
+    "unit": "templates",
+    "theme": "missing-test-coverage",
+    "part": null,
+    "count": 2,
+    "fileCount": 1,
+    "findingIds": ["SF-0389", "SF-0390"],
+    "status": "To Do"
+  }
+]
