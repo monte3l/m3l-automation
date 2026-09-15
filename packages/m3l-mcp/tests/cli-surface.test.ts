@@ -1,6 +1,6 @@
 /**
- * Tests for `src/cli/surface.ts` (V10c contract, "File 4") — the argv table
- * plus invocation that V10c2's `tools/health.ts` will call. Every test
+ * Tests for `src/cli/surface.ts` (V10c2b contract, "File 4") — the argv
+ * table plus invocation that V10c3's `tools/health.ts` calls. Every test
  * injects `runProcess` through `CreateM3LMcpCliSurfaceDeps`; the real
  * `runCliProcess` (which would spawn a real child process) is never called.
  *
@@ -11,15 +11,29 @@
  * still gets this one wrong, so it is asserted on its own with an explicit
  * "does not throw" plus the parsed value.
  */
-import { describe, expect, expectTypeOf, test, vi } from "vitest";
+import { afterEach, describe, expect, expectTypeOf, test, vi } from "vitest";
 
-import type {
-  CliRunDisposition,
-  CliRunResult,
-  RunCliProcessOptions,
+import type * as CliProcessModule from "../src/cli/process.js";
+
+// Mocked only so the "runProcess default" test below can observe that
+// `createM3LMcpCliSurface`'s default seam IS `runCliProcess` — via a fake
+// that never spawns a real process — without disturbing any other test in
+// this file, which all inject their own `runProcess` fake and never reach
+// the default.
+vi.mock("../src/cli/process.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof CliProcessModule>()),
+  runCliProcess: vi.fn(),
+}));
+
+import {
+  runCliProcess,
+  type CliRunDisposition,
+  type CliRunResult,
+  type RunCliProcessOptions,
 } from "../src/cli/process.js";
 import type { M3LMcpSettings } from "../src/config/settings.js";
 import { M3LMcpError } from "../src/errors/mcp-error.js";
+import type { M3LMcpDoctorCheck } from "../src/cli/envelopes.js";
 import type {
   CreateM3LMcpCliSurfaceDeps,
   M3LMcpCliSurface,
@@ -32,7 +46,7 @@ import { createM3LMcpCliSurface } from "../src/cli/surface.js";
  * raw stderr text. Every failure test that constructs a `CliRunResult` or
  * `M3LMcpSettings` by hand plants one or both of these, then asserts the
  * thrown error's `message` contains NEITHER — this text can reach a model
- * verbatim in slice V10c2.
+ * verbatim in slice V10c3.
  */
 const ENTRYPOINT_SENTINEL = "/home/someone/secret/entrypoint-4c1a";
 const STDERR_SENTINEL = "/home/someone/secret/leak-9f2a";
@@ -374,14 +388,14 @@ describe("createM3LMcpCliSurface().doctor() — a parse failure raises ERR_MCP_C
 });
 
 describe("createM3LMcpCliSurface().doctor() — a rejecting runProcess raises ERR_MCP_CLI, never the raw rejection", () => {
-  // FINDING 1 (RED): `invokeDoctor` currently does
-  // `const result = await runProcess(...)` with no try/catch at all, so a
-  // rejecting `runProcess` propagates completely unwrapped — not an
-  // `M3LMcpError`, not `ERR_MCP_CLI`, and with the raw rejection's message
-  // intact. That violates this module's own documented invariant that every
-  // thrown message here is a fixed module-level constant. These three tests
-  // (Error, primitive, null-prototype-object rejection) must all currently
-  // fail on `expect(thrown).toBeInstanceOf(M3LMcpError)` alone.
+  // FINDING 1: `invokeDoctor` wraps `await runProcess(...)` in a try/catch
+  // that normalizes ANY caught value — an `Error`, a primitive, or a
+  // null-prototype object — into `M3LMcpError("ERR_MCP_CLI", ...)`. The
+  // three tests below pin that invariant: the fixed module-level message
+  // never carries a fragment of the caught value (checked in both
+  // `mcpError.message` and `mcpError.toJSON()`), while the caught value
+  // itself is still chained as `cause` — never dropped, never leaked
+  // outside `cause`.
   test("an Error rejection surfaces as M3LMcpError('ERR_MCP_CLI') whose fixed message carries no fragment of the caught error's message, and whose cause is the original error", async () => {
     const settings = buildSettings();
     const rejection = new Error(RUN_PROCESS_REJECTION_SENTINEL);
@@ -479,25 +493,32 @@ describe("createM3LMcpCliSurface().doctor() — a rejecting runProcess raises ER
 });
 
 describe("createM3LMcpCliSurface() — runProcess default", () => {
-  test("defaults runProcess to the real runCliProcess when not supplied", () => {
-    // Only asserts the seam is optional at the type level and construction
-    // does not require it — invoking doctor() without an injected
-    // runProcess would spawn a real process, which this suite never does.
+  afterEach(() => {
+    vi.mocked(runCliProcess).mockReset();
+  });
+
+  test("defaults runProcess to runCliProcess: constructing without it still routes doctor() through the mocked seam", async () => {
+    // `../src/cli/process.js` is mocked at the top of this file, so this
+    // exercises the REAL default-selection code path (`deps.runProcess ??
+    // runCliProcess`) without ever spawning a real child process — the
+    // mocked `runCliProcess` stands in for it.
     const settings = buildSettings();
-    expect(() => createM3LMcpCliSurface({ settings })).not.toThrow();
+    vi.mocked(runCliProcess).mockResolvedValue(buildExitedResult());
+    const surface = createM3LMcpCliSurface({ settings });
+
+    const checks = await surface.doctor();
+
+    expect(runCliProcess).toHaveBeenCalledTimes(1);
+    expect(checks).toEqual([
+      { name: "node-version", status: "ok", detail: "Node 24 detected" },
+    ]);
   });
 });
 
 describe("M3LMcpCliSurface / CreateM3LMcpCliSurfaceDeps (type level)", () => {
   test("M3LMcpCliSurface has exactly the documented doctor() method", () => {
     expectTypeOf<M3LMcpCliSurface>().toEqualTypeOf<{
-      doctor(): Promise<
-        readonly {
-          readonly name: string;
-          readonly status: "ok" | "warn" | "fail";
-          readonly detail: string;
-        }[]
-      >;
+      doctor(): Promise<readonly M3LMcpDoctorCheck[]>;
     }>();
   });
 
