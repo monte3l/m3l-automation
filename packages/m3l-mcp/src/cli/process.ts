@@ -1,6 +1,6 @@
 /**
  * `cli/process` — the bounded-subprocess port this package spawns the `m3l`
- * CLI through (V10c, contract file 2). Deliberately **narrower** than
+ * CLI through (V10c2, contract file 2). Deliberately **narrower** than
  * `scripts/agent-operator/src/lib/cli-process.ts`: no process-group
  * teardown, no `SIGKILL` escalation ladder, no exit reaper. Slice V10e
  * promotes that richer behavior into a `Core` leaf and replaces this
@@ -242,7 +242,7 @@ function resolveFailureCode(error: unknown): string | undefined {
     : undefined;
 }
 
-/** The result a synchronous `spawnFn` throw settles with — see Fix 1 in the V10c review: Node's real `spawn` throws synchronously for a NUL-bearing/empty argv entry, and that throw must never escape this module's never-throws contract. */
+/** The result a synchronous `spawnFn` throw settles with — see Fix 1 in the V10c2 review: Node's real `spawn` throws synchronously for a NUL-bearing/empty argv entry, and that throw must never escape this module's never-throws contract. */
 function buildSpawnFailedResult(error: unknown): CliRunResult {
   return {
     disposition: "spawn-failed",
