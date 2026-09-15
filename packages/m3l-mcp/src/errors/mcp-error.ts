@@ -1,11 +1,12 @@
 /**
  * `errors/mcp-error` — the single error type this package throws
  * (ADR-0062). One class with a closed `code` union rather than a class per
- * failure mode: the four codes (`ERR_MCP_POLICY`, `ERR_MCP_DECISION_LOG`,
- * `ERR_MCP_CONFIG`, `ERR_MCP_IDENTITY`) name the *subsystem* a failure came
- * from, which is all a caller needs to branch on — the message carries the
- * specific detail, undecorated, so a client surfacing it verbatim never
- * doubles up a prefix the caller already renders from `code`.
+ * failure mode: each code (`ERR_MCP_POLICY`, `ERR_MCP_DECISION_LOG`,
+ * `ERR_MCP_CONFIG`, `ERR_MCP_IDENTITY`, `ERR_MCP_CLI`) names the *subsystem*
+ * a failure came from, which is all a caller needs to branch on — the
+ * message carries the specific detail, undecorated, so a client surfacing
+ * it verbatim never doubles up a prefix the caller already renders from
+ * `code`.
  *
  * @packageDocumentation
  */
@@ -15,10 +16,10 @@ import { Core } from "@monte3l/m3l-common";
 /**
  * The closed set of subsystems an {@link M3LMcpError} can be raised from:
  * the ADR-0060 policy gate, the ADR-0061 decision log, this package's own
- * configuration loading, and MCP client identity resolution. Closed
- * deliberately — a `switch` over this union stays exhaustive as the
- * codebase grows, catching an unhandled subsystem at compile time rather
- * than at a client's stderr log.
+ * configuration loading, MCP client identity resolution, and the spawned
+ * `m3l` CLI. Closed deliberately — a `switch` over this union stays
+ * exhaustive as the codebase grows, catching an unhandled subsystem at
+ * compile time rather than at a client's stderr log.
  *
  * Deliberately never registered in m3l-common's own `M3L_ERROR_CODES` tuple
  * — that tuple is the library's own emitted-code catalog, not a registry for
@@ -29,7 +30,13 @@ export type M3LMcpErrorCode =
   | "ERR_MCP_POLICY"
   | "ERR_MCP_DECISION_LOG"
   | "ERR_MCP_CONFIG"
-  | "ERR_MCP_IDENTITY";
+  | "ERR_MCP_IDENTITY"
+  /**
+   * Failures of the spawned `m3l` CLI: an exit code outside the command's
+   * accepted set, a timeout, a truncated stream, or unparseable `--json`
+   * output.
+   */
+  | "ERR_MCP_CLI";
 
 /**
  * Constructor options for {@link M3LMcpError}.

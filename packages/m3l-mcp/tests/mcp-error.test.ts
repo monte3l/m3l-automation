@@ -14,6 +14,7 @@ const ALL_CODES: readonly M3LMcpErrorCode[] = [
   "ERR_MCP_DECISION_LOG",
   "ERR_MCP_CONFIG",
   "ERR_MCP_IDENTITY",
+  "ERR_MCP_CLI",
 ];
 
 describe("M3LMcpError", () => {
@@ -89,6 +90,7 @@ describe("M3LMcpError", () => {
       | "ERR_MCP_DECISION_LOG"
       | "ERR_MCP_CONFIG"
       | "ERR_MCP_IDENTITY"
+      | "ERR_MCP_CLI"
     >();
   });
 });

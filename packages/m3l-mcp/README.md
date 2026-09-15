@@ -75,7 +75,7 @@ Two behaviours that look like bugs and are not:
 
 ## What exists today
 
-This package is mid-wave, and **still exposes no tools**. Three slices have
+This package is mid-wave, and **still exposes no tools**. Four slices have
 landed:
 
 - **V10b — the skeleton.** The stdio composition root
@@ -87,14 +87,18 @@ landed:
 - **V10c2 — the bounded subprocess port.** `src/cli/process.ts` runs a
   command under `shell: false` with an argv array, a per-stream byte cap, an
   own-timer timeout, and an injectable `spawn` seam.
+- **V10c2b — the facade itself.** `src/cli/surface.ts` builds the argv for
+  one `m3l` CLI method, invokes it through the V10c2 port, and turns the
+  result into typed rows or a fixed-constant `ERR_MCP_CLI` refusal — never a
+  fragment of the CLI's stdout, stderr, or a caught error's message.
 
-Be precise about what V10c2 does and does not mean. It is the first slice
-containing code that could spawn the `m3l` CLI — but nothing invokes it.
-`src/main.ts` imports nothing from `src/cli/` or `src/config/`, and no
-module composes the port yet: the argv table and invocation facade are
-V10c2b, and no tool exists until V10c3. So a client connecting today still
-sees an empty tool list and the server spawns no process at all — these
-modules' only callers are their own tests.
+Be precise about what V10c2b does and does not mean. It is the first slice
+that can turn a settings object and an argv request into a completed CLI
+call end to end — but nothing calls it. `src/main.ts` still imports nothing
+from `src/cli/` or `src/config/`: the policy gate and the one tool that
+would actually invoke this surface are V10c3. So a client connecting today
+still sees an empty tool list and the server spawns no process at all —
+`surface.ts`'s only caller is its own test.
 
 The bounded-kill invariants are deliberately **incomplete** here. The port
 enforces a timeout, a per-stream byte cap and `shell: false`; it does
