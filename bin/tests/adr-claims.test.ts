@@ -182,7 +182,7 @@ describe("checkAdrClaims", () => {
   });
 
   test("live-repo sanity check: every real ADR_CLAIMS entry currently holds", () => {
-    expect(ADR_CLAIMS).toHaveLength(10);
+    expect(ADR_CLAIMS).toHaveLength(11);
     expect(checkAdrClaims(root)).toEqual([]);
   });
 });
@@ -243,5 +243,156 @@ describe("package-manager-pin probe (via ADR_CLAIMS)", () => {
       exact: true,
       major: 4,
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// eslint-heap-ceilings probe (via ADR_CLAIMS) — same "exercise the real,
+// unexported probe through its ADR_CLAIMS entry" convention as above.
+//
+// The probe guards ADR-0080's 2026-09-15 Update. Its predecessor claim rotted
+// silently (a measured exemption for `lint:library` stopped being true as
+// packages/m3l-common grew), so these cases pin the two properties that make
+// the guard non-vacuous: it must NAME an unflagged eslint script, and it must
+// NOT match a script that merely mentions the word.
+// ---------------------------------------------------------------------------
+
+describe("eslint-heap-ceilings probe (via ADR_CLAIMS)", () => {
+  let sandbox: string | undefined;
+
+  afterEach(() => {
+    if (sandbox !== undefined) {
+      rmSync(sandbox, { recursive: true, force: true });
+      sandbox = undefined;
+    }
+  });
+
+  function writeScriptsFixture(scripts: Record<string, string>): string {
+    const root = mkdtempSync(join(tmpdir(), "adr-claims-eslint-heap-"));
+    writeFileSync(join(root, "package.json"), JSON.stringify({ scripts }));
+    return root;
+  }
+
+  function probeScripts(scripts: Record<string, string>): unknown {
+    sandbox = writeScriptsFixture(scripts);
+    const claim = ADR_CLAIMS.find((c) => c.id === "eslint-heap-ceilings");
+    expect(claim).toBeDefined();
+    return claim?.probe(sandbox);
+  }
+
+  const FLAG = 'NODE_OPTIONS="--max-old-space-size=8192"';
+
+  test("returns [] when every eslint-invoking script carries a heap ceiling", () => {
+    expect(
+      probeScripts({
+        "lint:library": `${FLAG} eslint packages/m3l-common`,
+        "lint:workspace": `${FLAG} eslint .`,
+      }),
+    ).toEqual([]);
+  });
+
+  test("names an eslint script that has no heap ceiling", () => {
+    expect(
+      probeScripts({
+        "lint:library": "eslint packages/m3l-common --concurrency=1",
+        "lint:workspace": `${FLAG} eslint .`,
+      }),
+    ).toEqual(["lint:library"]);
+  });
+
+  test("names every offender, sorted, not just the first", () => {
+    expect(
+      probeScripts({
+        "lint:workspace": "eslint .",
+        "lint:library": "eslint packages/m3l-common",
+      }),
+    ).toEqual(["lint:library", "lint:workspace"]);
+  });
+
+  test("ignores a composite script that only delegates", () => {
+    expect(
+      probeScripts({
+        lint: "pnpm lint:library && pnpm lint:workspace",
+        "lint:library": `${FLAG} eslint packages/m3l-common`,
+      }),
+    ).toEqual([]);
+  });
+
+  test("ignores a script that names eslint inside a path but never invokes it", () => {
+    // The live `check:zones` shape. A bare `includes("eslint")` matcher would
+    // report this unflagged script as an offender; the word-boundary anchors
+    // are what prevent it.
+    expect(
+      probeScripts({
+        "check:zones": "node bin/check-eslint-zones.mjs",
+        "lint:md": "rumdl check .",
+      }),
+    ).toEqual([]);
+  });
+
+  test("still matches an eslint invocation reached through pnpm exec", () => {
+    expect(
+      probeScripts({ "lint:library": "pnpm exec eslint packages/m3l-common" }),
+    ).toEqual(["lint:library"]);
+  });
+
+  test("does not credit a --cache-location path containing 'eslint' as a ceiling", () => {
+    // The live `:fast` scripts carry such a path. It must not be mistaken for
+    // the flag, or a genuinely unflagged fast script would pass.
+    expect(
+      probeScripts({
+        "lint:library:fast":
+          "eslint packages/m3l-common --cache-location node_modules/.cache/eslint/library.eslintcache",
+      }),
+    ).toEqual(["lint:library:fast"]);
+  });
+
+  test("does not credit a ceiling that belongs to a different binary in a chained command", () => {
+    // The Should-fix from PR #1272's round 1. A whole-string substring test
+    // reads this as compliant while the eslint process still runs on the
+    // default heap — the exact false negative the probe exists to prevent.
+    expect(
+      probeScripts({
+        "lint:chained":
+          'NODE_OPTIONS="--max-old-space-size=8192" node bin/x.mjs && eslint .',
+      }),
+    ).toEqual(["lint:chained"]);
+  });
+
+  test("credits a ceiling in the same segment as the eslint it prefixes", () => {
+    expect(
+      probeScripts({
+        "lint:chained": `node bin/x.mjs && ${FLAG} eslint .`,
+      }),
+    ).toEqual([]);
+  });
+
+  test("matches a bare eslint at the end of a segment", () => {
+    // ESLint 9+ lints the cwd when given no patterns, so this is a real
+    // full-workspace run. A trailing-whitespace-only anchor would skip it.
+    expect(probeScripts({ "lint:bare": "eslint" })).toEqual(["lint:bare"]);
+    expect(probeScripts({ "lint:bare": "pnpm exec eslint" })).toEqual([
+      "lint:bare",
+    ]);
+  });
+
+  test("credits a flagged bare eslint invocation", () => {
+    expect(probeScripts({ "lint:bare": `${FLAG} eslint` })).toEqual([]);
+  });
+
+  test("does not credit a bare flag occurrence outside a NODE_OPTIONS assignment", () => {
+    expect(
+      probeScripts({
+        "lint:odd": "eslint . --rulesdir ./r/--max-old-space-size=8192",
+      }),
+    ).toEqual(["lint:odd"]);
+  });
+
+  test("returns [] for a package.json with no scripts block at all", () => {
+    const root = mkdtempSync(join(tmpdir(), "adr-claims-eslint-heap-"));
+    sandbox = root;
+    writeFileSync(join(root, "package.json"), JSON.stringify({}));
+    const claim = ADR_CLAIMS.find((c) => c.id === "eslint-heap-ceilings");
+    expect(claim?.probe(root)).toEqual([]);
   });
 });

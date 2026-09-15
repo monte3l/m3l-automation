@@ -5,6 +5,52 @@
 - **Date:** 2026-08-27
 - **Deciders:** Enrico Lionello
 
+> **Update (2026-09-15) — the `lint:library` exemption has expired, and is now
+> mechanically re-checked.** This executes the revisit condition this ADR's own
+> "Known limitation" already stated (the `8192` figure being a fixed constant
+> whose basis could move); it does not reverse the decision.
+>
+> The Decision below scoped the heap ceiling to `lint:workspace` and recorded
+> that `lint:library` "was confirmed **not** to cross the default ceiling on
+> its own and was left unchanged — the fix is scoped to the demonstrated
+> failure, not applied blanket." That was a correct **measurement**, taken
+> 2026-09-08. It stopped being true by **2026-09-15**: `packages/m3l-common`
+> grew, and `pnpm lint:library` now dies at Node's default ceiling with
+> `FATAL ERROR: Ineffective mark-compacts near heap limit` (exit 134).
+> Because `lint` is `lint:library && lint:workspace`, the **unprotected**
+> script is the one that runs first, so `pnpm verify` could not pass on this
+> host unaided.
+>
+> Two properties of the repo kept it invisible, and both are worth recording:
+>
+> - **CI could not see it.** A docs-only PR path-skips the `Lint (library)`
+>   job and `verify` passes in ~3 s, so a PR went fully green while a local
+>   `pnpm verify` exited 1.
+> - **Nothing probed the claim.** It lived only as prose here, so it was free
+>   to rot.
+>
+> **Resolution.** `lint:library` and `lint:library:fast` now carry the same
+> `NODE_OPTIONS="${NODE_OPTIONS:+$NODE_OPTIONS }--max-old-space-size=8192"`
+> prefix as their `lint:workspace` counterparts — all four eslint-invoking
+> scripts, not two. `lint:library:fast` was equally unprotected and equally
+> undocumented; it is fixed here rather than left as the next instance.
+>
+> **A new blocking probe replaces the prose.** `bin/lib/adr-claims.mjs`'s
+> `eslint-heap-ceilings` claim asserts that _every_ `package.json` script
+> invoking `eslint` carries a raised ceiling, returning the offenders by name
+> so a fifth script added without one fails with its own name and no expected
+> total needs updating. This converts a dated measurement into a re-checked
+> invariant — the generalization this ADR's Known limitation asked for, at the
+> level of "the ceiling is present" rather than "the ceiling is derived."
+>
+> **Still open, unchanged:** the `8192` value itself is still a fixed
+> constant, and deriving it from the per-host budget (alongside
+> `recommendToolMemoryLimitGiB`) remains unbuilt. The adaptive-host-budgeting
+> wave this ADR pointed at completed (P0–P3.8) without generalizing
+> `NODE_OPTIONS`. Raising a ceiling costs nothing on a host that does not
+> reach it, so a fixed ceiling that is present everywhere is strictly better
+> than a derived one that is absent in two places.
+
 ## Context and problem statement
 
 Running 2+ Claude Code sessions against this repo on a 16 GB Linux machine
@@ -260,7 +306,10 @@ Fixed narrowly: `lint:workspace`'s script gained
 `NODE_OPTIONS=--max-old-space-size=8192` (`package.json`). `lint:library`
 (the `packages/m3l-common`-only pass) was confirmed **not** to cross the
 default ceiling on its own and was left unchanged — the fix is scoped to
-the demonstrated failure, not applied blanket.
+the demonstrated failure, not applied blanket. [Superseded 2026-09-15: that
+measurement expired and `lint:library`/`lint:library:fast` now carry the same
+ceiling, re-checked by a blocking probe. Retained as historical record; see
+the 2026-09-15 Update above.]
 
 **Known limitation, flagged by review rather than resolved here:** the
 `8192` figure is a fixed constant, the same category of problem this ADR's

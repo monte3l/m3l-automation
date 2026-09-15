@@ -182,6 +182,101 @@ function probeHostResourceGateExists(root) {
 }
 
 /**
+ * Every `package.json` script that invokes `eslint` directly must carry a
+ * raised `--max-old-space-size`. ESLint's measured per-process footprint on
+ * this repo is ~3.4 GiB (`bin/lib/host-profile.mjs`'s `perWorkerGiB` note),
+ * well above Node's ~2 GiB default heap, so an unflagged script dies with
+ * `FATAL ERROR: Ineffective mark-compacts near heap limit` (exit 134) rather
+ * than reporting a lint finding.
+ *
+ * This probe exists because the narrower prose claim it replaces rotted
+ * silently. ADR-0080 shipped the ceiling on `lint:workspace` alone, recording
+ * that `lint:library` "was confirmed **not** to cross the default ceiling on
+ * its own" — true when measured on 2026-09-08, false by 2026-09-15 as
+ * `packages/m3l-common` grew. Nothing caught it: a docs-only PR path-skips
+ * the `Lint (library)` CI job, so CI stayed green while `pnpm verify` failed
+ * locally. A measured exemption is a dated claim, and this gate is what
+ * re-checks it.
+ *
+ * Returning the offenders rather than a count keeps the guard
+ * self-maintaining: a fifth eslint script added without the flag fails with
+ * its own name in the message, and no expected total needs updating.
+ *
+ * Composite scripts (`lint`, `lint:fast`) only delegate, so they need no flag
+ * of their own and are not matched. `lint:md` runs rumdl. `check:zones` names
+ * `bin/check-eslint-zones.mjs` but never invokes the binary — the
+ * word-boundary anchors in {@link segmentInvokesEslint} are what exclude it,
+ * not a bare `includes("eslint")`.
+ *
+ * **The check is per command segment, not per script.** A whole-string
+ * substring test credits a flag that belongs to a different binary in a
+ * chained command — `NODE_OPTIONS="…" node bin/x.mjs && eslint .` would read
+ * as compliant while the `eslint` process still runs on the default heap,
+ * which is the exact false negative this probe exists to prevent.
+ *
+ * @param {string} root
+ * @returns {string[]} names of scripts with at least one eslint-invoking
+ *   segment lacking a heap ceiling, sorted. `[]` when every one carries it.
+ */
+function probeEslintHeapCeilings(root) {
+  const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
+  /** @type {Record<string, string>} */
+  const scripts = pkg.scripts ?? {};
+  return Object.entries(scripts)
+    .filter(([, cmd]) =>
+      splitShellSegments(cmd).some(
+        (segment) =>
+          segmentInvokesEslint(segment) && !segmentHasHeapCeiling(segment),
+      ),
+    )
+    .map(([name]) => name)
+    .sort();
+}
+
+/**
+ * Split a `package.json` script into the command segments a shell would run
+ * separately. Regex-based by house convention (see
+ * {@link extractYamlListKey}) — a real shell parser is unwarranted for this
+ * one caller. The known limitation is that an operator inside a quoted
+ * string would split wrongly; no script in this repo has one, and the
+ * consequence would be a spurious finding (loud), never a missed one (silent).
+ *
+ * @param {string} cmd
+ * @returns {string[]}
+ */
+function splitShellSegments(cmd) {
+  return cmd.split(/&&|\|\||[;|]/);
+}
+
+/**
+ * Whether `segment` runs the `eslint` binary as a command word. The trailing
+ * boundary accepts end-of-segment as well as whitespace: ESLint 9+ lints the
+ * current directory when given no patterns, so a bare `eslint` is a real —
+ * and maximally expensive — full-workspace invocation, not a no-op to skip.
+ *
+ * @param {string} segment
+ * @returns {boolean}
+ */
+function segmentInvokesEslint(segment) {
+  return /(?:^|\s|")eslint(?:\s|$)/.test(segment.trim());
+}
+
+/**
+ * Whether `segment` raises the heap for the process it runs. The flag is
+ * credited only when it appears *inside* a `NODE_OPTIONS=` assignment in this
+ * same segment — a bare occurrence of the flag text elsewhere (a `--cache-location`
+ * path, an echoed diagnostic) must not count.
+ *
+ * @param {string} segment
+ * @returns {boolean}
+ */
+function segmentHasHeapCeiling(segment) {
+  const assignments =
+    segment.match(/NODE_OPTIONS=(?:"[^"]*"|'[^']*'|\S+)/g) ?? [];
+  return assignments.some((a) => a.includes("--max-old-space-size="));
+}
+
+/**
  * The load-bearing ADRs' probeable claims. Not exported directly — tests
  * exercise `checkAdrClaims` with their own small override array via its
  * `claims` parameter, the same pattern `deriveIntegrationStanceIssues` uses
@@ -256,6 +351,14 @@ const ADR_CLAIMS = [
     claim: "bin/check-host-resources.mjs exists",
     probe: probeHostResourceGateExists,
     expect: true,
+  },
+  {
+    id: "eslint-heap-ceilings",
+    adr: "0080",
+    claim:
+      "every package.json script invoking eslint carries a raised --max-old-space-size, per ADR-0080's 2026-09-15 Update",
+    probe: probeEslintHeapCeilings,
+    expect: [],
   },
   {
     id: "package-manager-pin",
