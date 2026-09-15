@@ -28,7 +28,7 @@ and enforcing none of it. A test can ship with zero mutation evidence and pass
 every gate.
 
 That hole matters because **vacuous guards are this repo's most-repeated
-recorded defect class.** Measured against `docs/logs/` on 2026-09-15 (220 work
+recorded defect class.** Measured against `docs/logs/` on 2026-09-15 (219 work
 logs): 26 mention `mutation-test`, 29 mention `vacuous`, and 17 mention a guard
 that "stayed green". The maintainer's own recurring-insight index corroborates
 the same class independently across roughly ten distinct incidents.
