@@ -49,9 +49,31 @@ table a submodule's reference page carries, gated by
 | Slice | Branch                      | Scope                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | Status            |
 | ----- | --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------- |
 | V10a  | `feat/v10-mcp-adr-updates`  | The ADR-0062 Update (tool grouping settled; `isError` redefinition; retired `m3l-cli`-internals clause; corrected library specifier; `zod` as a second own dependency) + the ADR-0057 Update (publish-set membership) + this plan doc                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | Landed (PR #1253) |
-| V10b  | `feat/v10-mcp-scaffold`     | `packages/m3l-mcp` skeleton: `package.json`, both tsconfigs, `bin/`, `README.md`, the composition root, the error type (on `Core.M3LError`, matching both sibling packages), and a brand-gated **empty** tool registry whose `unique symbol` key is never exported, so `gateTool` can be its only producer. Governance registration: root `tsconfig.json` reference, `knip.json` workspace, four `eslint.config.js` edits, matching `bin/check-eslint-zones.mjs` assertions (plus the missing reverse `packages/*` to `scripts/*` zone), the `mcp:serve` script and its catalog row. **Env config, the CLI process port and the doctor argv/parser moved to V10c**: `knip` flags an unreachable export, and none of them has a caller until a tool exists | To Do             |
-| V10c  | `feat/v10-mcp-policy-spine` | `src/policy/{load,identity,recorder,session}.ts`, `src/tools/gate.ts`, `src/tools/health.ts`; the seven-step gate contract; the verdict-to-response mapping; `fleet_health` registered through `gateTool`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | To Do             |
+| V10b  | `feat/v10-mcp-scaffold`     | `packages/m3l-mcp` skeleton: `package.json`, both tsconfigs, `bin/`, `README.md`, the composition root, the error type (on `Core.M3LError`, matching both sibling packages), and a brand-gated **empty** tool registry whose `unique symbol` key is never exported, so `gateTool` can be its only producer. Governance registration: root `tsconfig.json` reference, `knip.json` workspace, four `eslint.config.js` edits, matching `bin/check-eslint-zones.mjs` assertions (plus the missing reverse `packages/*` to `scripts/*` zone), the `mcp:serve` script and its catalog row. **Env config, the CLI process port and the doctor argv/parser moved to V10c**: `knip` flags an unreachable export, and none of them has a caller until a tool exists | Landed (PR #1258) |
+| V10c  | `feat/v10-mcp-cli-leaves`   | `src/config/settings.ts` (boot configuration from the environment) and `src/cli/envelopes.ts` (the `doctor --json` parser). The two leaves of the CLI facade — neither imports anything else this wave adds, so they land first and stand alone                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | To Do             |
+| V10c2 | `feat/v10-mcp-cli-facade`   | `src/cli/process.ts` (the bounded subprocess port — `shell: false`, a per-stream byte cap, an own-timer timeout, an injectable `spawn` seam) and `src/cli/surface.ts` (the argv table and invocation), plus `ERR_MCP_CLI` on `M3LMcpErrorCode`. Depends on V10c's two leaves                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | To Do             |
+| V10c3 | `feat/v10-mcp-policy-spine` | `src/policy/{load,identity,recorder,session}.ts`, `src/tools/gate.ts`, `src/tools/health.ts`; the seven-step gate contract; the verdict-to-response mapping; `fleet_health` registered through `gateTool`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | To Do             |
 | V10d  | `feat/v10-mcp-docs`         | `docs/reference/mcp.md`, the third `docs/reference/README.md` **Tooling** row, one new `bin/check-mcp.mjs` assertion (the runtime server is not self-registered) plus its dev-time relabelling, tracker pointers, work log                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | To Do             |
+
+### Why the original V10c became three rows
+
+The committed V10c covered nine `src` modules — the policy spine plus the
+three files V10b pushed forward. Measured, not estimated: the CLI facade
+alone is **115,981 reviewable chars**, against ADR-0072's 75,000 soft
+target. The first split (facade / spine) was sized from V10b's 52,878 chars
+for three modules, which was wrong — V10b's modules total 14,186 bytes and
+the facade's total 49,495, so per-module size tripled and the tests scaled
+with them. `config/settings.ts` + its test is 32,199 chars on its own;
+`cli/process.ts` + its test is 41,660.
+
+Split along the dependency grain rather than by file count, because
+`cli/surface.ts` imports the other three: the two leaves that import
+nothing from this wave (`config/settings.ts`, `cli/envelopes.ts`) land as
+V10c at ~49k, and the two that compose them (`cli/process.ts`,
+`cli/surface.ts`) land as V10c2 at ~64k. A src-versus-tests split was
+rejected outright — `vitest.config.ts`'s perFile thresholds (lines 90 /
+functions 83 / branches 80 / statements 89) would fail the first PR, since
+the modules would arrive with no tests at all.
 
 ### Recorded as later slices, not built here
 
@@ -83,7 +105,7 @@ and `fleet_flow`. `fleet_health` is `m3l doctor --json`: read-only, no
 preset, no mutation, no grandchild process.
 
 So V10b builds a **narrow injected port** — argv array with `shell: false`,
-byte caps, timeout, injectable `spawnImpl`, and nothing else — and V10e
+byte caps, timeout, an injectable `spawn` seam, and nothing else — and V10e
 replaces that port's body with a delegation to `Core`. The port is one file,
 which is what keeps this a deferral rather than a third permanent copy. The
 promotion is a hard gate on V10g, recorded here so it cannot quietly become
@@ -135,7 +157,19 @@ this paraphrase.
 - `bin/check-eslint-zones.mjs` asserts a hard-coded list of zones, so a new
   package zone is **unenforced** unless the gate gains a matching assertion
   in the same change. V10b adds both, and mutation-tests them.
-- **`knip` forces a dependency to land with its first importer, not before** —
+- **`knip` forces a _dependency_ to land with its first importer — but not a
+  _module_.** Re-measured at V10c's start, because V10b's own row cites
+  "`knip` flags an unreachable export" as the reason the config and CLI files
+  moved to V10c, and that reason is wrong. `knip --debug` resolves this
+  package's `**/*.{bench,test,test-d,spec,spec-d}.?(c|m)[jt]s?(x)` glob as an
+  entry pattern (its vitest plugin adds it; `knip.json`'s own `entry` is not
+  the whole set), so a `src` module reached only by its own test is a
+  reachable entry and is never flagged. V10b already proves it in-repo:
+  `isM3LMcpError` is exported, imported by no `src` module, imported only by
+  `tests/mcp-error.test.ts`, and `knip` is green. That is what makes both
+  facade slices landable before any tool calls them. A
+  declared-but-unimported **dependency** is still flagged, which is the real
+  constraint —
   it flags a declared-but-unimported workspace dependency as unused. This
   fired on `@monte3l/m3l-common` during V10b, and the first answer (drop the
   dependency until V10c's `src/policy/load.ts` needed it) was wrong for a

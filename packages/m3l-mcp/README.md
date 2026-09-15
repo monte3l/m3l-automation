@@ -75,11 +75,31 @@ Two behaviours that look like bugs and are not:
 
 ## What exists today
 
-This package is mid-wave. **Slice V10b — the current state — is the skeleton
-only:** the stdio composition root (`createM3LMcpServer` /
-`startM3LMcpServer`), the error type, and a tool registry that is
-deliberately **empty**. It exposes no tools and enforces no policy yet,
-because there is nothing yet to enforce it on.
+This package is mid-wave, and **still exposes no tools**. Two slices have
+landed:
+
+- **V10b — the skeleton.** The stdio composition root
+  (`createM3LMcpServer` / `startM3LMcpServer`), the error type, and a tool
+  registry that is deliberately **empty**.
+- **V10c — the CLI facade's two leaves.** `src/config/settings.ts` resolves
+  boot configuration from the environment; `src/cli/envelopes.ts` parses the
+  `m3l` CLI's `doctor --json` output into typed rows.
+
+Be precise about what V10c does not mean. It adds no ability to _run_
+anything: the bounded subprocess port and the argv/invocation facade are
+V10c2, and no tool exists until V10c3. Nothing in `src/cli/` or
+`src/config/` is imported by `src/main.ts`, so a client connecting today
+still sees an empty tool list — these modules' only callers are their own
+tests.
+
+One thing worth knowing if you set the environment yourself:
+`M3L_MCP_CLI_ENTRYPOINT` is validated at load (non-empty, absolute, no NUL
+byte) and a coercion or validation failure names the **key and the rule,
+never the value** — an environment variable may hold a secret. For the same
+reason, when the default project-root lookup fails, the failure is reported
+without chaining the library's own error as `cause`: that message
+interpolates the offending value, and `M3LError`'s `toJSON` would serialize
+it.
 
 Concretely, and stated so nobody reads the sections above as already
 shipped: `gateTool`, the policy load, the decision-log write, the
