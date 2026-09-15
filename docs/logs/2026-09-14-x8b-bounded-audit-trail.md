@@ -8,7 +8,8 @@ safely: an archived date, a never-written date and a deleted date were
 indistinguishable, and the only production reader never throws by contract, so
 the damage was invisible at boot.
 
-Plan of record: `docs/plans/2026-08-20-m3l-console.md` § `### X8`, and
+Plan of record: `docs/plans/2026-08-20-m3l-console.md` § `### X8`, the
+**X8b design** note within it and the dated notes following, plus
 [ADR-0102](../adr/0102-sealed-segment-manifest.md).
 
 ## Summary
