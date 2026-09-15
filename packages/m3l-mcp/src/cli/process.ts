@@ -163,14 +163,26 @@ export interface RunCliProcessOptions {
 
 /**
  * Accumulates one stream's bytes under a cap, decoding with `StringDecoder`
- * so a multi-byte character split across chunks is never corrupted. The
- * retained byte count never exceeds `maxOutputBytes` — a breaching chunk is
- * sliced to the remaining room *before* it is decoded, not after, so the
- * cap bounds the breaching chunk itself and not just growth past it. When
- * the slice cuts mid-character it strands a partial UTF-8 sequence in the
- * decoder's internal buffer; `finalize()`'s `decoder.end()` flushes that
- * stranded sequence as a single U+FFFD replacement character, per
- * `StringDecoder`'s own documented contract.
+ * so a multi-byte character split across chunks is never corrupted. For a
+ * positive, finite `maxOutputBytes`, the retained byte count never exceeds
+ * it — a breaching chunk is sliced to the remaining room *before* it is
+ * decoded, not after, so the cap bounds the breaching chunk itself and not
+ * just growth past it. When the slice cuts mid-character it strands a
+ * partial UTF-8 sequence in the decoder's internal buffer; `finalize()`'s
+ * `decoder.end()` flushes that stranded sequence as a single U+FFFD
+ * replacement character, per `StringDecoder`'s own documented contract.
+ *
+ * This module never re-checks `maxOutputBytes` itself: `config/settings.ts`
+ * already rejects a non-positive value with an `M3LMcpError` at the
+ * configuration boundary, and a non-finite value cannot originate there
+ * either. A non-positive or non-finite value passed directly to
+ * `createStreamAccumulator` would disable or invert the cap — `room` would
+ * go negative or `NaN` — but that state is unreachable through the
+ * documented `config/settings.ts` entry point. The structural fix is
+ * branding `maxOutputBytes` so an invalid value is unrepresentable at the
+ * type level rather than merely rejected at one call site; that is already
+ * recorded as a hard precondition of slice V10e's `core/process` promotion
+ * in `docs/plans/2026-09-14-v10-runtime-mcp-surface.md`.
  */
 interface StreamAccumulator {
   readonly breached: boolean;

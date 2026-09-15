@@ -355,11 +355,17 @@ describe("runCliProcess — 'stream-failed' (a broken output stream)", () => {
     expect(result.failureCode).toBeUndefined();
   });
 
-  test("does not crash the process: an unhandled stream 'error' would otherwise be a Node uncaught exception", async () => {
+  test("does not crash the process: an unhandled stream 'error' would otherwise be a Node uncaught exception, and the run settles 'stream-failed'", async () => {
     // EventEmitter throws synchronously if an "error" event has no
-    // listener. This assertion is really about attachOutputCapture having
+    // listener. This assertion is really about `createStreamCapture` having
     // registered a listener at all — if it hadn't, `child.stdout.emit`
-    // itself would throw here and fail this test.
+    // itself would throw here and fail this test. But ".not.toThrow()" plus
+    // an unchecked `await resultPromise` only proves the NEGATIVE half of
+    // this test's own name; the positive half — that the listener actually
+    // ran the "stream-failed" path rather than silently swallowing the
+    // error or settling something else — was never asserted. Pin the
+    // settled disposition and the kill this path always issues so that
+    // half is checked too.
     const child = createFakeChild();
     const { spawn } = createFakeSpawn(child);
     const resultPromise = runCliProcess({ ...baseOptions, spawn });
@@ -368,7 +374,44 @@ describe("runCliProcess — 'stream-failed' (a broken output stream)", () => {
       child.stdout.emit("error", new Error("boom"));
     }).not.toThrow();
 
-    await resultPromise;
+    const result = await resultPromise;
+    expect(result.disposition).toBe("stream-failed");
+    expect(child.kill).toHaveBeenCalledWith("SIGTERM");
+  });
+
+  test("a stream 'error' arriving after the run has already settled re-issues SIGTERM but leaves the resolved result unchanged", async () => {
+    // `onStreamError` calls `killChild()` BEFORE `settle()`, and the
+    // stream's own "error" listener is deliberately never detached (see
+    // `createStreamCapture`'s doc comment: detaching it would reopen the
+    // exact uncaught-exception hazard the test above exists to close) — so
+    // a stream error arriving after a normal exit has already settled the
+    // run still re-enters `onStreamError`. `settle()`'s own
+    // `if (settled) return` guard makes the second call a no-op for the
+    // resolved value, but `killChild()` runs UNGUARDED ahead of that check,
+    // so the extra `kill("SIGTERM")` call still happens. That is harmless —
+    // Node's `kill` no-ops once the child's handle is already gone — but,
+    // unlike the equivalent post-settle "data" case above, it was untested.
+    // This pins the CURRENT behavior; it is not asserting this is the ideal
+    // behavior, only that it is what the code does today.
+    const child = createFakeChild();
+    const { spawn } = createFakeSpawn(child);
+    const resultPromise = runCliProcess({ ...baseOptions, spawn });
+
+    child.emit("close", 0, null);
+    const result = await resultPromise;
+    expect(result.disposition).toBe("exited");
+    expect(child.kill).not.toHaveBeenCalled();
+
+    child.stdout.emit(
+      "error",
+      Object.assign(new Error("late"), { code: "EIO" }),
+    );
+    await Promise.resolve();
+
+    expect(result.disposition).toBe("exited");
+    expect(result.exitCode).toBe(0);
+    expect(child.kill).toHaveBeenCalledTimes(1);
+    expect(child.kill).toHaveBeenCalledWith("SIGTERM");
   });
 });
 
@@ -501,10 +544,17 @@ describe("runCliProcess — 'output-truncated' (per-stream byte cap)", () => {
       maxOutputBytes,
     });
 
+    // Sub-cap bytes on stdout in the SAME test as the stderr breach: this is
+    // what actually exercises "independent of stdout" in this test's own
+    // name. Emitting only on stderr (as this test previously did) would
+    // pass identically against a single accumulator shared across both
+    // streams — the independence claim was never reachable.
+    child.stdout.emit("data", Buffer.from("hi", "utf8"));
     child.stderr.emit("data", Buffer.from("é".repeat(6), "utf8"));
 
     const result = await resultPromise;
     expect(result.disposition).toBe("output-truncated");
+    expect(result.stdout).toBe("hi");
     // Same SIGTERM-only rationale as the stdout-breach case above.
     expect(child.kill).toHaveBeenCalledWith("SIGTERM");
   });
@@ -531,7 +581,14 @@ describe("runCliProcess — 'output-truncated' (per-stream byte cap)", () => {
     child.stdout.emit("data", Buffer.from("x".repeat(64), "utf8"));
     child.stdout.emit("data", Buffer.from("y".repeat(64), "utf8"));
 
-    expect(result.stdout).toBe((await resultPromise).stdout);
+    // Pin the exact literal — same cap and inputs as the mid-breach test
+    // above ("hi" then six "é"s under a 10-byte cap) — rather than comparing
+    // the already-resolved `result` object against a second `await` of the
+    // same promise. A Promise's resolved value never changes on a later
+    // await, so that self-comparison would hold for every possible
+    // implementation and can never fail; the growth claim this test is
+    // named for would then rest entirely on the `not.toContain` below.
+    expect(result.stdout).toBe(`hi${"é".repeat(4)}`);
     expect(result.stdout).not.toContain("x");
     expect(child.kill).toHaveBeenCalledTimes(1);
   });
