@@ -258,6 +258,42 @@ reaching in from outside). The remaining three land in V10c:
   widen `never[]`. Cosmetic while the array is empty; worth doing in the
   slice that first puts an entry in it.
 
+## Carried out of the V10c facade by its reviews
+
+The facade's slices each run a pre-push review fan-out plus a CI round.
+Findings that were fixed in their own slice are not listed here; these are
+the ones deliberately **not** fixed, with the reason, because each is
+invisible in the code as it stands. V10c2 appends its own set when it lands
+— several of the open items concern `cli/process.ts` and `cli/surface.ts`,
+which are that slice's files.
+
+From V10c (`config/settings.ts`, `cli/envelopes.ts`):
+
+- **`parseDoctorChecks` freezes the array but not the rows.** Harmless today
+  — they are fresh literals built field by field, with no other reference
+  held — so the TSDoc's "cannot be mutated out from under a later reader"
+  guarantee holds at the array level only. The `readonly` field types make
+  it compile-time safe, so it matters solely for a JavaScript caller. The
+  asymmetry is not deliberate and should be closed when something else
+  edits that function.
+- **`EnvelopeParseFailure`'s `missing-field` and `field-not-a-string` could
+  name the field.** A field name is schema-owned and never caller data, so
+  it does not breach the never-echo-input rule, and it would materially
+  improve diagnosability — right now a malformed row reports only _that_ a
+  string field was wrong, not which. Deferred because V10f adds the
+  `list`/`inspect` parsers and should settle the shape once for all three
+  rather than twice.
+
+Inherited and still open:
+
+- **Spawn-test `bin/m3l-mcp.mjs`'s two stderr branches**, open since V10b.
+  The entry separates a missing `dist/` from a failed boot and neither
+  branch has a regression test. `vitest.config.ts` scopes coverage to
+  `packages/*/src/**/*.ts`, so `bin/**/*.mjs` is outside the gate entirely
+  and its coverage figure says nothing about the entry. A real test spawns
+  it as a child process; the behaviour was hand-verified once (exit 1, one
+  stderr line, zero host-path occurrences), which is a check and not a guard.
+
 ## Definition of done for this wave
 
 `pnpm verify` green on each slice; `check:review-size` measured **before**
