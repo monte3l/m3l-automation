@@ -165,27 +165,40 @@ export interface LoadM3LMcpSettingsOptions {
  * `options.nodeExecPath`, so the invariant is total over every value that
  * ends up in the spawn's argv/`cwd` rather than only the one path an
  * operator can set directly.
+ *
+ * `contextField` picks which `context` property carries `label`: `"key"`
+ * (the default) for every caller whose `label` genuinely names an
+ * environment variable, and `"field"` for the one caller — the derived
+ * `cliEntrypoint` default — whose `label` is a descriptive phrase, not an
+ * env var name. Keeping `context.key` reserved to real env var names lets a
+ * consumer of a thrown error's `context` treat `key`'s presence as "this
+ * names a setting the operator can set directly" without special-casing the
+ * derived case.
  */
-function validatePathValue(label: string, value: string): string {
+function validatePathValue(
+  label: string,
+  value: string,
+  contextField: "key" | "field" = "key",
+): string {
   if (value === "") {
     throw new M3LMcpError(
       "ERR_MCP_CONFIG",
       `configuration key '${label}' must not be empty`,
-      { context: { key: label, rule: "non-empty" } },
+      { context: { [contextField]: label, rule: "non-empty" } },
     );
   }
   if (value.includes("\0")) {
     throw new M3LMcpError(
       "ERR_MCP_CONFIG",
       `configuration key '${label}' must not contain a NUL byte`,
-      { context: { key: label, rule: "no-nul-byte" } },
+      { context: { [contextField]: label, rule: "no-nul-byte" } },
     );
   }
   if (!isAbsolute(value)) {
     throw new M3LMcpError(
       "ERR_MCP_CONFIG",
       `configuration key '${label}' must be an absolute path`,
-      { context: { key: label, rule: "absolute-path" } },
+      { context: { [contextField]: label, rule: "absolute-path" } },
     );
   }
   return value;
@@ -204,15 +217,31 @@ function validatePathValue(label: string, value: string): string {
  * its class, collapses to the same fixed, non-leaking message. See
  * {@link PATHS_CONSTRUCTION_FAILURE_MESSAGE} for why the original error is
  * deliberately not chained as `cause`.
+ *
+ * `context.causeClass` is the one piece of the caught error this function
+ * *does* surface: the thrown value's class name (e.g.
+ * `"M3LPathResolutionError"` vs `"M3LEnvironmentDetectionError"`), which
+ * narrows the failure (a directory/base override vs `M3L_DEPLOYMENT_MODE` or
+ * an unreadable directory during the walk-up) without reading anything that
+ * could carry the offending value — unlike the environment-variable *name*,
+ * which exists only inside the library error's own message, interpolated
+ * directly next to the value this function exists to keep out of view. A
+ * class name is a fixed, non-sensitive library identifier; do not "improve"
+ * this into extracting the key name from the message.
  */
 function createRealPaths(): Core.M3LPaths {
   try {
     return new Core.M3LPaths();
-  } catch {
+  } catch (cause) {
+    // A bare `catch` can receive anything, not only an `Error` (a thrown
+    // string, for instance), so this reads the class name defensively
+    // rather than assuming `cause.constructor` exists.
+    const causeClass =
+      cause instanceof Error ? cause.constructor.name : typeof cause;
     throw new M3LMcpError(
       "ERR_MCP_CONFIG",
       PATHS_CONSTRUCTION_FAILURE_MESSAGE,
-      { context: { hint: "M3L_MCP_CLI_ENTRYPOINT" } },
+      { context: { hint: "M3L_MCP_CLI_ENTRYPOINT", causeClass } },
     );
   }
 }
@@ -276,6 +305,7 @@ function resolveCliEntrypoint(
   return validatePathValue(
     "cliEntrypoint (derived from project root)",
     join(projectRoot, "packages", "m3l-cli", "bin", "m3l.mjs"),
+    "field",
   );
 }
 

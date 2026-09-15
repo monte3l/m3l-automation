@@ -9,8 +9,57 @@
 import { dirname, join } from "node:path";
 import { inspect } from "node:util";
 
-import { Core } from "@monte3l/m3l-common";
+import type * as M3LCommonModule from "@monte3l/m3l-common";
 import { afterEach, describe, expect, expectTypeOf, test, vi } from "vitest";
+
+// Control cell for the scoped `Core.M3LPaths` mock below, read by the mock
+// constructor at `new` time. `vi.hoisted` is required (not a plain
+// module-level `let`) because `vi.mock` factories are hoisted above every
+// import in this file, including this one — without it, the factory would
+// close over a binding that does not exist yet.
+const pathsConstructionControl = vi.hoisted<{ error: unknown }>(() => ({
+  error: new Error("pathsConstructionControl.error was never armed"),
+}));
+
+// Partial mock, scoped to this file only: everything on `Core` — every
+// error class (`M3LError`, `M3LPathResolutionError`,
+// `M3LEnvironmentDetectionError`, ...) and every helper
+// (`isPlainObject`, `coerceConfigValue`, `M3LConfigParameterType`, ...) used
+// by settings.ts or this file — passes through untouched via
+// `importOriginal`. Only `Core.M3LPaths` is replaced, with a constructor
+// that unconditionally throws whatever `pathsConstructionControl.error`
+// currently holds.
+//
+// This exists to fix a hermeticity defect, not an I/O-policy violation (this
+// repo has no blanket "no filesystem access in unit tests" rule — read-only
+// access by library code is fine, see ADR-0100 and the style guide's test-I/O
+// policy). The real `Core.M3LPaths` constructor calls
+// `Core.M3LExecutionEnvironment.detect()`, which walks up the real directory
+// tree looking for a pnpm workspace marker to decide MONOREPO vs STANDALONE
+// mode. That marker is present in *this* checkout, so these tests happen to
+// pass here — but a checkout without it would resolve STANDALONE instead,
+// take a different constructor branch, and fail these same assertions. A
+// unit test whose outcome depends on the shape of the tree it happens to run
+// in is non-deterministic across checkouts; mocking the collaborator removes
+// that coupling entirely, so `resolveCliEntrypoint`'s containment of
+// whatever the real constructor throws is verified without depending on
+// which branch a given checkout's environment detection happens to take.
+vi.mock("@monte3l/m3l-common", async (importOriginal) => {
+  const actual = await importOriginal<typeof M3LCommonModule>();
+  return {
+    ...actual,
+    Core: {
+      ...actual.Core,
+      M3LPaths: class MockM3LPaths {
+        constructor() {
+          throw pathsConstructionControl.error;
+        }
+      },
+    },
+  };
+});
+
+import { Core } from "@monte3l/m3l-common";
 
 import { M3LMcpError } from "../src/errors/mcp-error.js";
 import {
@@ -309,91 +358,127 @@ describe("loadM3LMcpSettings — standalone (non-monorepo) mode", () => {
 });
 
 describe("loadM3LMcpSettings — real Core.M3LPaths construction never leaks (Fix 1)", () => {
-  // Distinctive sentinel standing in for a secret one of the seven
-  // environment variables `Core.M3LPaths` construction reads might hold.
-  // `Core.M3LPaths`'s own constructor (directly, and via
-  // `Core.M3LExecutionEnvironment.detect()`) reads the REAL process.env for
-  // these keys (never `options.env`), so only
-  // `vi.stubEnv`/`vi.unstubAllEnvs` can drive these branches without a bare,
-  // leak-prone mutation of the real environment.
+  // Distinctive sentinel standing in for a secret the real `Core.M3LPaths`
+  // constructor's thrown message might embed.
   const SENTINEL = "relative/dir/with-SECRET-TOKEN-abc123";
 
+  // The module-level `vi.mock("@monte3l/m3l-common", ...)` above replaces
+  // `Core.M3LPaths` for this whole file with a constructor that throws
+  // whatever `pathsConstructionControl.error` currently holds — see that
+  // mock's own comment for why (environment coupling / determinism, not an
+  // I/O-policy violation: this repo has no rule against read-only real
+  // filesystem access in a unit test). Reset after every test so a test that
+  // forgets to arm it fails loudly (a distinct placeholder error) rather than
+  // silently reusing whatever a previous test last armed.
   afterEach(() => {
-    vi.unstubAllEnvs();
-    // `Core.M3LExecutionEnvironment.detect()` — called by `new
-    // Core.M3LPaths()` — memoizes its result as a process-global singleton
-    // (see its own TSDoc), independent of `vi.unstubAllEnvs()`. Without this,
-    // the first case in `poisonedRealPathsCases` below (which forces
-    // STANDALONE mode) would leave every later case in this block reading a
-    // stale cached deployment mode instead of re-detecting from the
-    // now-different stubbed environment.
-    Core.M3LExecutionEnvironment.resetForTesting();
+    pathsConstructionControl.error = new Error(
+      "pathsConstructionControl.error was never armed",
+    );
   });
 
-  // Each case stubs the real env keys needed to make its named variable
-  // actually load-bearing, then poisons it (or, for M3L_DEPLOYMENT_MODE
-  // itself, supplies an invalid value).
-  const poisonedRealPathsCases: ReadonlyArray<
-    readonly [key: string, envOverrides: Readonly<Record<string, string>>]
-  > = [
-    // M3L_BASE_DIR is read only by `resolveStandaloneBase()`, on the
-    // STANDALONE branch of `M3LPaths`'s constructor — a no-op in MONOREPO
-    // mode. This repo's own pnpm workspace marker means these tests run in
-    // MONOREPO mode by default, so asserting M3L_BASE_DIR alone (without
-    // also forcing STANDALONE mode) would pass vacuously: the constructor
-    // would never read it, and the "throws ERR_MCP_CONFIG" assertion would
-    // never even be exercised for that key. Forcing
-    // M3L_DEPLOYMENT_MODE=standalone alongside it drives the key through the
-    // one branch where it is actually load-bearing.
-    [
-      "M3L_BASE_DIR",
-      { M3L_DEPLOYMENT_MODE: "standalone", M3L_BASE_DIR: SENTINEL },
-    ],
-    ["M3L_DATA_DIR", { M3L_DATA_DIR: SENTINEL }],
-    ["M3L_CONFIG_DIR", { M3L_CONFIG_DIR: SENTINEL }],
-    ["M3L_INPUT_DIR", { M3L_INPUT_DIR: SENTINEL }],
-    ["M3L_OUTPUT_DIR", { M3L_OUTPUT_DIR: SENTINEL }],
-    ["M3L_CACHE_DIR", { M3L_CACHE_DIR: SENTINEL }],
-    // Not a M3L_*_DIR override at all — `M3L_DEPLOYMENT_MODE` itself embeds
-    // the raw override value verbatim in `Core.M3LEnvironmentDetectionError`
-    // ("Unrecognised M3L_DEPLOYMENT_MODE value: ..."), a seventh leak site
-    // the original Fix 1 census omitted.
-    [
-      "M3L_DEPLOYMENT_MODE",
-      { M3L_DEPLOYMENT_MODE: `not-a-real-mode-${SENTINEL}` },
-    ],
-  ];
+  // The real (unmocked) `new Core.M3LPaths()` reads seven environment
+  // variables directly off the real `process.env` — `M3L_BASE_DIR`,
+  // `M3L_DATA_DIR`, `M3L_CONFIG_DIR`, `M3L_INPUT_DIR`, `M3L_OUTPUT_DIR`,
+  // `M3L_CACHE_DIR` (each capable of throwing a `Core.M3LPathResolutionError`
+  // embedding a non-absolute override verbatim), and `M3L_DEPLOYMENT_MODE`
+  // (read by `Core.M3LExecutionEnvironment.detect()`, capable of throwing a
+  // `Core.M3LEnvironmentDetectionError` embedding an unrecognised mode value,
+  // or an absolute host directory path surfaced on an EACCES/EPERM failure
+  // during its workspace-marker walk-up). That the real constructor throws
+  // one of these two classes for each of the seven was verified out of band
+  // by an executed probe (`vi.stubEnv` + a real, unmocked `Core.M3LPaths`,
+  // run once per variable) rather than by a unit test in this file — a
+  // dedicated `test.each` here would drive the real constructor and
+  // `Core.M3LExecutionEnvironment.detect()`'s workspace-marker walk-up,
+  // whose outcome (MONOREPO vs STANDALONE) depends on whether a pnpm
+  // workspace marker happens to exist on disk in the checkout the test runs
+  // in — true in this repo, not guaranteed in every checkout. The two tests
+  // below instead prove `createRealPaths`'s containment holds for each class
+  // the real constructor is capable of throwing (per the probe above), by
+  // arming the mocked constructor with a real instance of that class; a
+  // third proves containment for a thrown value that is not an `Error` at
+  // all, since a bare `catch` can receive anything.
 
-  test.each(poisonedRealPathsCases)(
-    "a poisoned real %s raises ERR_MCP_CONFIG with the sentinel absent from the widened haystack, cause undefined, when paths is not injected",
-    (_key, envOverrides) => {
-      for (const [envKey, envValue] of Object.entries(envOverrides)) {
-        vi.stubEnv(envKey, envValue);
-      }
+  test("contains a Core.M3LPathResolutionError thrown by constructing the real Core.M3LPaths", () => {
+    pathsConstructionControl.error = new Core.M3LPathResolutionError(
+      `non-absolute override: ${SENTINEL}`,
+    );
 
-      let thrown: unknown;
-      try {
-        // No `paths` injected — this is the branch that used to construct a
-        // real Core.M3LPaths eagerly and unguarded.
-        loadM3LMcpSettings({ env: {} });
-      } catch (error) {
-        thrown = error;
-      }
+    let thrown: unknown;
+    try {
+      // No `paths` injected — this is the branch that used to construct a
+      // real Core.M3LPaths eagerly and unguarded.
+      loadM3LMcpSettings({ env: {} });
+    } catch (error) {
+      thrown = error;
+    }
 
-      expect(thrown).toBeInstanceOf(M3LMcpError);
-      const error = thrown as M3LMcpError;
-      expect(error.code).toBe("ERR_MCP_CONFIG");
-      const serialized = serialize(error);
-      expect(serialized).not.toContain(SENTINEL);
-      expect(serialized).not.toContain("SECRET-TOKEN");
-      // The leak this fix closes is specifically a chained `cause` (whose
-      // message embeds the raw value) reappearing in the serialized form.
-      expect(error.cause).toBeUndefined();
-    },
-  );
+    expect(thrown).toBeInstanceOf(M3LMcpError);
+    const error = thrown as M3LMcpError;
+    expect(error.code).toBe("ERR_MCP_CONFIG");
+    const serialized = serialize(error);
+    expect(serialized).not.toContain(SENTINEL);
+    expect(serialized).not.toContain("SECRET-TOKEN");
+    // The leak this fix closes is specifically a chained `cause` (whose
+    // message embeds the raw value) reappearing in the serialized form.
+    expect(error.cause).toBeUndefined();
+    // Should-fix: the caught error's class name narrows the failure without
+    // reading anything that could carry the offending value.
+    expect(error.context["causeClass"]).toBe("M3LPathResolutionError");
+  });
 
-  test("an explicit M3L_MCP_CLI_ENTRYPOINT means a poisoned real M3L_DATA_DIR never throws at all", () => {
-    vi.stubEnv("M3L_DATA_DIR", SENTINEL);
+  test("contains a Core.M3LEnvironmentDetectionError thrown by constructing the real Core.M3LPaths", () => {
+    pathsConstructionControl.error = new Core.M3LEnvironmentDetectionError(
+      `unrecognised mode: not-a-real-mode-${SENTINEL}`,
+      { code: "ERR_ENVIRONMENT_DETECTION" },
+    );
+
+    let thrown: unknown;
+    try {
+      loadM3LMcpSettings({ env: {} });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LMcpError);
+    const error = thrown as M3LMcpError;
+    expect(error.code).toBe("ERR_MCP_CONFIG");
+    const serialized = serialize(error);
+    expect(serialized).not.toContain(SENTINEL);
+    expect(serialized).not.toContain("SECRET-TOKEN");
+    expect(error.cause).toBeUndefined();
+    expect(error.context["causeClass"]).toBe("M3LEnvironmentDetectionError");
+  });
+
+  test("contains a non-Error value thrown by constructing the real Core.M3LPaths", () => {
+    // A bare `catch` receives whatever was thrown, not only an `Error`
+    // instance — this proves containment (and the defensive class-name read)
+    // hold even then.
+    pathsConstructionControl.error = `just-a-thrown-string-${SENTINEL}`;
+
+    let thrown: unknown;
+    try {
+      loadM3LMcpSettings({ env: {} });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(M3LMcpError);
+    const error = thrown as M3LMcpError;
+    expect(error.code).toBe("ERR_MCP_CONFIG");
+    const serialized = serialize(error);
+    expect(serialized).not.toContain(SENTINEL);
+    expect(serialized).not.toContain("SECRET-TOKEN");
+    expect(error.cause).toBeUndefined();
+    expect(error.context["causeClass"]).toBe("string");
+  });
+
+  test("an explicit M3L_MCP_CLI_ENTRYPOINT means a Core.M3LPaths construction failure never throws at all", () => {
+    // Armed so that, were `createRealPaths` ever reached, the test would
+    // fail loudly instead of silently passing for the wrong reason.
+    pathsConstructionControl.error = new Core.M3LPathResolutionError(
+      `must not be constructed: ${SENTINEL}`,
+    );
 
     const settings = loadM3LMcpSettings({
       env: { M3L_MCP_CLI_ENTRYPOINT: "/custom/entry/m3l.mjs" },
