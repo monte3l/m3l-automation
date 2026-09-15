@@ -46,16 +46,17 @@ same `## Landing plan` heading and `| Slice | Branch | Scope | Status |`
 table a submodule's reference page carries, gated by
 `pnpm check:landing-plans`.
 
-| Slice | Branch                      | Scope                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | Status            |
-| ----- | --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------- |
-| V10a  | `feat/v10-mcp-adr-updates`  | The ADR-0062 Update (tool grouping settled; `isError` redefinition; retired `m3l-cli`-internals clause; corrected library specifier; `zod` as a second own dependency) + the ADR-0057 Update (publish-set membership) + this plan doc                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | Landed (PR #1253) |
-| V10b  | `feat/v10-mcp-scaffold`     | `packages/m3l-mcp` skeleton: `package.json`, both tsconfigs, `bin/`, `README.md`, the composition root, the error type (on `Core.M3LError`, matching both sibling packages), and a brand-gated **empty** tool registry whose `unique symbol` key is never exported, so `gateTool` can be its only producer. Governance registration: root `tsconfig.json` reference, `knip.json` workspace, four `eslint.config.js` edits, matching `bin/check-eslint-zones.mjs` assertions (plus the missing reverse `packages/*` to `scripts/*` zone), the `mcp:serve` script and its catalog row. **Env config, the CLI process port and the doctor argv/parser moved to V10c**: `knip` flags an unreachable export, and none of them has a caller until a tool exists | Landed (PR #1258) |
-| V10c  | `feat/v10-mcp-cli-leaves`   | `src/config/settings.ts` (boot configuration from the environment) and `src/cli/envelopes.ts` (the `doctor --json` parser). The two leaves of the CLI facade — neither imports anything else this wave adds, so they land first and stand alone                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | To Do             |
-| V10c2 | `feat/v10-mcp-cli-facade`   | `src/cli/process.ts` (the bounded subprocess port — `shell: false`, a per-stream byte cap, an own-timer timeout, an injectable `spawn` seam) and `src/cli/surface.ts` (the argv table and invocation), plus `ERR_MCP_CLI` on `M3LMcpErrorCode`. Depends on V10c's two leaves                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | To Do             |
-| V10c3 | `feat/v10-mcp-policy-spine` | `src/policy/{load,identity,recorder,session}.ts`, `src/tools/gate.ts`, `src/tools/health.ts`; the seven-step gate contract; the verdict-to-response mapping; `fleet_health` registered through `gateTool`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | To Do             |
-| V10d  | `feat/v10-mcp-docs`         | `docs/reference/mcp.md`, the third `docs/reference/README.md` **Tooling** row, one new `bin/check-mcp.mjs` assertion (the runtime server is not self-registered) plus its dev-time relabelling, tracker pointers, work log                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | To Do             |
+| Slice  | Branch                      | Scope                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | Status            |
+| ------ | --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------- |
+| V10a   | `feat/v10-mcp-adr-updates`  | The ADR-0062 Update (tool grouping settled; `isError` redefinition; retired `m3l-cli`-internals clause; corrected library specifier; `zod` as a second own dependency) + the ADR-0057 Update (publish-set membership) + this plan doc                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | Landed (PR #1253) |
+| V10b   | `feat/v10-mcp-scaffold`     | `packages/m3l-mcp` skeleton: `package.json`, both tsconfigs, `bin/`, `README.md`, the composition root, the error type (on `Core.M3LError`, matching both sibling packages), and a brand-gated **empty** tool registry whose `unique symbol` key is never exported, so `gateTool` can be its only producer. Governance registration: root `tsconfig.json` reference, `knip.json` workspace, four `eslint.config.js` edits, matching `bin/check-eslint-zones.mjs` assertions (plus the missing reverse `packages/*` to `scripts/*` zone), the `mcp:serve` script and its catalog row. **Env config, the CLI process port and the doctor argv/parser moved to V10c**: `knip` flags an unreachable export, and none of them has a caller until a tool exists | Landed (PR #1258) |
+| V10c   | `feat/v10-mcp-cli-leaves`   | `src/config/settings.ts` (boot configuration from the environment) and `src/cli/envelopes.ts` (the `doctor --json` parser). The two leaves of the CLI facade — neither imports anything else this wave adds, so they land first and stand alone                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | Landed (PR #1269) |
+| V10c2  | `feat/v10-mcp-cli-process`  | `src/cli/process.ts` only: the bounded subprocess port — `shell: false` and an argv array, a per-stream byte cap that bounds every chunk, an own-timer timeout, an injectable `spawn` seam. No process-group teardown and no SIGKILL escalation; those arrive with V10e. Imports nothing from this package, so it stands alone                                                                                                                                                                                                                                                                                                                                                                                                                            | To Do             |
+| V10c2b | `feat/v10-mcp-cli-facade`   | `src/cli/surface.ts` (the argv table and invocation) plus `ERR_MCP_CLI` on `M3LMcpErrorCode`. Depends on V10c's two leaves and on V10c2's port, which it composes                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | To Do             |
+| V10c3  | `feat/v10-mcp-policy-spine` | `src/policy/{load,identity,recorder,session}.ts`, `src/tools/gate.ts`, `src/tools/health.ts`; the seven-step gate contract; the verdict-to-response mapping; `fleet_health` registered through `gateTool`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | To Do             |
+| V10d   | `feat/v10-mcp-docs`         | `docs/reference/mcp.md`, the third `docs/reference/README.md` **Tooling** row, one new `bin/check-mcp.mjs` assertion (the runtime server is not self-registered) plus its dev-time relabelling, tracker pointers, work log                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | To Do             |
 
-### Why the original V10c became three rows
+### Why the original V10c became four rows
 
 The committed V10c covered nine `src` modules — the policy spine plus the
 three files V10b pushed forward. Measured, not estimated: the CLI facade
@@ -74,6 +75,19 @@ V10c at ~49k, and the two that compose them (`cli/process.ts`,
 rejected outright — `vitest.config.ts`'s perFile thresholds (lines 90 /
 functions 83 / branches 80 / statements 89) would fail the first PR, since
 the modules would arrive with no tests at all.
+
+Then V10c2 itself split again, for a reason worth recording because it will
+recur: the slice measured 66,590 chars when its code was transplanted, and
+a re-review of the two modules found two Must-fix defects whose fixes and
+tests took it to 85,768 — past the soft target. Review findings are not
+free, and a slice sized to just fit before review has no room to absorb
+what review finds. The split follows the same dependency grain as the
+first: `cli/process.ts` is the true leaf, importing only
+`node:child_process` and `node:string_decoder`, so it lands as V10c2
+(50,353 chars) and `cli/surface.ts`, which composes it, lands as V10c2b
+(34,330). Verified before splitting that `process.ts` and its test name
+neither `M3LMcpError` nor `ERR_MCP_CLI`, so the error-union change stays
+wholly with the facade.
 
 ### Recorded as later slices, not built here
 
@@ -263,9 +277,15 @@ reaching in from outside). The remaining three land in V10c:
 The facade's slices each run a pre-push review fan-out plus a CI round.
 Findings that were fixed in their own slice are not listed here; these are
 the ones deliberately **not** fixed, with the reason, because each is
-invisible in the code as it stands. V10c2 appends its own set when it lands
-— several of the open items concern `cli/process.ts` and `cli/surface.ts`,
-which are that slice's files.
+invisible in the code as it stands. Each slice appends its own set as it
+lands, so this section grows rather than being rewritten. `cli/surface.ts`'s
+own set arrives with V10c2b.
+
+Two entries below are findings a reviewer raised as suspected defects that
+mutation testing then reclassified — a guard that turned out to be
+unreachable, and a guard whose property `Promise` already provides. They are
+recorded rather than "fixed" because in both cases the code is right and
+only its comments were wrong.
 
 From V10c (`config/settings.ts`, `cli/envelopes.ts`):
 
@@ -283,6 +303,47 @@ From V10c (`config/settings.ts`, `cli/envelopes.ts`):
   string field was wrong, not which. Deferred because V10f adds the
   `list`/`inspect` parsers and should settle the shape once for all three
   rather than twice.
+
+From V10c2 (`cli/process.ts`):
+
+- **Reshape `CliRunResult` into a discriminated union on `disposition`.** A
+  hard precondition of V10e. The flat record admits three combinations the
+  implementation never produces: `"spawn-failed"` with a non-null
+  `exitCode`, `"exited"` with a `failureCode`, `"exited"` with a null
+  `exitCode`. The union also lets V10c2b's `assertExited` become an
+  `asserts` signature, which deletes a `null` branch that is unreachable in
+  practice. Deferred to V10e deliberately: that slice is where the type
+  becomes a published `Core` semver surface, so fixing it there keeps the
+  bad shape out of the library rather than merely postponing it.
+- **Brand `timeoutMs` and `maxOutputBytes`.** Also a V10e precondition.
+  `config/settings.ts` validates both ranges at load, so the brand would be
+  earned rather than cast — but nothing stops a direct caller of
+  `runCliProcess` passing `0` or `-1`. Validation-at-the-edge is correct
+  while `settings.ts` is provably the only producer, and that premise dies
+  with the promotion.
+- **`ingest`'s `if (breached) return;` cannot currently fire.** Established
+  by mutation, not by reading: deleting it leaves the whole suite green.
+  `detachAll()` removes the `"data"` listener synchronously with breach
+  detection — same call stack, no microtask boundary — so no later chunk
+  re-enters `ingest`, and the per-chunk slice that now bounds the cap does
+  not change that. Kept as defence-in-depth carrying the reachability
+  argument, so a later refactor that defers detach cannot quietly remove the
+  only real protection. The test that reads like its guard keeps its name: it
+  pins the detach mechanism, which is what actually holds in production.
+- **The `settled` flag is not what stops a settled disposition being
+  overwritten.** A `Promise`'s `resolve` is already idempotent, so the
+  settle-once property of the _result_ is free and those tests stay green
+  with the guard deleted. The flag's real value is not re-running
+  `cleanup`/`finalize` on a second terminal event. The guard stays, the
+  misleading comments are corrected, and one test now asserts that
+  observable effect through the `"error"` listener — the one never detached,
+  and so the only place a second settle genuinely re-enters.
+- **The injectable `spawn` seam's default is never exercised.** Coverage
+  confirms `defaultSpawn` is never called; driving it would spawn a real
+  process. Optional-with-default is the house pattern here
+  (agent-operator's, console-server's executor seam) and all carry the same
+  gap. V10c3's composition root and the end-to-end smoke test are the first
+  things to exercise it for real.
 
 Inherited and still open:
 
